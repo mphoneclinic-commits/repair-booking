@@ -2,9 +2,17 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function BookingPage() {
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const [form, setForm] = useState({
     fullName: '',
     phone: '',
@@ -14,8 +22,27 @@ export default function BookingPage() {
     fault: '',
   })
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setSaving(true)
+    setError('')
+
+    const { error } = await supabase.from('repair_requests').insert({
+      full_name: form.fullName.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim() || null,
+      brand: form.brand.trim(),
+      model: form.model.trim(),
+      fault_description: form.fault.trim(),
+    })
+
+    setSaving(false)
+
+    if (error) {
+      setError(error.message)
+      return
+    }
+
     setSubmitted(true)
   }
 
@@ -41,9 +68,6 @@ export default function BookingPage() {
         The Mobile Phone Clinic
       </div>
       <h1 style={{ fontSize: 36, marginTop: 12 }}>Book a Repair</h1>
-      <p style={{ color: '#475569', lineHeight: 1.6 }}>
-        Fill out the form below and we’ll review your request before turning it into a real repair job.
-      </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14, background: 'white', borderRadius: 18, padding: 24, border: '1px solid #e2e8f0', marginTop: 24 }}>
         <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Full name" required style={fieldStyle} />
@@ -52,8 +76,11 @@ export default function BookingPage() {
         <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="Device brand" required style={fieldStyle} />
         <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="Device model" required style={fieldStyle} />
         <textarea value={form.fault} onChange={(e) => setForm({ ...form, fault: e.target.value })} placeholder="Describe the problem" required style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }} />
-        <button type="submit" style={{ background: '#059669', color: 'white', border: 0, borderRadius: 10, padding: '12px 18px', fontWeight: 700, cursor: 'pointer' }}>
-          Submit Request
+
+        {error ? <div style={{ color: '#b91c1c', fontSize: 14 }}>{error}</div> : null}
+
+        <button type="submit" disabled={saving} style={{ background: '#059669', color: 'white', border: 0, borderRadius: 10, padding: '12px 18px', fontWeight: 700, cursor: 'pointer' }}>
+          {saving ? 'Submitting...' : 'Submit Request'}
         </button>
       </form>
     </main>
