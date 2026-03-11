@@ -37,7 +37,7 @@ export default function BookingPage() {
     }
 
     if (form.fault.trim().length < 10) {
-      setError('Please enter a valid phone number.')
+      setError('Please describe the problem in a bit more detail.')
       setSaving(false)
       return
     }
@@ -52,6 +52,7 @@ export default function BookingPage() {
       model: form.model.trim(),
       fault_description: form.fault.trim(),
       preferred_contact: form.preferredContact,
+      status: 'new',
     })
 
     setSaving(false)
@@ -207,9 +208,9 @@ export default function BookingPage() {
             border: 0,
             borderRadius: 10,
             padding: '12px 18px',
+
             fontWeight: 700,
-            cursor: 'pointer',
-          }}
+            cursor: 'pointer',          }}
         >
           {saving ? 'Submitting...' : 'Submit Request'}
         </button>
