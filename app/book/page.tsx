@@ -37,7 +37,7 @@ export default function BookingPage() {
     }
 
     if (form.fault.trim().length < 10) {
-      setError('Please describe the problem in a bit more detail.')
+      setError('Please enter a valid phone number.')
       setSaving(false)
       return
     }
