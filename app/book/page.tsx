@@ -260,6 +260,7 @@ export default function BookingPage() {
             padding: '12px 18px',
             fontWeight: 700,
             cursor: 'pointer',
+            opacity: saving ? 0.8 : 1,
           }}
         >
           {saving ? 'Submitting...' : 'Submit Request'}

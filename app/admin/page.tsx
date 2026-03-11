@@ -1,7 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '../../lib/supabase'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type RepairStatus =
   | 'new'
@@ -24,7 +35,7 @@ type RepairRequest = {
   model: string
   device_type: string | null
   fault_description: string
-  status: RepairStatus
+  status: string
   preferred_contact: string | null
   internal_notes?: string | null
   quoted_price?: number | null
@@ -80,7 +91,7 @@ export default function AdminPage() {
 
     setSaveStates((prev) => ({ ...prev, [key]: 'saved' }))
 
-    window.setTimeout(() => {
+    setTimeout(() => {
       setSaveStates((prev) => {
         if (prev[key] !== 'saved') return prev
         return { ...prev, [key]: 'idle' }
@@ -129,34 +140,7 @@ export default function AdminPage() {
     setLoading(false)
   }
 
-  async function sendStatusSms(job: RepairRequest, newStatus: RepairStatus) {
-    const response = await fetch('/api/admin/send-status-sms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jobId: job.id,
-        jobNumber: job.job_number,
-        fullName: job.full_name,
-        phone: job.phone,
-        brand: job.brand,
-        model: job.model,
-        quotedPrice: job.quoted_price,
-        status: newStatus,
-      }),
-    })
-
-    const result = await response.json().catch(() => null)
-
-    if (!response.ok) {
-      throw new Error(result?.error || 'SMS notification failed')
-    }
-  }
-
-  async function updateStatus(
-    id: string,
-    newStatus: RepairStatus,
-    options?: { sendSms?: boolean }
-  ) {
+  async function updateStatus(id: string, newStatus: RepairStatus) {
     const existingJob = jobs.find((job) => job.id === id)
     if (!existingJob) return
 
@@ -171,10 +155,7 @@ export default function AdminPage() {
       .from('repair_requests')
       .update({ status: newStatus })
       .eq('id', id)
-      .select(`
-        id,
-        status
-      `)
+      .select('id, status')
       .single()
 
     if (error) {
@@ -183,7 +164,7 @@ export default function AdminPage() {
       return
     }
 
-    const returnedStatus = data?.status as RepairStatus | undefined
+    const returnedStatus = data?.status as string | undefined
 
     if (!returnedStatus) {
       setFieldState(id, 'status', 'error')
@@ -198,22 +179,6 @@ export default function AdminPage() {
     )
 
     setFieldSaved(id, 'status')
-
-    if (options?.sendSms) {
-      try {
-        const freshJob =
-          jobs.find((job) => job.id === id) || { ...existingJob, status: returnedStatus }
-
-        await sendStatusSms(
-          { ...freshJob, status: returnedStatus },
-          returnedStatus
-        )
-      } catch (smsError) {
-        const message =
-          smsError instanceof Error ? smsError.message : 'Unknown SMS error'
-        alert(`Status saved, but SMS failed: ${message}`)
-      }
-    }
   }
 
   async function updateQuote(id: string, price: number | null) {
@@ -344,7 +309,7 @@ export default function AdminPage() {
         <div>
           <h1 style={{ fontSize: 32, margin: 0 }}>Admin Dashboard</h1>
           <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
-            Repair bookings, workflow, quotes, notes and customer updates
+            Repair bookings, workflow, quotes and internal notes
           </p>
         </div>
 
@@ -579,6 +544,9 @@ export default function AdminPage() {
               <p style={{ margin: '0 0 8px', fontSize: 13, color: '#475569' }}>
                 {job.fault_description}
               </p>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#334155' }}>
+                <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+              </p>
               <p style={{ margin: 0, fontSize: 13, color: '#334155' }}>
                 Quote:{' '}
                 <strong>
@@ -608,7 +576,7 @@ export default function AdminPage() {
                 <th style={thStyle}>Device</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Quote</th>
-                <th style={thStyle}>Created</th>
+                <th style={thStyle}>Booked In</th>
               </tr>
             </thead>
             <tbody>
@@ -628,9 +596,7 @@ export default function AdminPage() {
                   <td style={tdStyle}>
                     {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
                   </td>
-                  <td style={tdStyle}>
-                    {new Date(job.created_at).toLocaleString()}
-                  </td>
+                  <td style={tdStyle}>{formatDateTime(job.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -676,11 +642,7 @@ function JobCard({
   job: RepairRequest
   expanded: boolean
   toggleExpanded: (jobId: string) => void
-  updateStatus: (
-    id: string,
-    newStatus: RepairStatus,
-    options?: { sendSms?: boolean }
-  ) => Promise<void>
+  updateStatus: (id: string, newStatus: RepairStatus) => Promise<void>
   updateQuote: (id: string, price: number | null) => Promise<boolean | void>
   updateNotes: (id: string, notes: string) => Promise<boolean | void>
   statusSaveState: SaveState
@@ -690,9 +652,6 @@ function JobCard({
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
-  const [notifyBySms, setNotifyBySms] = useState(
-    (job.preferred_contact || '').toLowerCase() === 'sms'
-  )
 
   const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -873,13 +832,13 @@ function JobCard({
 
       {!expanded ? (
         <>
+          <p style={{ margin: '0 0 4px', fontSize: 13, color: '#334155' }}>
+            <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+          </p>
+
           <p style={{ margin: '0 0 4px', fontSize: 13, color: '#475569' }}>
             Quote:{' '}
             <strong>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</strong>
-          </p>
-
-          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
-            {new Date(job.created_at).toLocaleString()}
           </p>
         </>
       ) : (
@@ -889,6 +848,10 @@ function JobCard({
               <strong>Preferred:</strong> {job.preferred_contact}
             </p>
           )}
+
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#334155' }}>
+            <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+          </p>
 
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -931,41 +894,13 @@ function JobCard({
             style={{
               marginTop: 12,
               display: 'flex',
-              gap: 10,
-              alignItems: 'center',
-              flexWrap: 'wrap',
-            }}
-          >
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 13,
-                color: '#334155',
-                userSelect: 'none',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={notifyBySms}
-                onChange={(e) => setNotifyBySms(e.target.checked)}
-              />
-              Send SMS on next status change
-            </label>
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              display: 'flex',
               gap: 6,
               flexWrap: 'wrap',
             }}
           >
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'new', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'new')}
               style={statusButtonStyle(job.status === 'new')}
             >
               New
@@ -973,7 +908,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'quoted', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'quoted')}
               style={statusButtonStyle(job.status === 'quoted')}
             >
               Quoted
@@ -981,7 +916,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'approved', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'approved')}
               style={statusButtonStyle(job.status === 'approved')}
             >
               Approved
@@ -989,9 +924,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() =>
-                updateStatus(job.id, 'in_progress', { sendSms: notifyBySms })
-              }
+              onClick={() => updateStatus(job.id, 'in_progress')}
               style={statusButtonStyle(job.status === 'in_progress')}
             >
               In Progress
@@ -999,7 +932,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'completed', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'completed')}
               style={statusButtonStyle(job.status === 'completed')}
             >
               Ready
@@ -1007,7 +940,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'closed', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'closed')}
               style={statusButtonStyle(job.status === 'closed')}
             >
               Closed
@@ -1015,7 +948,7 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'rejected', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'rejected')}
               style={statusButtonStyle(job.status === 'rejected')}
             >
               Reject
@@ -1023,23 +956,12 @@ function JobCard({
 
             <button
               type="button"
-              onClick={() => updateStatus(job.id, 'cancelled', { sendSms: notifyBySms })}
+              onClick={() => updateStatus(job.id, 'cancelled')}
               style={statusButtonStyle(job.status === 'cancelled')}
             >
               Cancel
             </button>
           </div>
-
-          <p
-            style={{
-              fontSize: 12,
-              color: '#64748b',
-              marginTop: 10,
-              marginBottom: 0,
-            }}
-          >
-            {new Date(job.created_at).toLocaleString()}
-          </p>
         </>
       )}
     </div>
@@ -1053,7 +975,7 @@ function SaveIndicator({
   state: SaveState
   compact?: boolean
 }) {
-  const style: React.CSSProperties = {
+  const style: CSSProperties = {
     fontSize: compact ? 11 : 12,
     minWidth: compact ? 50 : 72,
     textAlign: 'right',
@@ -1078,7 +1000,20 @@ function SaveIndicator({
   return <span style={{ ...style, color: '#94a3b8' }}> </span>
 }
 
-const fieldStyle: React.CSSProperties = {
+function formatDateTime(dateString: string) {
+  return new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Melbourne',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(new Date(dateString))
+}
+
+const fieldStyle: CSSProperties = {
   width: '100%',
   padding: '12px 14px',
   borderRadius: 10,
@@ -1088,7 +1023,7 @@ const fieldStyle: React.CSSProperties = {
   background: 'white',
 }
 
-const smallFieldStyle: React.CSSProperties = {
+const smallFieldStyle: CSSProperties = {
   width: '100%',
   padding: '8px 10px',
   borderRadius: 8,
@@ -1099,7 +1034,7 @@ const smallFieldStyle: React.CSSProperties = {
   marginTop: 4,
 }
 
-const notesStyle: React.CSSProperties = {
+const notesStyle: CSSProperties = {
   width: '100%',
   minHeight: 90,
   padding: '8px 10px',
@@ -1112,7 +1047,7 @@ const notesStyle: React.CSSProperties = {
   resize: 'vertical',
 }
 
-const buttonStyle: React.CSSProperties = {
+const buttonStyle: CSSProperties = {
   padding: '10px 14px',
   borderRadius: 8,
   border: '1px solid #cbd5e1',
@@ -1121,7 +1056,7 @@ const buttonStyle: React.CSSProperties = {
   fontWeight: 600,
 }
 
-const miniButtonStyle: React.CSSProperties = {
+const miniButtonStyle: CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
   border: '1px solid #cbd5e1',
@@ -1131,7 +1066,7 @@ const miniButtonStyle: React.CSSProperties = {
   fontSize: 12,
 }
 
-function viewButtonStyle(active: boolean): React.CSSProperties {
+function viewButtonStyle(active: boolean): CSSProperties {
   return {
     padding: '10px 14px',
     borderRadius: 8,
@@ -1142,7 +1077,7 @@ function viewButtonStyle(active: boolean): React.CSSProperties {
   }
 }
 
-function statusButtonStyle(active: boolean): React.CSSProperties {
+function statusButtonStyle(active: boolean): CSSProperties {
   return {
     padding: '7px 10px',
     borderRadius: 8,
@@ -1154,8 +1089,8 @@ function statusButtonStyle(active: boolean): React.CSSProperties {
   }
 }
 
-function statusBadgeStyle(status: string): React.CSSProperties {
-  const styles: Record<string, React.CSSProperties> = {
+function statusBadgeStyle(status: string): CSSProperties {
+  const styles: Record<string, CSSProperties> = {
     new: {
       background: '#dcfce7',
       border: '1px solid #22c55e',
@@ -1228,7 +1163,7 @@ function getStatusLabel(status: string): string {
   return labels[status] || status
 }
 
-const thStyle: React.CSSProperties = {
+const thStyle: CSSProperties = {
   padding: '12px 14px',
   fontSize: 13,
   color: '#475569',
@@ -1236,7 +1171,7 @@ const thStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-const tdStyle: React.CSSProperties = {
+const tdStyle: CSSProperties = {
   padding: '12px 14px',
   fontSize: 14,
   verticalAlign: 'top',
