@@ -23,15 +23,6 @@ export default function BookingPage() {
     preferredContact: 'SMS',
   })
 
-<select
-  value={form.preferredContact}
-  onChange={(e) => setForm({ ...form, preferredContact: e.target.value })}
-  style={fieldStyle}
->
-  <option value="SMS">SMS</option>
-  <option value="Email">Email</option>
-</select>
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -80,20 +71,100 @@ export default function BookingPage() {
       </div>
       <h1 style={{ fontSize: 36, marginTop: 12 }}>Book a Repair</h1>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14, background: 'white', borderRadius: 18, padding: 24, border: '1px solid #e2e8f0', marginTop: 24 }}>
-        <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Full name" required style={fieldStyle} />
-        <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone" required style={fieldStyle} />
-        <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" style={fieldStyle} />
-        <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="Device brand" required style={fieldStyle} />
-        <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="Device model" required style={fieldStyle} />
-        <textarea value={form.fault} onChange={(e) => setForm({ ...form, fault: e.target.value })} placeholder="Describe the problem" required style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }} />
+<form
+  onSubmit={handleSubmit}
+  style={{
+    display: 'grid',
+    gap: 14,
+    background: 'white',
+    borderRadius: 18,
+    padding: 24,
+    border: '1px solid #e2e8f0',
+    marginTop: 24,
+  }}
+>
+  <input
+    value={form.fullName}
+    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+    placeholder="Full name"
+    required
+    style={fieldStyle}
+  />
 
-        {error ? <div style={{ color: '#b91c1c', fontSize: 14 }}>{error}</div> : null}
+  <input
+    value={form.phone}
+    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+    placeholder="Phone"
+    required
+    style={fieldStyle}
+  />
 
-        <button type="submit" disabled={saving} style={{ background: '#059669', color: 'white', border: 0, borderRadius: 10, padding: '12px 18px', fontWeight: 700, cursor: 'pointer' }}>
-          {saving ? 'Submitting...' : 'Submit Request'}
-        </button>
-      </form>
+  <input
+    value={form.email}
+    onChange={(e) => setForm({ ...form, email: e.target.value })}
+    placeholder="Email"
+    style={fieldStyle}
+  />
+
+  <div>
+    <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+      Preferred contact
+    </label>
+    <select
+      value={form.preferredContact}
+      onChange={(e) =>
+        setForm({ ...form, preferredContact: e.target.value })
+      }
+      style={fieldStyle}
+    >
+      <option value="SMS">SMS</option>
+      <option value="Email">Email</option>
+    </select>
+  </div>
+
+  <input
+    value={form.brand}
+    onChange={(e) => setForm({ ...form, brand: e.target.value })}
+    placeholder="Device brand"
+    required
+    style={fieldStyle}
+  />
+
+  <input
+    value={form.model}
+    onChange={(e) => setForm({ ...form, model: e.target.value })}
+    placeholder="Device model"
+    required
+    style={fieldStyle}
+  />
+
+  <textarea
+    value={form.fault}
+    onChange={(e) => setForm({ ...form, fault: e.target.value })}
+    placeholder="Describe the problem"
+    required
+    style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }}
+  />
+
+  {error ? <div style={{ color: '#b91c1c', fontSize: 14 }}>{error}</div> : null}
+
+  <button
+    type="submit"
+    disabled={saving}
+    style={{
+      background: '#059669',
+      color: 'white',
+      border: 0,
+      borderRadius: 10,
+      padding: '12px 18px',
+      fontWeight: 700,
+      cursor: 'pointer',
+    }}
+  >
+    {saving ? 'Submitting...' : 'Submit Request'}
+  </button>
+</form>
+
     </main>
   )
 }
