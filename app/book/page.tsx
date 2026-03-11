@@ -26,44 +26,52 @@ export default function BookingPage() {
   })
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
+  e.preventDefault()
+  setSaving(true)
+  setError('')
 
-    if (form.botField.trim()) {
-      setError('Submission rejected.')
-      setSaving(false)
-      return
-    }
-
-    if (form.fault.trim().length < 10) {
-      setError('Please describe the problem in a bit more detail.')
-      setSaving(false)
-      return
-    }
-
-    const cleanPhone = form.phone.replace(/[^\d+]/g, '').trim()
-
-    const { error } = await supabase.from('repair_requests').insert({
-      full_name: form.fullName.trim(),
-      phone: cleanPhone,
-      email: form.email.trim() || null,
-      brand: form.brand.trim(),
-      model: form.model.trim(),
-      fault_description: form.fault.trim(),
-      preferred_contact: form.preferredContact,
-      status: 'new',
-    })
-
+  if (form.botField.trim()) {
+    setError('Submission rejected.')
     setSaving(false)
-
-    if (error) {
-      setError(error.message)
-      return
-    }
-
-    setSubmitted(true)
+    return
   }
+
+  const cleanPhone = form.phone.replace(/\D/g, '')
+
+  if (cleanPhone.length < 8 || cleanPhone.length > 10) {
+    setError('Phone number must be between 8 and 10 digits.')
+    setSaving(false)
+    return
+  }
+
+  const cleanFault = form.fault.trim()
+
+  if (cleanFault.length < 8) {
+    setError('Fault description must be at least 8 characters.')
+    setSaving(false)
+    return
+  }
+
+  const { error } = await supabase.from('repair_requests').insert({
+    full_name: form.fullName.trim(),
+    phone: cleanPhone,
+    email: form.email.trim() || null,
+    brand: form.brand.trim(),
+    model: form.model.trim(),
+    fault_description: cleanFault,
+    preferred_contact: form.preferredContact,
+    status: 'new',
+  })
+
+  setSaving(false)
+
+  if (error) {
+    setError(error.message)
+    return
+  }
+
+  setSubmitted(true)
+}
 
   if (submitted) {
     return (
@@ -132,13 +140,15 @@ export default function BookingPage() {
           style={fieldStyle}
         />
 
-        <input
-          value={form.phone}
-          onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          placeholder="Phone"
-          required
-          style={fieldStyle}
-        />
+       <input
+ 	 value={form.phone}
+  	 onChange={(e) => setForm({ ...form, phone: e.target.value })}
+ 	 placeholder="Phone"
+ 	 required
+ 	 inputMode="numeric"
+ 	 maxLength={14}
+	 style={fieldStyle}
+	/>
 
         <input
           value={form.email}
@@ -182,7 +192,7 @@ export default function BookingPage() {
         <textarea
           value={form.fault}
           onChange={(e) => setForm({ ...form, fault: e.target.value })}
-          placeholder="Describe the problem"
+          placeholder="Describe the problem, e.g. screen cracked, not charging, no sign of life, boots logo 	  then shuts down"
           required
           style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }}
         />
