@@ -12,11 +12,12 @@ const supabase = createClient(
 export default function BookingPage() {
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
+
   const [errors, setErrors] = useState({
-  phone: '',
-  fault: '',
-  form: '',
-})
+    phone: '',
+    fault: '',
+    form: '',
+  })
 
   const [form, setForm] = useState({
     fullName: '',
@@ -30,82 +31,97 @@ export default function BookingPage() {
   })
 
   async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault()
-  setSaving(true)
-  setErrors({
-    phone: '',
-    fault: '',
-    form: '',
-  })
+    e.preventDefault()
 
-  if (form.botField.trim()) {
+    setSaving(true)
     setErrors({
       phone: '',
-      fault: '',
-      form: 'Submission rejected.',
-    })
-    setSaving(false)
-    return
-  }
-
-  const cleanPhone = form.phone.replace(/\D/g, '')
-
-  if (cleanPhone.length < 8 || cleanPhone.length > 10) {
-    setErrors({
-      phone: 'Phone number must be between 8 and 10 digits.',
       fault: '',
       form: '',
     })
-    setSaving(false)
-    return
-  }
 
-  const cleanFault = form.fault.trim()
+    if (form.botField.trim()) {
+      setErrors({
+        phone: '',
+        fault: '',
+        form: 'Submission rejected.',
+      })
+      setSaving(false)
+      return
+    }
 
-  if (cleanFault.length < 8) {
-    setErrors({
-      phone: '',
-      fault: 'Fault description must be at least 8 characters.',
-      form: '',
+    const cleanPhone = form.phone.replace(/\D/g, '')
+    const cleanFault = form.fault.trim()
+
+    if (cleanPhone.length < 8 || cleanPhone.length > 10) {
+      setErrors({
+        phone: 'Phone number must be between 8 and 10 digits.',
+        fault: '',
+        form: '',
+      })
+      setSaving(false)
+      return
+    }
+
+    if (cleanFault.length < 8) {
+      setErrors({
+        phone: '',
+        fault: 'Fault description must be at least 8 characters.',
+        form: '',
+      })
+      setSaving(false)
+      return
+    }
+
+    const { error } = await supabase.from('repair_requests').insert({
+      full_name: form.fullName.trim(),
+      phone: cleanPhone,
+      email: form.email.trim() || null,
+      brand: form.brand.trim(),
+      model: form.model.trim(),
+      fault_description: cleanFault,
+      preferred_contact: form.preferredContact,
+      status: 'new',
     })
+
     setSaving(false)
-    return
+
+    if (error) {
+      setErrors({
+        phone: '',
+        fault: '',
+        form: error.message,
+      })
+      return
+    }
+
+    setSubmitted(true)
   }
-
-  const { error } = await supabase.from('repair_requests').insert({
-    full_name: form.fullName.trim(),
-    phone: cleanPhone,
-    email: form.email.trim() || null,
-    brand: form.brand.trim(),
-    model: form.model.trim(),
-    fault_description: cleanFault,
-    preferred_contact: form.preferredContact,
-    status: 'new',
-  })
-
-  setSaving(false)
-
-  if (error) {
-    setErrors({
-      phone: '',
-      fault: '',
-      form: error.message,
-    })
-    return
-  }
-
-  setSubmitted(true)
-}
 
   if (submitted) {
     return (
       <main style={{ maxWidth: 820, margin: '0 auto', padding: 40 }}>
-        <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 16, padding: 24 }}>
+        <div
+          style={{
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            borderRadius: 16,
+            padding: 24,
+          }}
+        >
           <h2 style={{ marginTop: 0 }}>Request submitted</h2>
           <p style={{ color: '#065f46' }}>
             Your repair request was received and will be reviewed.
           </p>
-          <Link href="/" style={{ display: 'inline-block', marginTop: 12, color: '#065f46', fontWeight: 600 }}>
+          <Link
+            href="/"
+            style={{
+              display: 'inline-block',
+              marginTop: 12,
+              color: '#065f46',
+              fontWeight: 600,
+            }}
+          >
             Back to home
           </Link>
         </div>
@@ -149,21 +165,24 @@ export default function BookingPage() {
           style={fieldStyle}
         />
 
-       <input
- 	 value={form.phone}
-  	 onChange={(e) => setForm({ ...form, phone: e.target.value })}
- 	 placeholder="Phone"
- 	 required
- 	 inputMode="numeric"
- 	 maxLength={14}
+        <input
+          value={form.phone}
+          onChange={(e) => {
+            const value = e.target.value.replace(/\D/g, '')
+            setForm({ ...form, phone: value })
+          }}
+          placeholder="Phone"
+          required
+          inputMode="numeric"
+          maxLength={10}
+          style={fieldStyle}
+        />
 
-	 style={fieldStyle}errors.phone ? (
-  		<div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
-   		 {errors.phone}
-  		</div>
-	) : null}
-
-	/>										
+        {errors.phone ? (
+          <div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
+            {errors.phone}
+          </div>
+        ) : null}
 
         <input
           value={form.email}
@@ -207,16 +226,16 @@ export default function BookingPage() {
         <textarea
           value={form.fault}
           onChange={(e) => setForm({ ...form, fault: e.target.value })}
-          placeholder="Describe the problem, e.g. screen cracked, not charging, no sign of life, boots logo 	  then shuts down"
+          placeholder="Describe the problem, e.g. screen cracked, not charging, no sign of life, boots logo then shuts down"
           required
           style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }}
         />
 
-      	{errors.fault ? (
- 		<div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
-   		 {errors.fault}
-  		</div>
-	) : null}
+        {errors.fault ? (
+          <div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
+            {errors.fault}
+          </div>
+        ) : null}
 
         <input
           value={form.botField}
@@ -227,8 +246,8 @@ export default function BookingPage() {
         />
 
         {errors.form ? (
-  		<div style={{ color: '#b91c1c', fontSize: 14 }}>{errors.form}</div>
-	) : null}
+          <div style={{ color: '#b91c1c', fontSize: 14 }}>{errors.form}</div>
+        ) : null}
 
         <button
           type="submit"
@@ -239,9 +258,9 @@ export default function BookingPage() {
             border: 0,
             borderRadius: 10,
             padding: '12px 18px',
-
             fontWeight: 700,
-            cursor: 'pointer',          }}
+            cursor: 'pointer',
+          }}
         >
           {saving ? 'Submitting...' : 'Submit Request'}
         </button>
