@@ -13,7 +13,8 @@ export default function BookingPage() {
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(
+{
     fullName: '',
     phone: '',
     email: '',
@@ -21,6 +22,7 @@ export default function BookingPage() {
     model: '',
     fault: '',	
     preferredContact: 'SMS',
+    phone: cleanPhone,
   })
 
   async function handleSubmit(e: React.FormEvent) {
@@ -36,6 +38,8 @@ export default function BookingPage() {
       model: form.model.trim(),
       fault_description: form.fault.trim(),
       preferred_contact: form.preferredContact,
+      const cleanPhone = form.phone.replace(/[^\d+]/g, '').trim()
+      
     })
 
     setSaving(false)
@@ -48,6 +52,11 @@ export default function BookingPage() {
     setSubmitted(true)
   }
 
+if (form.fault.trim().length < 10) {
+  setError('Please describe the problem in a bit more detail.')
+  setSaving(false)
+  return
+}
   if (submitted) {
     return (
       <main style={{ maxWidth: 820, margin: '0 auto', padding: 40 }}>
