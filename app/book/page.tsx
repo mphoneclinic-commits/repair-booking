@@ -19,8 +19,18 @@ export default function BookingPage() {
     email: '',
     brand: '',
     model: '',
-    fault: '',
+    fault: '',	
+    preferredContact: 'SMS',
   })
+
+<select
+  value={form.preferredContact}
+  onChange={(e) => setForm({ ...form, preferredContact: e.target.value })}
+  style={fieldStyle}
+>
+  <option value="SMS">SMS</option>
+  <option value="Email">Email</option>
+</select>
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -34,6 +44,7 @@ export default function BookingPage() {
       brand: form.brand.trim(),
       model: form.model.trim(),
       fault_description: form.fault.trim(),
+      preferred_contact: form.preferredContact,
     })
 
     setSaving(false)
