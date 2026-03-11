@@ -12,7 +12,11 @@ const supabase = createClient(
 export default function BookingPage() {
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [errors, setErrors] = useState({
+  phone: '',
+  fault: '',
+  form: '',
+})
 
   const [form, setForm] = useState({
     fullName: '',
@@ -28,10 +32,18 @@ export default function BookingPage() {
   async function handleSubmit(e: React.FormEvent) {
   e.preventDefault()
   setSaving(true)
-  setError('')
+  setErrors({
+    phone: '',
+    fault: '',
+    form: '',
+  })
 
   if (form.botField.trim()) {
-    setError('Submission rejected.')
+    setErrors({
+      phone: '',
+      fault: '',
+      form: 'Submission rejected.',
+    })
     setSaving(false)
     return
   }
@@ -39,7 +51,11 @@ export default function BookingPage() {
   const cleanPhone = form.phone.replace(/\D/g, '')
 
   if (cleanPhone.length < 8 || cleanPhone.length > 10) {
-    setError('Phone number must be between 8 and 10 digits.')
+    setErrors({
+      phone: 'Phone number must be between 8 and 10 digits.',
+      fault: '',
+      form: '',
+    })
     setSaving(false)
     return
   }
@@ -47,7 +63,11 @@ export default function BookingPage() {
   const cleanFault = form.fault.trim()
 
   if (cleanFault.length < 8) {
-    setError('Fault description must be at least 8 characters.')
+    setErrors({
+      phone: '',
+      fault: 'Fault description must be at least 8 characters.',
+      form: '',
+    })
     setSaving(false)
     return
   }
@@ -66,7 +86,11 @@ export default function BookingPage() {
   setSaving(false)
 
   if (error) {
-    setError(error.message)
+    setErrors({
+      phone: '',
+      fault: '',
+      form: error.message,
+    })
     return
   }
 
@@ -147,8 +171,14 @@ export default function BookingPage() {
  	 required
  	 inputMode="numeric"
  	 maxLength={14}
-	 style={fieldStyle}
-	/>
+
+	 style={fieldStyle}errors.phone ? (
+  		<div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
+   		 {errors.phone}
+  		</div>
+	) : null}
+
+	/>										
 
         <input
           value={form.email}
@@ -197,6 +227,12 @@ export default function BookingPage() {
           style={{ ...fieldStyle, minHeight: 120, resize: 'vertical' }}
         />
 
+      	{errors.fault ? (
+ 		<div style={{ color: '#b91c1c', fontSize: 14, marginTop: -6 }}>
+   		 {errors.fault}
+  		</div>
+	) : null}
+
         <input
           value={form.botField}
           onChange={(e) => setForm({ ...form, botField: e.target.value })}
@@ -205,9 +241,9 @@ export default function BookingPage() {
           autoComplete="off"
         />
 
-        {error ? (
-          <div style={{ color: '#b91c1c', fontSize: 14 }}>{error}</div>
-        ) : null}
+        {errors.form ? (
+  		<div style={{ color: '#b91c1c', fontSize: 14 }}>{errors.form}</div>
+	) : null}
 
         <button
           type="submit"
