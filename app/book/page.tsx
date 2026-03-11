@@ -100,27 +100,12 @@ export default function BookingPage() {
   if (submitted) {
     return (
       <main style={{ maxWidth: 820, margin: '0 auto', padding: 40 }}>
-        <div
-          style={{
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
-            borderRadius: 16,
-            padding: 24,
-          }}
-        >
+        <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 16, padding: 24 }}>
           <h2 style={{ marginTop: 0 }}>Request submitted</h2>
           <p style={{ color: '#065f46' }}>
             Your repair request was received and will be reviewed.
           </p>
-          <Link
-            href="/"
-            style={{
-              display: 'inline-block',
-              marginTop: 12,
-              color: '#065f46',
-              fontWeight: 600,
-            }}
-          >
+          <Link href="/" style={{ display: 'inline-block', marginTop: 12, color: '#065f46', fontWeight: 600 }}>
             Back to home
           </Link>
         </div>
