@@ -1,102 +1,80 @@
 'use client'
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import styles from './admin.module.css'
+import type {
+  Invoice,
+  InvoiceStatus,
+  RepairRequest,
+  RepairStatus,
+  SaveField,
+  SaveState,
+  StatusFilter,
+  ViewMode,
+} from './types'
+import { BOARD_COLUMNS, getStatusLabel, STATUSES, formatDateTime } from './utils'
+import SummaryCard from './components/SummaryCard'
+import JobCard from './components/JobCard'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type RepairStatus =
-  | 'new'
-  | 'quoted'
-  | 'approved'
-  | 'in_progress'
-  | 'completed'
-  | 'closed'
-  | 'rejected'
-  | 'cancelled'
-
-type RepairRequest = {
-  id: string
-  job_number: string | null
-  created_at: string
-  full_name: string
-  phone: string
-  email: string | null
-  brand: string
-  model: string
-  device_type: string | null
-  fault_description: string
-  status: string
-  preferred_contact: string | null
-  internal_notes?: string | null
-  quoted_price?: number | null
-}
-
-type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
-type ViewMode = 'board' | 'list' | 'details' | 'tiles'
-
-const statuses = [
-  'all',
-  'new',
-  'quoted',
-  'approved',
-  'in_progress',
-  'completed',
-  'closed',
-  'rejected',
-  'cancelled',
-] as const
-
-const boardColumns = [
-  'new',
-  'quoted',
-  'approved',
-  'in_progress',
-  'completed',
-  'closed',
-] as const
-
-type StatusFilter = (typeof statuses)[number]
-type SaveField = 'status' | 'quote' | 'notes'
+type InvoiceActionState = 'idle' | 'saving' | 'error'
 
 export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
+  const [invoicesByJobId, setInvoicesByJobId] = useState<Record<string, Invoice>>({})
+  const [invoiceActionStates, setInvoiceActionStates] = useState<
+    Record<string, InvoiceActionState>
+  >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('board')
-  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({})
   const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({})
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({})
+  const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<RepairStatus | null>(null)
 
   function getFieldKey(jobId: string, field: SaveField) {
     return `${jobId}:${field}`
   }
 
   function setFieldState(jobId: string, field: SaveField, state: SaveState) {
-    setSaveStates((prev) => ({ ...prev, [getFieldKey(jobId, field)]: state }))
+    setSaveStates((prev) => ({
+      ...prev,
+      [getFieldKey(jobId, field)]: state,
+    }))
   }
 
   function setFieldSaved(jobId: string, field: SaveField) {
     const key = getFieldKey(jobId, field)
 
-    setSaveStates((prev) => ({ ...prev, [key]: 'saved' }))
+    setSaveStates((prev) => ({
+      ...prev,
+      [key]: 'saved',
+    }))
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       setSaveStates((prev) => {
         if (prev[key] !== 'saved') return prev
-        return { ...prev, [key]: 'idle' }
+        return {
+          ...prev,
+          [key]: 'idle',
+        }
       })
-    }, 1400)
+    }, 1300)
+  }
+
+  function setInvoiceActionState(jobId: string, state: InvoiceActionState) {
+    setInvoiceActionStates((prev) => ({
+      ...prev,
+      [jobId]: state,
+    }))
   }
 
   function toggleExpanded(jobId: string) {
@@ -107,8 +85,6 @@ export default function AdminPage() {
   }
 
   async function loadJobs() {
-    setLoading(true)
-
     const { data, error } = await supabase
       .from('repair_requests')
       .select(`
@@ -130,15 +106,84 @@ export default function AdminPage() {
       .order('created_at', { ascending: false })
 
     if (error) {
-      setError(error.message)
-      setLoading(false)
-      return
+      throw error
     }
 
-    setJobs((data || []) as RepairRequest[])
-    setError('')
-    setLoading(false)
+    const safeJobs = ((data || []) as RepairRequest[]).map((job) => ({
+      ...job,
+      internal_notes: job.internal_notes ?? '',
+      quoted_price: job.quoted_price ?? null,
+    }))
+
+    setJobs(safeJobs)
+
+    setExpandedJobs((prev) => {
+      const next = { ...prev }
+      for (const job of safeJobs) {
+        if (!(job.id in next)) next[job.id] = false
+      }
+      return next
+    })
   }
+
+  async function loadInvoices() {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        subtotal,
+        total,
+        notes,
+        issued_at,
+        paid_at,
+        created_at,
+        updated_at
+      `)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    const latestByJob: Record<string, Invoice> = {}
+
+    for (const raw of (data || []) as Invoice[]) {
+      if (!latestByJob[raw.repair_request_id]) {
+        latestByJob[raw.repair_request_id] = {
+          ...raw,
+          subtotal: Number(raw.subtotal ?? 0),
+          total: Number(raw.total ?? 0),
+        }
+      }
+    }
+
+    setInvoicesByJobId(latestByJob)
+  }
+
+  async function loadAllData() {
+    setLoading(true)
+    setError('')
+
+    try {
+      await Promise.all([loadJobs(), loadInvoices()])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load dashboard data'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadAllData()
+  }, [])
 
   async function updateStatus(id: string, newStatus: RepairStatus) {
     const existingJob = jobs.find((job) => job.id === id)
@@ -151,6 +196,12 @@ export default function AdminPage() {
 
     setFieldState(id, 'status', 'saving')
 
+    const previousJobs = jobs
+
+    setJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
+    )
+
     const { data, error } = await supabase
       .from('repair_requests')
       .update({ status: newStatus })
@@ -158,23 +209,15 @@ export default function AdminPage() {
       .select('id, status')
       .single()
 
-    if (error) {
+    if (error || !data?.status) {
+      setJobs(previousJobs)
       setFieldState(id, 'status', 'error')
-      alert(`Status update failed: ${error.message}`)
-      return
-    }
-
-    const returnedStatus = data?.status as string | undefined
-
-    if (!returnedStatus) {
-      setFieldState(id, 'status', 'error')
-      alert('Status update failed: database did not return a status.')
       return
     }
 
     setJobs((prev) =>
       prev.map((job) =>
-        job.id === id ? { ...job, status: returnedStatus } : job
+        job.id === id ? { ...job, status: data.status as RepairStatus } : job
       )
     )
 
@@ -193,7 +236,6 @@ export default function AdminPage() {
 
     if (error) {
       setFieldState(id, 'quote', 'error')
-      alert(`Quote update failed: ${error.message}`)
       return false
     }
 
@@ -225,7 +267,6 @@ export default function AdminPage() {
 
     if (error) {
       setFieldState(id, 'notes', 'error')
-      alert(`Notes update failed: ${error.message}`)
       return false
     }
 
@@ -247,12 +288,292 @@ export default function AdminPage() {
     return true
   }
 
-  useEffect(() => {
-    loadJobs()
-  }, [])
+  async function updateJobBasics(
+    id: string,
+    updates: Partial<
+      Pick<
+        RepairRequest,
+        | 'job_number'
+        | 'full_name'
+        | 'phone'
+        | 'email'
+        | 'brand'
+        | 'model'
+        | 'device_type'
+        | 'fault_description'
+      >
+    >,
+    field: 'job_number' | 'customer' | 'device'
+  ) {
+    setFieldState(id, field, 'saving')
+
+    const previousJobs = jobs
+
+    setJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, ...updates } : job))
+    )
+
+    const { data, error } = await supabase
+      .from('repair_requests')
+      .update(updates)
+      .eq('id', id)
+      .select(`
+        id,
+        job_number,
+        full_name,
+        phone,
+        email,
+        brand,
+        model,
+        device_type,
+        fault_description
+      `)
+      .single()
+
+    if (error || !data) {
+      setJobs(previousJobs)
+      setFieldState(id, field, 'error')
+      return false
+    }
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              job_number: data.job_number ?? null,
+              full_name: data.full_name,
+              phone: data.phone,
+              email: data.email ?? null,
+              brand: data.brand,
+              model: data.model,
+              device_type: data.device_type ?? null,
+              fault_description: data.fault_description,
+            }
+          : job
+      )
+    )
+
+    setFieldSaved(id, field)
+    return true
+  }
+
+  async function createInvoiceForJob(job: RepairRequest) {
+    const existing = invoicesByJobId[job.id]
+    if (existing) return
+
+    setInvoiceActionState(job.id, 'saving')
+
+    const { data: invoiceNumberData, error: invoiceNumberError } = await supabase.rpc(
+      'generate_invoice_number'
+    )
+
+    if (invoiceNumberError || !invoiceNumberData) {
+      setInvoiceActionState(job.id, 'error')
+      return
+    }
+
+    const invoiceNumber = String(invoiceNumberData)
+    const amount = Number(job.quoted_price ?? 0)
+    const defaultDescription = `Repair service for ${job.brand} ${job.model}`.trim()
+
+    const { data: insertedInvoice, error: invoiceInsertError } = await supabase
+      .from('invoices')
+      .insert({
+        repair_request_id: job.id,
+        invoice_number: invoiceNumber,
+        status: 'draft',
+        customer_name: job.full_name,
+        customer_phone: job.phone,
+        customer_email: job.email,
+        subtotal: amount,
+        total: amount,
+        notes: job.internal_notes || null,
+      })
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        subtotal,
+        total,
+        notes,
+        issued_at,
+        paid_at,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (invoiceInsertError || !insertedInvoice) {
+      setInvoiceActionState(job.id, 'error')
+      return
+    }
+
+    const { error: itemInsertError } = await supabase.from('invoice_items').insert({
+      invoice_id: insertedInvoice.id,
+      description: defaultDescription,
+      qty: 1,
+      unit_price: amount,
+      line_total: amount,
+      sort_order: 0,
+    })
+
+    if (itemInsertError) {
+      await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
+      setInvoiceActionState(job.id, 'error')
+      return
+    }
+
+    setInvoicesByJobId((prev) => ({
+      ...prev,
+      [job.id]: {
+        ...(insertedInvoice as Invoice),
+        subtotal: Number(insertedInvoice.subtotal ?? 0),
+        total: Number(insertedInvoice.total ?? 0),
+      },
+    }))
+
+    setInvoiceActionState(job.id, 'idle')
+  }
+
+  async function updateInvoiceStatusForJob(invoiceId: string, status: InvoiceStatus) {
+    const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+    if (!invoice) return
+
+    setInvoiceActionState(invoice.repair_request_id, 'saving')
+
+    const updates: {
+      status: InvoiceStatus
+      issued_at?: string | null
+      paid_at?: string | null
+    } = { status }
+
+    if (status === 'issued') {
+      updates.issued_at = new Date().toISOString()
+    }
+
+    if (status === 'paid') {
+      updates.paid_at = new Date().toISOString()
+      if (!invoice.issued_at) {
+        updates.issued_at = new Date().toISOString()
+      }
+    }
+
+    if (status === 'void') {
+      updates.paid_at = null
+    }
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .update(updates)
+      .eq('id', invoiceId)
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        subtotal,
+        total,
+        notes,
+        issued_at,
+        paid_at,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (error || !data) {
+      setInvoiceActionState(invoice.repair_request_id, 'error')
+      return
+    }
+
+    setInvoicesByJobId((prev) => ({
+      ...prev,
+      [invoice.repair_request_id]: {
+        ...(data as Invoice),
+        subtotal: Number(data.subtotal ?? 0),
+        total: Number(data.total ?? 0),
+      },
+    }))
+
+    setInvoiceActionState(invoice.repair_request_id, 'idle')
+  }
+
+  function handleDragStart(jobId: string) {
+    setDraggedJobId(jobId)
+  }
+
+  function handleDragEnd() {
+    setDraggedJobId(null)
+    setDragOverStatus(null)
+  }
+
+  function handleColumnDragOver(
+    event: React.DragEvent<HTMLDivElement>,
+    status: RepairStatus
+  ) {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+
+    if (dragOverStatus !== status) {
+      setDragOverStatus(status)
+    }
+  }
+
+  function handleColumnDragLeave(
+    event: React.DragEvent<HTMLDivElement>,
+    status: RepairStatus
+  ) {
+    const nextTarget = event.relatedTarget as Node | null
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return
+
+    if (dragOverStatus === status) {
+      setDragOverStatus(null)
+    }
+  }
+
+  async function handleColumnDrop(
+    event: React.DragEvent<HTMLDivElement>,
+    status: RepairStatus
+  ) {
+    event.preventDefault()
+
+    const droppedJobId =
+      draggedJobId || event.dataTransfer.getData('text/plain') || null
+
+    setDragOverStatus(null)
+
+    if (!droppedJobId) {
+      setDraggedJobId(null)
+      return
+    }
+
+    const draggedJob = jobs.find((job) => job.id === droppedJobId)
+    if (!draggedJob) {
+      setDraggedJobId(null)
+      return
+    }
+
+    if (draggedJob.status !== status) {
+      await updateStatus(droppedJobId, status)
+    }
+
+    setDraggedJobId(null)
+  }
 
   const filteredJobs = useMemo(() => {
-    const searchTerm = search.trim().toLowerCase()
+    const term = search.trim().toLowerCase()
 
     return jobs.filter((job) => {
       const matchesStatus =
@@ -268,111 +589,106 @@ export default function AdminPage() {
         job.device_type || '',
         job.fault_description,
         job.status,
+        job.preferred_contact || '',
         job.internal_notes || '',
         job.quoted_price != null ? String(job.quoted_price) : '',
+        invoicesByJobId[job.id]?.invoice_number || '',
+        invoicesByJobId[job.id]?.status || '',
       ]
         .join(' ')
         .toLowerCase()
 
-      const matchesSearch = searchTerm ? haystack.includes(searchTerm) : true
+      const matchesSearch = term ? haystack.includes(term) : true
 
       return matchesStatus && matchesSearch
     })
-  }, [jobs, search, statusFilter])
+  }, [jobs, search, statusFilter, invoicesByJobId])
 
   const jobsByStatus = useMemo(() => {
-    return boardColumns.reduce((acc, status) => {
+    return BOARD_COLUMNS.reduce((acc, status) => {
       acc[status] = filteredJobs.filter((job) => job.status === status)
       return acc
-    }, {} as Record<(typeof boardColumns)[number], RepairRequest[]>)
+    }, {} as Record<RepairStatus, RepairRequest[]>)
   }, [filteredJobs])
 
   const hiddenJobs = useMemo(() => {
-    return filteredJobs.filter(
-      (job) =>
-        !boardColumns.includes(job.status as (typeof boardColumns)[number])
-    )
+    return filteredJobs.filter((job) => !BOARD_COLUMNS.includes(job.status))
   }, [filteredJobs])
 
+  const summary = useMemo(() => {
+    const totalJobs = filteredJobs.length
+    const quotedCount = filteredJobs.filter((j) => j.status === 'quoted').length
+    const inProgressCount = filteredJobs.filter((j) => j.status === 'in_progress').length
+    const readyCount = filteredJobs.filter((j) => j.status === 'completed').length
+    const quotedValue = filteredJobs.reduce((sum, j) => sum + (j.quoted_price ?? 0), 0)
+    const invoiceCount = filteredJobs.filter((j) => !!invoicesByJobId[j.id]).length
+
+    return {
+      totalJobs,
+      quotedCount,
+      inProgressCount,
+      readyCount,
+      quotedValue,
+      invoiceCount,
+    }
+  }, [filteredJobs, invoicesByJobId])
+
   return (
-    <main style={{ maxWidth: 1720, margin: '0 auto', padding: 24 }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-          marginBottom: 20,
-        }}
-      >
+    <main className={styles.page}>
+      <div className={styles.topBar}>
         <div>
-          <h1 style={{ fontSize: 32, margin: 0 }}>Admin Dashboard</h1>
-          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
-            Repair bookings, workflow, quotes and internal notes
+          <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
+          <h1 className={styles.pageTitle}>Admin Dashboard</h1>
+          <p className={styles.pageSubtitle}>
+            Repair jobs, quotes, notes, editing and workflow management
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setViewMode('board')}
-            style={viewButtonStyle(viewMode === 'board')}
-          >
-            Job Cards
-          </button>
+        <div className={styles.toolbar}>
+          {(['board', 'list', 'details', 'tiles'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              className={`${styles.viewButton} ${
+                viewMode === mode ? styles.viewButtonActive : ''
+              }`}
+            >
+              {mode === 'board'
+                ? 'Job Cards'
+                : mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
 
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            style={viewButtonStyle(viewMode === 'list')}
-          >
-            List
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode('details')}
-            style={viewButtonStyle(viewMode === 'details')}
-          >
-            Details
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode('tiles')}
-            style={viewButtonStyle(viewMode === 'tiles')}
-          >
-            Tiles
-          </button>
-
-          <button type="button" onClick={loadJobs} style={buttonStyle}>
+          <button type="button" onClick={() => void loadAllData()} className={styles.button}>
             Refresh
           </button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1.5fr 1fr',
-          gap: 12,
-          marginBottom: 20,
-        }}
-      >
+      <div className={styles.summaryGrid}>
+        <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
+        <SummaryCard label="Quoted" value={String(summary.quotedCount)} />
+        <SummaryCard label="In Progress" value={String(summary.inProgressCount)} />
+        <SummaryCard label="Ready" value={String(summary.readyCount)} />
+        <SummaryCard label="Invoices" value={String(summary.invoiceCount)} />
+        <SummaryCard label="Quoted Value" value={`$${summary.quotedValue.toFixed(2)}`} />
+      </div>
+
+      <div className={styles.filtersWrap}>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by customer, phone, job number, brand, model..."
-          style={fieldStyle}
+          placeholder="Search customer, phone, job number, device, notes, invoice..."
+          className={styles.field}
         />
 
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          style={fieldStyle}
+          className={styles.field}
         >
-          {statuses.map((status) => (
+          {STATUSES.map((status) => (
             <option key={status} value={status}>
               {getStatusLabel(status)}
             </option>
@@ -380,79 +696,47 @@ export default function AdminPage() {
         </select>
       </div>
 
-      <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>
-        Showing {filteredJobs.length} of {jobs.length} jobs
-      </p>
+      <div className={styles.statsBar}>
+        Showing <strong>{filteredJobs.length}</strong> of <strong>{jobs.length}</strong> jobs
+      </div>
 
-      {loading && <p>Loading jobs...</p>}
-      {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
+      {loading && <p className={styles.message}>Loading jobs...</p>}
+      {!!error && <p className={styles.errorText}>{error}</p>}
       {!loading && !error && filteredJobs.length === 0 && (
-        <p>No matching repair requests.</p>
+        <p className={styles.message}>No matching repair requests.</p>
       )}
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'board' && (
         <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(6, minmax(290px, 1fr))',
-              gap: 16,
-              alignItems: 'start',
-              overflowX: 'auto',
-              paddingBottom: 8,
-            }}
-          >
-            {boardColumns.map((status) => (
+          <div className={styles.boardWrap}>
+            {BOARD_COLUMNS.map((status) => (
               <div
                 key={status}
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 16,
-                  padding: 12,
-                  minHeight: 320,
-                }}
+                className={`${styles.column} ${
+                  dragOverStatus === status ? styles.columnDragOver : ''
+                }`}
+                onDragOver={(e) => handleColumnDragOver(e, status)}
+                onDragLeave={(e) => handleColumnDragLeave(e, status)}
+                onDrop={(e) => void handleColumnDrop(e, status)}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 12,
-                  }}
-                >
-                  <span style={statusBadgeStyle(status)}>
-                    {getStatusLabel(status)}
-                  </span>
-
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: '#475569',
-                    }}
-                  >
-                    {jobsByStatus[status].length}
-                  </span>
+                <div className={styles.columnHeaderSticky}>
+                  <div className={styles.columnHeader}>
+                    <span
+                      className={`${styles.statusBadge} ${styles[`status_${status}`]}`}
+                    >
+                      {getStatusLabel(status)}
+                    </span>
+                    <span className={styles.columnCount}>
+                      {jobsByStatus[status]?.length || 0}
+                    </span>
+                  </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {jobsByStatus[status].length === 0 ? (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: '#64748b',
-                        padding: 12,
-                        borderRadius: 10,
-                        border: '1px dashed #cbd5e1',
-                        background: 'white',
-                      }}
-                    >
-                      No jobs
-                    </div>
+                <div className={styles.columnCardsWrap}>
+                  {(jobsByStatus[status] || []).length === 0 ? (
+                    <div className={styles.emptyColumn}>No jobs</div>
                   ) : (
-                    jobsByStatus[status].map((job) => (
+                    (jobsByStatus[status] || []).map((job) => (
                       <JobCard
                         key={job.id}
                         job={job}
@@ -461,10 +745,22 @@ export default function AdminPage() {
                         updateStatus={updateStatus}
                         updateQuote={updateQuote}
                         updateNotes={updateNotes}
-                        statusSaveState={saveStates[getFieldKey(job.id, 'status')] || 'idle'}
-                        quoteSaveState={saveStates[getFieldKey(job.id, 'quote')] || 'idle'}
-                        notesSaveState={saveStates[getFieldKey(job.id, 'notes')] || 'idle'}
+                        updateJobBasics={updateJobBasics}
+                        statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                        quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                        notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                        jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                        customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                        deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
                         setFieldState={setFieldState}
+                        draggableEnabled
+                        isDragging={draggedJobId === job.id}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                        invoice={invoicesByJobId[job.id] ?? null}
+                        invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                        createInvoiceForJob={createInvoiceForJob}
+                        updateInvoiceStatusForJob={updateInvoiceStatusForJob}
                       />
                     ))
                   )}
@@ -474,9 +770,9 @@ export default function AdminPage() {
           </div>
 
           {hiddenJobs.length > 0 && (
-            <div style={{ marginTop: 28 }}>
-              <h2 style={{ fontSize: 20, marginBottom: 12 }}>Other statuses</h2>
-              <div style={{ display: 'grid', gap: 12 }}>
+            <section className={styles.otherStatusesSection}>
+              <h2 className={styles.sectionTitle}>Other statuses</h2>
+              <div className={styles.listGrid}>
                 {hiddenJobs.map((job) => (
                   <JobCard
                     key={job.id}
@@ -486,72 +782,58 @@ export default function AdminPage() {
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
                     updateNotes={updateNotes}
-                    statusSaveState={saveStates[getFieldKey(job.id, 'status')] || 'idle'}
-                    quoteSaveState={saveStates[getFieldKey(job.id, 'quote')] || 'idle'}
-                    notesSaveState={saveStates[getFieldKey(job.id, 'notes')] || 'idle'}
+                    updateJobBasics={updateJobBasics}
+                    statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                    quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                    notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                    jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                    customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                    deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
                     setFieldState={setFieldState}
+                    draggableEnabled
+                    isDragging={draggedJobId === job.id}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    invoice={invoicesByJobId[job.id] ?? null}
+                    invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                    createInvoiceForJob={createInvoiceForJob}
+                    updateInvoiceStatusForJob={updateInvoiceStatusForJob}
                   />
                 ))}
               </div>
-            </div>
+            </section>
           )}
         </>
       )}
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'tiles' && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-            gap: 14,
-          }}
-        >
+        <div className={styles.tilesGrid}>
           {filteredJobs.map((job) => (
-            <div
-              key={job.id}
-              style={{
-                border: '1px solid #e2e8f0',
-                borderRadius: 14,
-                background: 'white',
-                padding: 14,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  marginBottom: 8,
-                  alignItems: 'center',
-                }}
-              >
-                <strong style={{ fontSize: 14 }}>
-                  {job.job_number || 'Pending'}
-                </strong>
-                <span style={statusBadgeStyle(job.status)}>
+            <div key={job.id} className={styles.tile}>
+              <div className={styles.tileHeader}>
+                <strong>{job.job_number || 'Pending'}</strong>
+                <span
+                  className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}
+                >
                   {getStatusLabel(job.status)}
                 </span>
               </div>
 
-              <p style={{ margin: '0 0 4px', fontWeight: 700 }}>
-                {job.full_name}
-              </p>
-              <p style={{ margin: '0 0 4px', fontSize: 14 }}>{job.phone}</p>
-              <p style={{ margin: '8px 0 4px', fontSize: 14 }}>
+              <p className={styles.tileName}>{job.full_name}</p>
+              <p className={styles.tileText}>{job.phone}</p>
+              <p className={styles.tileDevice}>
                 {job.brand} {job.model}
               </p>
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#475569' }}>
-                {job.fault_description}
+              <p className={styles.tileText}>{job.fault_description}</p>
+              <p className={styles.tileText}>
+                <strong>Booked:</strong> {formatDateTime(job.created_at)}
               </p>
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#334155' }}>
-                <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+              <p className={styles.tileText}>
+                <strong>Quote:</strong> {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
               </p>
-              <p style={{ margin: 0, fontSize: 13, color: '#334155' }}>
-                Quote:{' '}
-                <strong>
-                  {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-                </strong>
+              <p className={styles.tileText}>
+                <strong>Invoice:</strong>{' '}
+                {invoicesByJobId[job.id]?.invoice_number || '-'}
               </p>
             </div>
           ))}
@@ -559,44 +841,39 @@ export default function AdminPage() {
       )}
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'list' && (
-        <div
-          style={{
-            background: 'white',
-            border: '1px solid #e2e8f0',
-            borderRadius: 14,
-            overflowX: 'auto',
-          }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
             <thead>
-              <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
-                <th style={thStyle}>Job</th>
-                <th style={thStyle}>Customer</th>
-                <th style={thStyle}>Phone</th>
-                <th style={thStyle}>Device</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Quote</th>
-                <th style={thStyle}>Booked In</th>
+              <tr>
+                <th>Job</th>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Quote</th>
+                <th>Invoice</th>
+                <th>Booked In</th>
               </tr>
             </thead>
             <tbody>
               {filteredJobs.map((job) => (
-                <tr key={job.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                  <td style={tdStyle}>{job.job_number || 'Pending'}</td>
-                  <td style={tdStyle}>{job.full_name}</td>
-                  <td style={tdStyle}>{job.phone}</td>
-                  <td style={tdStyle}>
+                <tr key={job.id}>
+                  <td>{job.job_number || 'Pending'}</td>
+                  <td>{job.full_name}</td>
+                  <td>{job.phone}</td>
+                  <td>
                     {job.brand} {job.model}
                   </td>
-                  <td style={tdStyle}>
-                    <span style={statusBadgeStyle(job.status)}>
+                  <td>
+                    <span
+                      className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}
+                    >
                       {getStatusLabel(job.status)}
                     </span>
                   </td>
-                  <td style={tdStyle}>
-                    {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-                  </td>
-                  <td style={tdStyle}>{formatDateTime(job.created_at)}</td>
+                  <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
+                  <td>{invoicesByJobId[job.id]?.invoice_number || '-'}</td>
+                  <td>{formatDateTime(job.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -605,575 +882,32 @@ export default function AdminPage() {
       )}
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'details' && (
-        <div style={{ display: 'grid', gap: 12 }}>
+        <div className={styles.listGrid}>
           {filteredJobs.map((job) => (
             <JobCard
               key={job.id}
               job={job}
-              expanded={true}
+              expanded={!!expandedJobs[job.id]}
               toggleExpanded={toggleExpanded}
               updateStatus={updateStatus}
               updateQuote={updateQuote}
               updateNotes={updateNotes}
-              statusSaveState={saveStates[getFieldKey(job.id, 'status')] || 'idle'}
-              quoteSaveState={saveStates[getFieldKey(job.id, 'quote')] || 'idle'}
-              notesSaveState={saveStates[getFieldKey(job.id, 'notes')] || 'idle'}
+              updateJobBasics={updateJobBasics}
+              statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+              quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+              notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+              jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+              customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+              deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
               setFieldState={setFieldState}
+              invoice={invoicesByJobId[job.id] ?? null}
+              invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+              createInvoiceForJob={createInvoiceForJob}
+              updateInvoiceStatusForJob={updateInvoiceStatusForJob}
             />
           ))}
         </div>
       )}
     </main>
   )
-}
-
-function JobCard({
-  job,
-  expanded,
-  toggleExpanded,
-  updateStatus,
-  updateQuote,
-  updateNotes,
-  statusSaveState,
-  quoteSaveState,
-  notesSaveState,
-  setFieldState,
-}: {
-  job: RepairRequest
-  expanded: boolean
-  toggleExpanded: (jobId: string) => void
-  updateStatus: (id: string, newStatus: RepairStatus) => Promise<void>
-  updateQuote: (id: string, price: number | null) => Promise<boolean | void>
-  updateNotes: (id: string, notes: string) => Promise<boolean | void>
-  statusSaveState: SaveState
-  quoteSaveState: SaveState
-  notesSaveState: SaveState
-  setFieldState: (jobId: string, field: SaveField, state: SaveState) => void
-}) {
-  const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
-  const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
-
-  const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const quoteFocusedRef = useRef(false)
-  const notesFocusedRef = useRef(false)
-
-  useEffect(() => {
-    if (!quoteFocusedRef.current) {
-      setLocalQuote(job.quoted_price?.toString() ?? '')
-    }
-  }, [job.quoted_price])
-
-  useEffect(() => {
-    if (!notesFocusedRef.current) {
-      setLocalNotes(job.internal_notes ?? '')
-    }
-  }, [job.internal_notes])
-
-  useEffect(() => {
-    return () => {
-      if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
-      if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    }
-  }, [])
-
-  function normalizeQuoteInput(value: string) {
-    const cleaned = value.replace(/[^\d.]/g, '')
-    const firstDotIndex = cleaned.indexOf('.')
-
-    if (firstDotIndex === -1) return cleaned
-
-    const beforeDot = cleaned.slice(0, firstDotIndex + 1)
-    const afterDot = cleaned
-      .slice(firstDotIndex + 1)
-      .replace(/\./g, '')
-      .slice(0, 2)
-
-    return `${beforeDot}${afterDot}`
-  }
-
-  async function flushQuote(rawValue: string) {
-    const normalized = normalizeQuoteInput(rawValue).trim()
-    const nextValue =
-      normalized === '' ? null : Number.isNaN(Number(normalized)) ? null : Number(normalized)
-
-    const currentDbValue = job.quoted_price ?? null
-
-    if (nextValue === currentDbValue) {
-      return
-    }
-
-    await updateQuote(job.id, nextValue)
-  }
-
-  async function flushNotes(value: string) {
-    const currentDbValue = job.internal_notes ?? ''
-    if (value === currentDbValue) return
-    await updateNotes(job.id, value)
-  }
-
-  function handleQuoteChange(value: string) {
-    const normalized = normalizeQuoteInput(value)
-    setLocalQuote(normalized)
-    setFieldState(job.id, 'quote', 'dirty')
-
-    if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
-    quoteTimerRef.current = setTimeout(() => {
-      void flushQuote(normalized)
-    }, 700)
-  }
-
-  function handleNotesChange(value: string) {
-    setLocalNotes(value)
-    setFieldState(job.id, 'notes', 'dirty')
-
-    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    notesTimerRef.current = setTimeout(() => {
-      void flushNotes(value)
-    }, 900)
-  }
-
-  async function handleQuoteBlur() {
-    quoteFocusedRef.current = false
-    if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
-    await flushQuote(localQuote)
-  }
-
-  async function handleNotesBlur() {
-    notesFocusedRef.current = false
-    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    await flushNotes(localNotes)
-  }
-
-  return (
-    <div
-      style={{
-        border: '1px solid #e2e8f0',
-        borderRadius: 14,
-        padding: 14,
-        background: 'white',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 10,
-          gap: 8,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <strong style={{ fontSize: 16 }}>
-          {job.job_number || 'Pending Job Number'}
-        </strong>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={statusBadgeStyle(job.status)}>{getStatusLabel(job.status)}</span>
-          <SaveIndicator state={statusSaveState} compact />
-
-          <button
-            type="button"
-            onClick={() => toggleExpanded(job.id)}
-            style={miniButtonStyle}
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          border: '1px solid #e2e8f0',
-          borderRadius: 12,
-          background: '#f8fafc',
-          padding: 10,
-          marginBottom: 10,
-        }}
-      >
-        <p style={{ margin: '0 0 6px', fontSize: 15 }}>
-          <strong>{job.full_name}</strong>
-        </p>
-
-        <p style={{ margin: '0 0 4px', fontSize: 14 }}>
-          <strong>Phone:</strong> {job.phone}
-        </p>
-
-        {job.email && (
-          <p style={{ margin: 0, fontSize: 14 }}>
-            <strong>Email:</strong> {job.email}
-          </p>
-        )}
-      </div>
-
-      <p
-        style={{
-          margin: '0 0 4px',
-          fontSize: 15,
-          fontWeight: 700,
-        }}
-      >
-        {job.brand} {job.model}
-        {job.device_type ? ` • ${job.device_type}` : ''}
-      </p>
-
-      <p
-        style={{
-          margin: '0 0 8px',
-          fontSize: 13,
-          color: '#334155',
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        {job.fault_description}
-      </p>
-
-      {!expanded ? (
-        <>
-          <p style={{ margin: '0 0 4px', fontSize: 13, color: '#334155' }}>
-            <strong>Booked in:</strong> {formatDateTime(job.created_at)}
-          </p>
-
-          <p style={{ margin: '0 0 4px', fontSize: 13, color: '#475569' }}>
-            Quote:{' '}
-            <strong>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</strong>
-          </p>
-        </>
-      ) : (
-        <>
-          {job.preferred_contact && (
-            <p style={{ margin: '0 0 6px', fontSize: 14 }}>
-              <strong>Preferred:</strong> {job.preferred_contact}
-            </p>
-          )}
-
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#334155' }}>
-            <strong>Booked in:</strong> {formatDateTime(job.created_at)}
-          </p>
-
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Quote ($)</label>
-              <SaveIndicator state={quoteSaveState} />
-            </div>
-
-            <input
-              inputMode="decimal"
-              value={localQuote}
-              placeholder="Enter quote"
-              style={smallFieldStyle}
-              onFocus={() => {
-                quoteFocusedRef.current = true
-              }}
-              onBlur={handleQuoteBlur}
-              onChange={(e) => handleQuoteChange(e.target.value)}
-            />
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Internal Notes</label>
-              <SaveIndicator state={notesSaveState} />
-            </div>
-
-            <textarea
-              value={localNotes}
-              placeholder="Diagnostics, parts ordered, approvals, reminders..."
-              style={notesStyle}
-              onFocus={() => {
-                notesFocusedRef.current = true
-              }}
-              onBlur={handleNotesBlur}
-              onChange={(e) => handleNotesChange(e.target.value)}
-            />
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'new')}
-              style={statusButtonStyle(job.status === 'new')}
-            >
-              New
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'quoted')}
-              style={statusButtonStyle(job.status === 'quoted')}
-            >
-              Quoted
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'approved')}
-              style={statusButtonStyle(job.status === 'approved')}
-            >
-              Approved
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'in_progress')}
-              style={statusButtonStyle(job.status === 'in_progress')}
-            >
-              In Progress
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'completed')}
-              style={statusButtonStyle(job.status === 'completed')}
-            >
-              Ready
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'closed')}
-              style={statusButtonStyle(job.status === 'closed')}
-            >
-              Closed
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'rejected')}
-              style={statusButtonStyle(job.status === 'rejected')}
-            >
-              Reject
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateStatus(job.id, 'cancelled')}
-              style={statusButtonStyle(job.status === 'cancelled')}
-            >
-              Cancel
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-function SaveIndicator({
-  state,
-  compact = false,
-}: {
-  state: SaveState
-  compact?: boolean
-}) {
-  const style: CSSProperties = {
-    fontSize: compact ? 11 : 12,
-    minWidth: compact ? 50 : 72,
-    textAlign: 'right',
-  }
-
-  if (state === 'dirty') {
-    return <span style={{ ...style, color: '#475569' }}>Typing...</span>
-  }
-
-  if (state === 'saving') {
-    return <span style={{ ...style, color: '#b45309' }}>Saving...</span>
-  }
-
-  if (state === 'saved') {
-    return <span style={{ ...style, color: '#166534' }}>Saved</span>
-  }
-
-  if (state === 'error') {
-    return <span style={{ ...style, color: '#b91c1c' }}>Save failed</span>
-  }
-
-  return <span style={{ ...style, color: '#94a3b8' }}> </span>
-}
-
-function formatDateTime(dateString: string) {
-  return new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Melbourne',
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  }).format(new Date(dateString))
-}
-
-const fieldStyle: CSSProperties = {
-  width: '100%',
-  padding: '12px 14px',
-  borderRadius: 10,
-  border: '1px solid #cbd5e1',
-  fontSize: 16,
-  boxSizing: 'border-box',
-  background: 'white',
-}
-
-const smallFieldStyle: CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  fontSize: 14,
-  boxSizing: 'border-box',
-  background: 'white',
-  marginTop: 4,
-}
-
-const notesStyle: CSSProperties = {
-  width: '100%',
-  minHeight: 90,
-  padding: '8px 10px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  fontSize: 13,
-  boxSizing: 'border-box',
-  background: 'white',
-  marginTop: 4,
-  resize: 'vertical',
-}
-
-const buttonStyle: CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#f8fafc',
-  cursor: 'pointer',
-  fontWeight: 600,
-}
-
-const miniButtonStyle: CSSProperties = {
-  padding: '6px 10px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#f8fafc',
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 12,
-}
-
-function viewButtonStyle(active: boolean): CSSProperties {
-  return {
-    padding: '10px 14px',
-    borderRadius: 8,
-    border: active ? '1px solid #2563eb' : '1px solid #cbd5e1',
-    background: active ? '#dbeafe' : '#f8fafc',
-    cursor: 'pointer',
-    fontWeight: 600,
-  }
-}
-
-function statusButtonStyle(active: boolean): CSSProperties {
-  return {
-    padding: '7px 10px',
-    borderRadius: 8,
-    border: active ? '1px solid #059669' : '1px solid #cbd5e1',
-    background: active ? '#d1fae5' : '#f8fafc',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: 13,
-  }
-}
-
-function statusBadgeStyle(status: string): CSSProperties {
-  const styles: Record<string, CSSProperties> = {
-    new: {
-      background: '#dcfce7',
-      border: '1px solid #22c55e',
-      color: '#166534',
-    },
-    quoted: {
-      background: '#dbeafe',
-      border: '1px solid #3b82f6',
-      color: '#1e3a8a',
-    },
-    approved: {
-      background: '#ede9fe',
-      border: '1px solid #8b5cf6',
-      color: '#4c1d95',
-    },
-    in_progress: {
-      background: '#ffedd5',
-      border: '1px solid #f97316',
-      color: '#7c2d12',
-    },
-    completed: {
-      background: '#ccfbf1',
-      border: '1px solid #14b8a6',
-      color: '#134e4a',
-    },
-    closed: {
-      background: '#e5e7eb',
-      border: '1px solid #6b7280',
-      color: '#374151',
-    },
-    rejected: {
-      background: '#fee2e2',
-      border: '1px solid #ef4444',
-      color: '#7f1d1d',
-    },
-    cancelled: {
-      background: '#f1f5f9',
-      border: '1px solid #94a3b8',
-      color: '#334155',
-    },
-  }
-
-  return {
-    padding: '4px 10px',
-    borderRadius: 999,
-    fontWeight: 700,
-    fontSize: 12,
-    whiteSpace: 'nowrap',
-    ...(styles[status] || {
-      background: '#f8fafc',
-      border: '1px solid #cbd5e1',
-      color: '#334155',
-    }),
-  }
-}
-
-function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    all: 'All statuses',
-    new: 'New',
-    quoted: 'Quoted',
-    approved: 'Approved',
-    in_progress: 'In Progress',
-    completed: 'Ready',
-    closed: 'Closed',
-    rejected: 'Rejected',
-    cancelled: 'Cancelled',
-  }
-
-  return labels[status] || status
-}
-
-const thStyle: CSSProperties = {
-  padding: '12px 14px',
-  fontSize: 13,
-  color: '#475569',
-  fontWeight: 700,
-  whiteSpace: 'nowrap',
-}
-
-const tdStyle: CSSProperties = {
-  padding: '12px 14px',
-  fontSize: 14,
-  verticalAlign: 'top',
-  whiteSpace: 'nowrap',
 }
