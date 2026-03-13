@@ -32,9 +32,37 @@ const supabase = createClient(
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
+type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
+
+function sortJobs(list: RepairRequest[], sortMode: SortMode) {
+  const copy = [...list]
+
+  copy.sort((a, b) => {
+    if (sortMode === 'newest') {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    }
+
+    if (sortMode === 'oldest') {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    }
+
+    if (sortMode === 'customer') {
+      return a.full_name.localeCompare(b.full_name, undefined, { sensitivity: 'base' })
+    }
+
+    const aJob = a.job_number || ''
+    const bJob = b.job_number || ''
+    return aJob.localeCompare(bJob, undefined, { numeric: true, sensitivity: 'base' })
+  })
+
+  return copy
+}
 
 export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
+  const [hiddenJobs, setHiddenJobs] = useState<RepairRequest[]>([])
+  const [showHidden, setShowHidden] = useState(false)
+
   const [invoicesByJobId, setInvoicesByJobId] = useState<Record<string, Invoice>>({})
   const [invoiceItemsByInvoiceId, setInvoiceItemsByInvoiceId] = useState<
     Record<string, InvoiceItem[]>
@@ -56,7 +84,10 @@ export default function AdminPage() {
   const [dragOverStatus, setDragOverStatus] = useState<RepairStatus | null>(null)
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
   const [selectedArchiveJobIds, setSelectedArchiveJobIds] = useState<string[]>([])
+  const [selectedHiddenJobIds, setSelectedHiddenJobIds] = useState<string[]>([])
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
+  const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
   const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
     new: false,
     quoted: false,
@@ -132,8 +163,19 @@ export default function AdminPage() {
     setHighlightedJobId(jobId)
   }
 
+  function toggleHiddenSelected(jobId: string) {
+    setSelectedHiddenJobIds((prev) =>
+      prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]
+    )
+    setHighlightedJobId(jobId)
+  }
+
   function clearArchiveSelection() {
     setSelectedArchiveJobIds([])
+  }
+
+  function clearHiddenSelection() {
+    setSelectedHiddenJobIds([])
   }
 
   function toggleColumnCollapsed(status: RepairStatus) {
@@ -160,6 +202,7 @@ export default function AdminPage() {
         preferred_contact: sourceJob.preferred_contact,
         internal_notes: sourceJob.internal_notes,
         quoted_price: sourceJob.quoted_price,
+        is_hidden: false,
       })
       .select(`
         id,
@@ -176,7 +219,8 @@ export default function AdminPage() {
         status,
         preferred_contact,
         internal_notes,
-        quoted_price
+        quoted_price,
+        is_hidden
       `)
       .single()
 
@@ -190,6 +234,7 @@ export default function AdminPage() {
       internal_notes: data.internal_notes ?? '',
       quoted_price: data.quoted_price ?? null,
       serial_imei: data.serial_imei ?? null,
+      is_hidden: Boolean(data.is_hidden),
     }
 
     setJobs((prev) => [newJob, ...prev])
@@ -208,6 +253,134 @@ export default function AdminPage() {
         })
       }
     }, 150)
+  }
+
+  async function hideJob(id: string) {
+    const previousVisible = jobs
+    const previousHidden = hiddenJobs
+
+    const jobToHide = jobs.find((job) => job.id === id)
+    if (!jobToHide) return
+
+    setJobs((prev) => prev.filter((job) => job.id !== id))
+    setHiddenJobs((prev) => [{ ...jobToHide, is_hidden: true }, ...prev])
+    setSelectedArchiveJobIds((prev) => prev.filter((jobId) => jobId !== id))
+
+    const { error } = await supabase
+      .from('repair_requests')
+      .update({ is_hidden: true })
+      .eq('id', id)
+
+    if (error) {
+      setJobs(previousVisible)
+      setHiddenJobs(previousHidden)
+      setError(error.message)
+      return
+    }
+
+    if (highlightedJobId === id) {
+      setHighlightedJobId(null)
+    }
+  }
+
+  async function unhideJob(id: string) {
+    const previousVisible = jobs
+    const previousHidden = hiddenJobs
+
+    const jobToUnhide = hiddenJobs.find((job) => job.id === id)
+    if (!jobToUnhide) return
+
+    setHiddenJobs((prev) => prev.filter((job) => job.id !== id))
+    setJobs((prev) => [{ ...jobToUnhide, is_hidden: false }, ...prev])
+    setSelectedHiddenJobIds((prev) => prev.filter((jobId) => jobId !== id))
+
+    const { error } = await supabase
+      .from('repair_requests')
+      .update({ is_hidden: false })
+      .eq('id', id)
+
+    if (error) {
+      setJobs(previousVisible)
+      setHiddenJobs(previousHidden)
+      setError(error.message)
+      return
+    }
+
+    setHighlightedJobId(id)
+  }
+
+  async function bulkHideArchiveJobs() {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    const selectedSet = new Set(selectedArchiveJobIds)
+    const previousVisible = jobs
+    const previousHidden = hiddenJobs
+
+    const jobsToHide = jobs.filter((job) => selectedSet.has(job.id))
+
+    setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+    setHiddenJobs((prev) => [
+      ...jobsToHide.map((job) => ({ ...job, is_hidden: true })),
+      ...prev,
+    ])
+
+    const { error } = await supabase
+      .from('repair_requests')
+      .update({ is_hidden: true })
+      .in('id', selectedArchiveJobIds)
+
+    if (error) {
+      setJobs(previousVisible)
+      setHiddenJobs(previousHidden)
+      setError(error.message)
+      setBulkBusy(false)
+      return
+    }
+
+    if (highlightedJobId && selectedSet.has(highlightedJobId)) {
+      setHighlightedJobId(null)
+    }
+
+    setSelectedArchiveJobIds([])
+    setBulkBusy(false)
+  }
+
+  async function bulkUnhideHiddenJobs() {
+    if (selectedHiddenJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    const selectedSet = new Set(selectedHiddenJobIds)
+    const previousVisible = jobs
+    const previousHidden = hiddenJobs
+
+    const jobsToUnhide = hiddenJobs.filter((job) => selectedSet.has(job.id))
+
+    setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+    setJobs((prev) => [
+      ...jobsToUnhide.map((job) => ({ ...job, is_hidden: false })),
+      ...prev,
+    ])
+
+    const { error } = await supabase
+      .from('repair_requests')
+      .update({ is_hidden: false })
+      .in('id', selectedHiddenJobIds)
+
+    if (error) {
+      setJobs(previousVisible)
+      setHiddenJobs(previousHidden)
+      setError(error.message)
+      setBulkBusy(false)
+      return
+    }
+
+    setSelectedHiddenJobIds([])
+    setBulkBusy(false)
   }
 
   async function bulkUpdateArchiveStatus(targetStatus: RepairStatus) {
@@ -263,6 +436,7 @@ export default function AdminPage() {
       preferred_contact: job.preferred_contact,
       internal_notes: job.internal_notes,
       quoted_price: job.quoted_price,
+      is_hidden: false,
     }))
 
     const { data, error } = await supabase
@@ -283,7 +457,8 @@ export default function AdminPage() {
         status,
         preferred_contact,
         internal_notes,
-        quoted_price
+        quoted_price,
+        is_hidden
       `)
 
     if (error) {
@@ -297,6 +472,7 @@ export default function AdminPage() {
       internal_notes: job.internal_notes ?? '',
       quoted_price: job.quoted_price ?? null,
       serial_imei: job.serial_imei ?? null,
+      is_hidden: Boolean(job.is_hidden),
     }))
 
     setJobs((prev) => [...newJobs, ...prev])
@@ -329,24 +505,27 @@ export default function AdminPage() {
         status,
         preferred_contact,
         internal_notes,
-        quoted_price
+        quoted_price,
+        is_hidden
       `)
       .order('created_at', { ascending: false })
 
     if (error) throw error
 
-    const safeJobs = ((data || []) as RepairRequest[]).map((job) => ({
+    const allJobs = ((data || []) as RepairRequest[]).map((job) => ({
       ...job,
       internal_notes: job.internal_notes ?? '',
       quoted_price: job.quoted_price ?? null,
       serial_imei: job.serial_imei ?? null,
+      is_hidden: Boolean(job.is_hidden),
     }))
 
-    setJobs(safeJobs)
+    setJobs(allJobs.filter((job) => !job.is_hidden))
+    setHiddenJobs(allJobs.filter((job) => job.is_hidden))
 
     setExpandedJobs((prev) => {
       const next = { ...prev }
-      for (const job of safeJobs) {
+      for (const job of allJobs) {
         if (!(job.id in next)) next[job.id] = false
       }
       return next
@@ -568,7 +747,8 @@ export default function AdminPage() {
   }, [loading])
 
   async function updateStatus(id: string, newStatus: RepairStatus) {
-    const existingJob = jobs.find((job) => job.id === id)
+    const existingJob =
+      jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
     if (!existingJob) return
 
     if (existingJob.status === newStatus) {
@@ -578,9 +758,10 @@ export default function AdminPage() {
 
     setFieldState(id, 'status', 'saving')
 
-    const previousJobs = jobs
-
     setJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
+    )
+    setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
     )
 
@@ -592,12 +773,17 @@ export default function AdminPage() {
       .single()
 
     if (error || !data?.status) {
-      setJobs(previousJobs)
+      void loadJobs()
       setFieldState(id, 'status', 'error')
       return
     }
 
     setJobs((prev) =>
+      prev.map((job) =>
+        job.id === id ? { ...job, status: data.status as RepairStatus } : job
+      )
+    )
+    setHiddenJobs((prev) =>
       prev.map((job) =>
         job.id === id ? { ...job, status: data.status as RepairStatus } : job
       )
@@ -632,6 +818,17 @@ export default function AdminPage() {
           : job
       )
     )
+    setHiddenJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              quoted_price:
+                typeof data?.quoted_price === 'number' ? data.quoted_price : null,
+            }
+          : job
+      )
+    )
 
     setFieldSaved(id, 'quote')
     return true
@@ -652,18 +849,16 @@ export default function AdminPage() {
       return false
     }
 
+    const nextNotes =
+      typeof data?.internal_notes === 'string'
+        ? data.internal_notes
+        : data?.internal_notes ?? ''
+
     setJobs((prev) =>
-      prev.map((job) =>
-        job.id === id
-          ? {
-              ...job,
-              internal_notes:
-                typeof data?.internal_notes === 'string'
-                  ? data.internal_notes
-                  : data?.internal_notes ?? '',
-            }
-          : job
-      )
+      prev.map((job) => (job.id === id ? { ...job, internal_notes: nextNotes } : job))
+    )
+    setHiddenJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, internal_notes: nextNotes } : job))
     )
 
     setFieldSaved(id, 'notes')
@@ -690,12 +885,6 @@ export default function AdminPage() {
   ) {
     setFieldState(id, field, 'saving')
 
-    const previousJobs = jobs
-
-    setJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, ...updates } : job))
-    )
-
     const { data, error } = await supabase
       .from('repair_requests')
       .update(updates)
@@ -715,28 +904,27 @@ export default function AdminPage() {
       .single()
 
     if (error || !data) {
-      setJobs(previousJobs)
       setFieldState(id, field, 'error')
       return false
     }
 
+    const patch = {
+      job_number: data.job_number ?? null,
+      full_name: data.full_name,
+      phone: data.phone,
+      email: data.email ?? null,
+      brand: data.brand,
+      model: data.model,
+      device_type: data.device_type ?? null,
+      serial_imei: data.serial_imei ?? null,
+      fault_description: data.fault_description,
+    }
+
     setJobs((prev) =>
-      prev.map((job) =>
-        job.id === id
-          ? {
-              ...job,
-              job_number: data.job_number ?? null,
-              full_name: data.full_name,
-              phone: data.phone,
-              email: data.email ?? null,
-              brand: data.brand,
-              model: data.model,
-              device_type: data.device_type ?? null,
-              serial_imei: data.serial_imei ?? null,
-              fault_description: data.fault_description,
-            }
-          : job
-      )
+      prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
+    )
+    setHiddenJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
     )
 
     setFieldSaved(id, field)
@@ -1138,10 +1326,37 @@ export default function AdminPage() {
         .toLowerCase()
 
       const matchesSearch = term ? haystack.includes(term) : true
-
       return matchesStatus && matchesSearch
     })
   }, [jobs, search, statusFilter, invoicesByJobId])
+
+  const filteredHiddenJobs = useMemo(() => {
+    const term = search.trim().toLowerCase()
+
+    return hiddenJobs.filter((job) => {
+      const haystack = [
+        job.job_number || '',
+        job.full_name,
+        job.phone,
+        job.email || '',
+        job.brand,
+        job.model,
+        job.device_type || '',
+        job.serial_imei || '',
+        job.fault_description,
+        job.status,
+        job.preferred_contact || '',
+        job.internal_notes || '',
+        job.quoted_price != null ? String(job.quoted_price) : '',
+        invoicesByJobId[job.id]?.invoice_number || '',
+        invoicesByJobId[job.id]?.status || '',
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      return term ? haystack.includes(term) : true
+    })
+  }, [hiddenJobs, search, invoicesByJobId])
 
   const jobsByStatus = useMemo(() => {
     const allColumnStatuses = [...BOARD_COLUMNS, ...ARCHIVE_COLUMNS]
@@ -1151,6 +1366,17 @@ export default function AdminPage() {
       return acc
     }, {} as Record<RepairStatus, RepairRequest[]>)
   }, [filteredJobs])
+
+  const sortedArchiveJobsByStatus = useMemo(() => {
+    return ARCHIVE_COLUMNS.reduce((acc, status) => {
+      acc[status] = sortJobs(jobsByStatus[status] || [], archiveSort)
+      return acc
+    }, {} as Record<RepairStatus, RepairRequest[]>)
+  }, [jobsByStatus, archiveSort])
+
+  const sortedHiddenJobs = useMemo(() => {
+    return sortJobs(filteredHiddenJobs, hiddenSort)
+  }, [filteredHiddenJobs, hiddenSort])
 
   const summary = useMemo(() => {
     const totalJobs = filteredJobs.length
@@ -1167,8 +1393,9 @@ export default function AdminPage() {
       readyCount,
       quotedValue,
       invoiceCount,
+      hiddenCount: filteredHiddenJobs.length,
     }
-  }, [filteredJobs, invoicesByJobId])
+  }, [filteredJobs, filteredHiddenJobs, invoicesByJobId])
 
   const archiveJobs = useMemo(
     () => filteredJobs.filter((job) => ARCHIVE_COLUMNS.includes(job.status)),
@@ -1179,6 +1406,11 @@ export default function AdminPage() {
     const archiveIds = new Set(archiveJobs.map((job) => job.id))
     setSelectedArchiveJobIds((prev) => prev.filter((id) => archiveIds.has(id)))
   }, [archiveJobs])
+
+  useEffect(() => {
+    const hiddenIds = new Set(filteredHiddenJobs.map((job) => job.id))
+    setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
+  }, [filteredHiddenJobs])
 
   return (
     <main className={styles.page}>
@@ -1198,6 +1430,10 @@ export default function AdminPage() {
 
           <Link href="/admin/invoices" className={styles.viewButton}>
             View Invoices
+          </Link>
+
+          <Link href="/admin/customers" className={styles.viewButton}>
+            Customers
           </Link>
 
           {(['board', 'list', 'details', 'tiles'] as const).map((mode) => (
@@ -1227,6 +1463,7 @@ export default function AdminPage() {
         <SummaryCard label="In Progress" value={String(summary.inProgressCount)} />
         <SummaryCard label="Ready" value={String(summary.readyCount)} />
         <SummaryCard label="Invoices" value={String(summary.invoiceCount)} />
+        <SummaryCard label="Hidden Jobs" value={String(summary.hiddenCount)} />
         <SummaryCard label="Quoted Value" value={`$${summary.quotedValue.toFixed(2)}`} />
       </div>
 
@@ -1252,12 +1489,12 @@ export default function AdminPage() {
       </div>
 
       <div className={styles.statsBar}>
-        Showing <strong>{filteredJobs.length}</strong> of <strong>{jobs.length}</strong> jobs
+        Showing <strong>{filteredJobs.length}</strong> visible jobs of <strong>{jobs.length}</strong> active records
       </div>
 
       {loading && <p className={styles.message}>Loading jobs...</p>}
       {!!error && <p className={styles.errorText}>{error}</p>}
-      {!loading && !error && filteredJobs.length === 0 && (
+      {!loading && !error && filteredJobs.length === 0 && !showHidden && (
         <p className={styles.message}>No matching repair requests.</p>
       )}
 
@@ -1276,9 +1513,7 @@ export default function AdminPage() {
               >
                 <div className={styles.columnHeaderSticky}>
                   <div className={styles.columnHeader}>
-                    <span
-                      className={`${styles.statusBadge} ${styles[`status_${status}`]}`}
-                    >
+                    <span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>
                       {getStatusLabel(status)}
                     </span>
 
@@ -1304,9 +1539,7 @@ export default function AdminPage() {
                     ) : (
                       (jobsByStatus[status] || []).map((job) => {
                         const invoice = invoicesByJobId[job.id] ?? null
-                        const invoiceItems = invoice
-                          ? invoiceItemsByInvoiceId[invoice.id] || []
-                          : []
+                        const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
 
                         return (
                           <JobCard
@@ -1346,6 +1579,8 @@ export default function AdminPage() {
                             }}
                             onSelectCard={selectJobCard}
                             onDuplicateJob={duplicateJob}
+                            onHideJob={hideJob}
+                            onUnhideJob={unhideJob}
                           />
                         )
                       })
@@ -1370,6 +1605,25 @@ export default function AdminPage() {
               </div>
 
               <div className={styles.bulkBarActions}>
+                <button
+                  type="button"
+                  className={`${styles.actionButton} ${showHidden ? styles.viewButtonActive : ''}`}
+                  onClick={() => setShowHidden((prev) => !prev)}
+                >
+                  {showHidden ? 'Hide Hidden Jobs' : 'Show Hidden Jobs'}
+                </button>
+
+                <select
+                  value={archiveSort}
+                  onChange={(e) => setArchiveSort(e.target.value as SortMode)}
+                  className={styles.compactSelect}
+                >
+                  <option value="newest">Sort: Newest</option>
+                  <option value="oldest">Sort: Oldest</option>
+                  <option value="customer">Sort: Customer</option>
+                  <option value="job_number">Sort: Job Number</option>
+                </select>
+
                 <button
                   type="button"
                   className={styles.actionButton}
@@ -1399,6 +1653,15 @@ export default function AdminPage() {
 
                 <button
                   type="button"
+                  className={styles.actionButton}
+                  onClick={() => void bulkHideArchiveJobs()}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  {bulkBusy ? 'Working...' : 'Hide Selected'}
+                </button>
+
+                <button
+                  type="button"
                   className={styles.miniButton}
                   onClick={clearArchiveSelection}
                   disabled={bulkBusy || selectedArchiveJobIds.length === 0}
@@ -1418,15 +1681,13 @@ export default function AdminPage() {
                 >
                   <div className={styles.columnHeaderSticky}>
                     <div className={styles.columnHeader}>
-                      <span
-                        className={`${styles.statusBadge} ${styles[`status_${status}`]}`}
-                      >
+                      <span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>
                         {getStatusLabel(status)}
                       </span>
 
                       <div className={styles.columnHeaderActions}>
                         <span className={styles.columnCount}>
-                          {jobsByStatus[status]?.length || 0}
+                          {sortedArchiveJobsByStatus[status]?.length || 0}
                         </span>
                         <button
                           type="button"
@@ -1441,14 +1702,12 @@ export default function AdminPage() {
 
                   {!collapsedColumns[status] && (
                     <div className={styles.columnCardsWrap}>
-                      {(jobsByStatus[status] || []).length === 0 ? (
+                      {(sortedArchiveJobsByStatus[status] || []).length === 0 ? (
                         <div className={styles.emptyColumn}>No jobs</div>
                       ) : (
-                        (jobsByStatus[status] || []).map((job) => {
+                        (sortedArchiveJobsByStatus[status] || []).map((job) => {
                           const invoice = invoicesByJobId[job.id] ?? null
-                          const invoiceItems = invoice
-                            ? invoiceItemsByInvoiceId[invoice.id] || []
-                            : []
+                          const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
 
                           return (
                             <JobCard
@@ -1488,6 +1747,8 @@ export default function AdminPage() {
                               selectable
                               selected={selectedArchiveJobIds.includes(job.id)}
                               onToggleSelected={toggleArchiveSelected}
+                              onHideJob={hideJob}
+                              onUnhideJob={unhideJob}
                             />
                           )
                         })
@@ -1513,9 +1774,7 @@ export default function AdminPage() {
             >
               <div className={styles.tileHeader}>
                 <strong>{job.job_number || 'Pending'}</strong>
-                <span
-                  className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}
-                >
+                <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
                   {getStatusLabel(job.status)}
                 </span>
               </div>
@@ -1569,9 +1828,7 @@ export default function AdminPage() {
                     {job.brand} {job.model}
                   </td>
                   <td>
-                    <span
-                      className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}
-                    >
+                    <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
                       {getStatusLabel(job.status)}
                     </span>
                   </td>
@@ -1625,10 +1882,114 @@ export default function AdminPage() {
                 }}
                 onSelectCard={selectJobCard}
                 onDuplicateJob={duplicateJob}
+                onHideJob={hideJob}
+                onUnhideJob={unhideJob}
               />
             )
           })}
         </div>
+      )}
+
+      {showHidden && (
+        <section className={styles.otherStatusesSection}>
+          <div className={styles.archiveHeader}>
+            <h2 className={styles.sectionTitle}>Hidden jobs</h2>
+            <p className={styles.archiveSubtitle}>
+              Hidden from the main dashboard but still kept in the database.
+            </p>
+          </div>
+
+          <div className={styles.bulkBar}>
+            <div className={styles.bulkBarText}>
+              Selected hidden jobs: <strong>{selectedHiddenJobIds.length}</strong>
+            </div>
+
+            <div className={styles.bulkBarActions}>
+              <select
+                value={hiddenSort}
+                onChange={(e) => setHiddenSort(e.target.value as SortMode)}
+                className={styles.compactSelect}
+              >
+                <option value="newest">Sort: Newest</option>
+                <option value="oldest">Sort: Oldest</option>
+                <option value="customer">Sort: Customer</option>
+                <option value="job_number">Sort: Job Number</option>
+              </select>
+
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void bulkUnhideHiddenJobs()}
+                disabled={bulkBusy || selectedHiddenJobIds.length === 0}
+              >
+                {bulkBusy ? 'Working...' : 'Unhide Selected'}
+              </button>
+
+              <button
+                type="button"
+                className={styles.miniButton}
+                onClick={clearHiddenSelection}
+                disabled={bulkBusy || selectedHiddenJobIds.length === 0}
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+
+          {sortedHiddenJobs.length === 0 ? (
+            <p className={styles.message}>No hidden jobs.</p>
+          ) : (
+            <div className={styles.archiveGrid}>
+              {sortedHiddenJobs.map((job) => {
+                const invoice = invoicesByJobId[job.id] ?? null
+                const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
+
+                return (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    expanded={!!expandedJobs[job.id]}
+                    toggleExpanded={toggleExpanded}
+                    updateStatus={updateStatus}
+                    updateQuote={updateQuote}
+                    updateNotes={updateNotes}
+                    updateJobBasics={updateJobBasics}
+                    statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                    quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                    notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                    jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                    customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                    deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
+                    setFieldState={setFieldState}
+                    invoice={invoice}
+                    invoiceItems={invoiceItems}
+                    invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                    invoiceItemsActionState={
+                      invoice ? invoiceItemsActionStates[invoice.id] || 'idle' : 'idle'
+                    }
+                    createInvoiceForJob={createInvoiceForJob}
+                    updateInvoiceStatusForJob={updateInvoiceStatusForJob}
+                    addInvoiceItemForInvoice={addInvoiceItemForInvoice}
+                    updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                    deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                    highlighted={highlightedJobId === job.id}
+                    cardRef={(el) => {
+                      jobRefs.current[job.id] = el
+                    }}
+                    onSelectCard={selectJobCard}
+                    compact
+                    selectable
+                    selected={selectedHiddenJobIds.includes(job.id)}
+                    onToggleSelected={toggleHiddenSelected}
+                    onDuplicateJob={duplicateJob}
+                    onHideJob={hideJob}
+                    onUnhideJob={unhideJob}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </section>
       )}
     </main>
   )

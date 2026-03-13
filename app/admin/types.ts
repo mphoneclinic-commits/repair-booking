@@ -24,10 +24,10 @@ export type RepairRequest = {
   preferred_contact: string | null
   internal_notes: string | null
   quoted_price: number | null
+  is_hidden: boolean
 }
 
 export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
-export type InvoiceTaxMode = 'exclusive' | 'inclusive' | 'none'
 
 export type Invoice = {
   id: string
@@ -38,19 +38,17 @@ export type Invoice = {
   customer_phone: string
   customer_email: string | null
   bill_to_address: string | null
-
-  tax_mode: InvoiceTaxMode
+  tax_mode?: string | null
   tax_rate: number
   subtotal_ex_tax: number
   tax_amount: number
   subtotal: number
   total: number
-
   notes: string | null
   issued_at: string | null
   paid_at: string | null
-  sent_at: string | null
-  sent_to_email: string | null
+  sent_at?: string | null
+  sent_to_email?: string | null
   created_at: string
   updated_at: string
 }
@@ -63,6 +61,13 @@ export type InvoiceItem = {
   unit_price: number
   line_total: number
   sort_order: number
+  created_at: string
+}
+
+export type InvoiceRepairLink = {
+  id: string
+  invoice_id: string
+  repair_request_id: string
   created_at: string
 }
 

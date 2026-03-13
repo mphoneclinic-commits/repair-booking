@@ -294,10 +294,23 @@
 
 .metaText {
   margin: 0;
-  font-size: 13px;
-  color: #334155;
+  font-size: 15px;
+  color: #377D22;
   word-break: break-word;
-  line-height: 1.3;
+  line-height: 1.4;
+  font-weight: 800;
+padding: 8px 11px;
+  border-radius: 9px;
+
+}
+.phoneText {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+  word-break: break-word;
+  line-height: 1.35;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .deviceTitle {
@@ -925,4 +938,549 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.archiveGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.archiveHeader {
+  margin-bottom: 12px;
+}
+
+.archiveSubtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.customerGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.customerCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.customerCardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.customerTitle {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.customerMeta {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.customerStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customerSummaryRow {
+  margin-bottom: 14px;
+}
+
+.tableRowHighlighted {
+  background: #eff6ff;
+}
+
+.jobCardHighlighted {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+}
+
+@media (max-width: 1500px) {
+  .archiveGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .archiveGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.customerLink {
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.customerLink:hover {
+  text-decoration: underline;
+}
+
+.customerDetailHeader {
+  margin-bottom: 18px;
+}
+
+.customerDetailSection {
+  margin-top: 22px;
+}
+
+.summaryValueSmall {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.inlineMuted {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.inlineLink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
+.invoiceLinkStack {
+  display: grid;
+  gap: 4px;
+}
+.bulkBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.bulkBarText {
+  font-size: 14px;
+  color: #334155;
+  padding-top: 6px;
+}
+
+.bulkBarActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.columnHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.columnToggleButton {
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.archiveSelectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.archiveCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.archiveCheckboxLabel input {
+  width: 16px;
+  height: 16px;
+}
+
+.compactMetaRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.jobCardCompact {
+  padding: 10px;
+}
+
+.cardTopRowCompact {
+  margin-bottom: 10px;
+}
+
+.collapsedBlockCompact {
+  gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .bulkBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bulkBarText {
+    padding-top: 0;
+  }
+
+  .bulkBarActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .bulkBarActions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .bulkBarActions .actionButton,
+  .bulkBarActions .miniButton {
+    width: 100%;
+  }
+
+  .columnHeaderActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .compactMetaRow {
+    grid-template-columns: 1fr;
+  }
+}
+.bulkBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.bulkBarText {
+  font-size: 14px;
+  color: #334155;
+  padding-top: 6px;
+}
+
+.bulkBarActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.columnHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.columnToggleButton {
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.archiveSelectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.archiveCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.archiveCheckboxLabel input {
+  width: 16px;
+  height: 16px;
+}
+
+.compactMetaRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.jobCardCompact {
+  padding: 10px;
+}
+
+.cardTopRowCompact {
+  margin-bottom: 10px;
+}
+
+.collapsedBlockCompact {
+  gap: 10px;
+}
+
+.archiveGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.archiveHeader {
+  margin-bottom: 12px;
+}
+
+.archiveSubtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.customerGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.customerCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.customerCardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.customerTitle {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.customerMeta {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.customerStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customerSummaryRow {
+  margin-bottom: 14px;
+}
+
+.tableRowHighlighted {
+  background: #eff6ff;
+}
+
+.jobCardHighlighted {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+}
+
+.customerLink {
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.customerLink:hover {
+  text-decoration: underline;
+}
+
+.customerDetailHeader {
+  margin-bottom: 18px;
+}
+
+.customerDetailSection {
+  margin-top: 22px;
+}
+
+.summaryValueSmall {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.inlineMuted {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.inlineLink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
+.invoiceLinkStack {
+  display: grid;
+  gap: 4px;
+}
+
+.compactSelect {
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 38px;
+}
+
+.phoneText {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+  word-break: break-word;
+  line-height: 1.35;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 1500px) {
+  .archiveGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .bulkBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bulkBarText {
+    padding-top: 0;
+  }
+
+  .bulkBarActions {
+    justify-content: flex-start;
+  }
+
+  .archiveGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .bulkBarActions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .bulkBarActions .actionButton,
+  .bulkBarActions .miniButton,
+  .bulkBarActions .compactSelect {
+    width: 100%;
+  }
+
+  .columnHeaderActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .compactMetaRow {
+    grid-template-columns: 1fr;
+  }
+}
+.customerFormCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.customerFullWidth {
+  grid-column: 1 / -1;
+}
+
+.successBanner {
+  background: #ecfdf5;
+  border: 1px solid #86efac;
+  color: #166534;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.customerSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
 }

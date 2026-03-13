@@ -59,6 +59,8 @@ export default function JobCard({
   selectable = false,
   selected = false,
   onToggleSelected,
+  onHideJob,
+  onUnhideJob,
 }: {
   job: RepairRequest
   expanded: boolean
@@ -116,6 +118,8 @@ export default function JobCard({
   selectable?: boolean
   selected?: boolean
   onToggleSelected?: (jobId: string) => void
+  onHideJob?: (jobId: string) => Promise<void>
+  onUnhideJob?: (jobId: string) => Promise<void>
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
@@ -508,48 +512,11 @@ export default function JobCard({
         <div className={styles.sectionLabel}>Booked</div>
         <p className={styles.metaText}>{formatDateTime(job.created_at)}</p>
       </div>
-
-      {!selectable ? (
-        <div className={styles.buttonRow}>
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelectCard?.(job.id)
-              void updateStatus(job.id, 'new')
-            }}
-          >
-            Reopen to New
-          </button>
-
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelectCard?.(job.id)
-              void updateStatus(job.id, 'ready')
-            }}
-          >
-            Move to Ready
-          </button>
-
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelectCard?.(job.id)
-              void onDuplicateJob?.(job)
-            }}
-          >
-            Duplicate Job
-          </button>
-        </div>
-      ) : null}
     </div>
   )
+
+  const isArchiveStatus =
+    job.status === 'closed' || job.status === 'rejected' || job.status === 'cancelled'
 
   return (
     <div
@@ -607,7 +574,7 @@ export default function JobCard({
 
             <div>
               <div className={styles.sectionLabel}>Phone</div>
-              <p className={styles.metaText}>{job.phone}</p>
+              <p className={styles.phoneText}>{job.phone}</p>
             </div>
 
             <div>
@@ -911,6 +878,34 @@ export default function JobCard({
                 >
                   Ready for Pickup SMS
                 </button>
+
+                {isArchiveStatus ? (
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSelectCard?.(job.id)
+                      void onHideJob?.(job.id)
+                    }}
+                  >
+                    Hide Job
+                  </button>
+                ) : null}
+
+                {job.is_hidden ? (
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSelectCard?.(job.id)
+                      void onUnhideJob?.(job.id)
+                    }}
+                  >
+                    Unhide Job
+                  </button>
+                ) : null}
               </div>
             </div>
 
