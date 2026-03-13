@@ -1,21 +1,37 @@
 'use client'
 
+import Link from 'next/link'
 import styles from '../admin.module.css'
-import type { Invoice, InvoiceStatus } from '../types'
+import type { Invoice, InvoiceItem, InvoiceStatus } from '../types'
 import { formatDateTime } from '../utils'
+import InvoiceItemsEditor from './InvoiceItemsEditor'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
+type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 
 export default function InvoicePanel({
   invoice,
+  items,
   actionState,
+  itemsActionState,
   onCreateInvoice,
   onUpdateInvoiceStatus,
+  onAddInvoiceItem,
+  onUpdateInvoiceItem,
+  onDeleteInvoiceItem,
 }: {
   invoice: Invoice | null
+  items: InvoiceItem[]
   actionState: InvoiceActionState
+  itemsActionState: InvoiceItemsActionState
   onCreateInvoice: () => Promise<void>
   onUpdateInvoiceStatus: (status: InvoiceStatus) => Promise<void>
+  onAddInvoiceItem: () => Promise<void>
+  onUpdateInvoiceItem: (
+    itemId: string,
+    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
+  ) => Promise<void>
+  onDeleteInvoiceItem: (itemId: string) => Promise<void>
 }) {
   const isBusy = actionState === 'saving'
 
@@ -116,7 +132,25 @@ export default function InvoicePanel({
       ) : null}
 
       <div className={styles.buttonRow}>
-        {invoice.status === 'draft' && (
+        <Link
+          href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
+          className={styles.actionButton}
+        >
+          Open Invoice
+        </Link>
+
+        {invoice.status !== 'draft' && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => void onUpdateInvoiceStatus('draft')}
+            disabled={isBusy}
+          >
+            {isBusy ? 'Saving...' : 'Set Draft'}
+          </button>
+        )}
+
+        {invoice.status !== 'issued' && (
           <button
             type="button"
             className={styles.actionButton}
@@ -127,7 +161,7 @@ export default function InvoicePanel({
           </button>
         )}
 
-        {invoice.status !== 'paid' && invoice.status !== 'void' && (
+        {invoice.status !== 'paid' && (
           <button
             type="button"
             className={styles.actionButton}
@@ -149,6 +183,14 @@ export default function InvoicePanel({
           </button>
         )}
       </div>
+
+      <InvoiceItemsEditor
+        items={items}
+        actionState={itemsActionState}
+        onAddItem={onAddInvoiceItem}
+        onUpdateItem={onUpdateInvoiceItem}
+        onDeleteItem={onDeleteInvoiceItem}
+      />
     </div>
   )
 }

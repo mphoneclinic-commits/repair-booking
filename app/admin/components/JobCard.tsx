@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import styles from '../admin.module.css'
 import type {
   Invoice,
+  InvoiceItem,
   InvoiceStatus,
   RepairRequest,
   RepairStatus,
@@ -20,6 +21,7 @@ import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
+type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 
 export default function JobCard({
   job,
@@ -41,9 +43,22 @@ export default function JobCard({
   onDragStart,
   onDragEnd,
   invoice,
+  invoiceItems,
   invoiceActionState,
+  invoiceItemsActionState,
   createInvoiceForJob,
   updateInvoiceStatusForJob,
+  addInvoiceItemForInvoice,
+  updateInvoiceItemForInvoice,
+  deleteInvoiceItemForInvoice,
+  highlighted = false,
+  cardRef,
+  onSelectCard,
+  compact = false,
+  onDuplicateJob,
+  selectable = false,
+  selected = false,
+  onToggleSelected,
 }: {
   job: RepairRequest
   expanded: boolean
@@ -63,6 +78,7 @@ export default function JobCard({
         | 'brand'
         | 'model'
         | 'device_type'
+        | 'serial_imei'
         | 'fault_description'
       >
     >,
@@ -80,9 +96,26 @@ export default function JobCard({
   onDragStart?: (jobId: string) => void
   onDragEnd?: () => void
   invoice: Invoice | null
+  invoiceItems: InvoiceItem[]
   invoiceActionState: InvoiceActionState
+  invoiceItemsActionState: InvoiceItemsActionState
   createInvoiceForJob: (job: RepairRequest) => Promise<void>
   updateInvoiceStatusForJob: (invoiceId: string, status: InvoiceStatus) => Promise<void>
+  addInvoiceItemForInvoice: (invoiceId: string) => Promise<void>
+  updateInvoiceItemForInvoice: (
+    invoiceId: string,
+    itemId: string,
+    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
+  ) => Promise<void>
+  deleteInvoiceItemForInvoice: (invoiceId: string, itemId: string) => Promise<void>
+  highlighted?: boolean
+  cardRef?: (el: HTMLDivElement | null) => void
+  onSelectCard?: (jobId: string) => void
+  compact?: boolean
+  onDuplicateJob?: (job: RepairRequest) => Promise<void>
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelected?: (jobId: string) => void
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
@@ -98,6 +131,7 @@ export default function JobCard({
     brand: job.brand,
     model: job.model,
     device_type: job.device_type ?? '',
+    serial_imei: job.serial_imei ?? '',
     fault_description: job.fault_description,
   })
 
@@ -147,10 +181,11 @@ export default function JobCard({
         brand: job.brand,
         model: job.model,
         device_type: job.device_type ?? '',
+        serial_imei: job.serial_imei ?? '',
         fault_description: job.fault_description,
       })
     }
-  }, [job.brand, job.model, job.device_type, job.fault_description])
+  }, [job.brand, job.model, job.device_type, job.serial_imei, job.fault_description])
 
   useEffect(() => {
     return () => {
@@ -243,22 +278,26 @@ export default function JobCard({
     brand: string
     model: string
     device_type: string
+    serial_imei: string
     fault_description: string
   }) {
     const brand = nextDraft.brand.trim()
     const model = nextDraft.model.trim()
     const deviceType = nextDraft.device_type.trim()
+    const serialImei = nextDraft.serial_imei.trim()
     const fault = nextDraft.fault_description.trim()
 
     const currentBrand = job.brand
     const currentModel = job.model
     const currentType = job.device_type ?? ''
+    const currentSerialImei = job.serial_imei ?? ''
     const currentFault = job.fault_description
 
     if (
       brand === currentBrand &&
       model === currentModel &&
       deviceType === currentType &&
+      serialImei === currentSerialImei &&
       fault === currentFault
     ) {
       setFieldState(job.id, 'device', 'idle')
@@ -276,6 +315,7 @@ export default function JobCard({
         brand,
         model,
         device_type: deviceType || null,
+        serial_imei: serialImei || null,
         fault_description: fault,
       },
       'device'
@@ -332,7 +372,7 @@ export default function JobCard({
   }
 
   function handleDeviceDraftChange(
-    key: 'brand' | 'model' | 'device_type' | 'fault_description',
+    key: 'brand' | 'model' | 'device_type' | 'serial_imei' | 'fault_description',
     value: string
   ) {
     const next = {
@@ -410,16 +450,123 @@ export default function JobCard({
     onDragEnd?.()
   }
 
+  function handleSelectCard() {
+    onSelectCard?.(job.id)
+  }
+
+  const compactSummary = (
+    <div className={`${styles.collapsedBlock} ${compact ? styles.collapsedBlockCompact : ''}`}>
+      {selectable ? (
+        <div className={styles.archiveSelectRow}>
+          <label className={styles.archiveCheckboxLabel}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelected?.(job.id)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span>Select</span>
+          </label>
+        </div>
+      ) : null}
+
+      <div>
+        <div className={styles.sectionLabel}>Customer</div>
+        <p className={styles.customerName}>{job.full_name}</p>
+      </div>
+
+      <div>
+        <div className={styles.sectionLabel}>Device</div>
+        <p className={styles.deviceTitle}>
+          {job.brand} {job.model}
+          {job.device_type ? ` • ${job.device_type}` : ''}
+        </p>
+      </div>
+
+      <div className={styles.compactMetaRow}>
+        <div>
+          <div className={styles.sectionLabel}>Job</div>
+          <p className={styles.metaText}>{job.job_number || 'Pending'}</p>
+        </div>
+
+        <div>
+          <div className={styles.sectionLabel}>Quote</div>
+          <p className={styles.metaText}>
+            {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
+          </p>
+        </div>
+      </div>
+
+      {job.serial_imei ? (
+        <div>
+          <div className={styles.sectionLabel}>Serial / IMEI</div>
+          <p className={styles.metaText}>{job.serial_imei}</p>
+        </div>
+      ) : null}
+
+      <div>
+        <div className={styles.sectionLabel}>Booked</div>
+        <p className={styles.metaText}>{formatDateTime(job.created_at)}</p>
+      </div>
+
+      {!selectable ? (
+        <div className={styles.buttonRow}>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelectCard?.(job.id)
+              void updateStatus(job.id, 'new')
+            }}
+          >
+            Reopen to New
+          </button>
+
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelectCard?.(job.id)
+              void updateStatus(job.id, 'ready')
+            }}
+          >
+            Move to Ready
+          </button>
+
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelectCard?.(job.id)
+              void onDuplicateJob?.(job)
+            }}
+          >
+            Duplicate Job
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+
   return (
     <div
+      ref={cardRef}
       className={`${styles.jobCard} ${
         draggableEnabled ? styles.jobCardDraggable : ''
-      } ${isDragging ? styles.jobCardDragging : ''}`}
+      } ${isDragging ? styles.jobCardDragging : ''} ${
+        highlighted ? styles.jobCardHighlighted : ''
+      } ${compact ? styles.jobCardCompact : ''} ${
+        selected ? styles.jobCardSelected : ''
+      }`}
       draggable={draggableEnabled}
       onDragStart={handleCardDragStart}
       onDragEnd={handleCardDragEnd}
+      onClick={handleSelectCard}
     >
-      <div className={styles.cardTopRow}>
+      <div className={`${styles.cardTopRow} ${compact ? styles.cardTopRowCompact : ''}`}>
         <div className={styles.cardTopLeft}>
           <div className={styles.sectionLabel}>Job Number</div>
           <div className={styles.jobNumberDisplay}>
@@ -436,7 +583,11 @@ export default function JobCard({
 
           <button
             type="button"
-            onClick={() => toggleExpanded(job.id)}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleExpanded(job.id)
+              onSelectCard?.(job.id)
+            }}
             className={styles.miniButton}
           >
             {expanded ? 'Collapse' : 'Expand'}
@@ -445,37 +596,41 @@ export default function JobCard({
       </div>
 
       {!expanded ? (
-        <div className={styles.collapsedBlock}>
-          <div>
-            <div className={styles.sectionLabel}>Customer</div>
-            <p className={styles.customerName}>{job.full_name}</p>
-          </div>
+        compact ? (
+          compactSummary
+        ) : (
+          <div className={styles.collapsedBlock}>
+            <div>
+              <div className={styles.sectionLabel}>Customer</div>
+              <p className={styles.customerName}>{job.full_name}</p>
+            </div>
 
-          <div>
-            <div className={styles.sectionLabel}>Phone</div>
-            <p className={styles.metaText}>{job.phone}</p>
-          </div>
+            <div>
+              <div className={styles.sectionLabel}>Phone</div>
+              <p className={styles.metaText}>{job.phone}</p>
+            </div>
 
-          <div>
-            <div className={styles.sectionLabel}>Device</div>
-            <p className={styles.deviceTitle}>
-              {job.brand} {job.model}
-              {job.device_type ? ` • ${job.device_type}` : ''}
-            </p>
-          </div>
+            <div>
+              <div className={styles.sectionLabel}>Device</div>
+              <p className={styles.deviceTitle}>
+                {job.brand} {job.model}
+                {job.device_type ? ` • ${job.device_type}` : ''}
+              </p>
+            </div>
 
-          <div>
-            <div className={styles.sectionLabel}>Fault</div>
-            <p className={styles.collapsedFault}>{job.fault_description}</p>
-          </div>
+            <div>
+              <div className={styles.sectionLabel}>Fault</div>
+              <p className={styles.collapsedFault}>{job.fault_description}</p>
+            </div>
 
-          <div>
-            <div className={styles.sectionLabel}>Quote</div>
-            <p className={styles.metaText}>
-              {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-            </p>
+            <div>
+              <div className={styles.sectionLabel}>Quote</div>
+              <p className={styles.metaText}>
+                {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
+              </p>
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <>
           <div className={styles.expandedBlock}>
@@ -493,9 +648,11 @@ export default function JobCard({
                   className={styles.smallField}
                   onFocus={() => {
                     jobNumberFocusedRef.current = true
+                    onSelectCard?.(job.id)
                   }}
                   onBlur={() => void handleJobNumberBlur()}
                   onChange={(e) => handleJobNumberChange(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
                 />
               </div>
 
@@ -512,7 +669,7 @@ export default function JobCard({
                       ['quoted', 'Quoted'],
                       ['approved', 'Approved'],
                       ['in_progress', 'In Progress'],
-                      ['completed', 'Ready'],
+                      ['ready', 'Ready'],
                       ['closed', 'Closed'],
                       ['rejected', 'Reject'],
                       ['cancelled', 'Cancel'],
@@ -521,7 +678,11 @@ export default function JobCard({
                     <button
                       key={value}
                       type="button"
-                      onClick={() => void updateStatus(job.id, value)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectCard?.(job.id)
+                        void updateStatus(job.id, value)
+                      }}
                       className={`${styles.statusButton} ${
                         job.status === value ? styles.statusButtonActive : ''
                       }`}
@@ -547,9 +708,11 @@ export default function JobCard({
                     className={styles.smallField}
                     onFocus={() => {
                       customerFocusedRef.current = true
+                      onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleCustomerBlur()}
                     onChange={(e) => handleCustomerDraftChange('full_name', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
@@ -562,9 +725,11 @@ export default function JobCard({
                     className={styles.smallField}
                     onFocus={() => {
                       customerFocusedRef.current = true
+                      onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleCustomerBlur()}
                     onChange={(e) => handleCustomerDraftChange('phone', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
@@ -575,17 +740,17 @@ export default function JobCard({
                     className={styles.smallField}
                     onFocus={() => {
                       customerFocusedRef.current = true
+                      onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleCustomerBlur()}
                     onChange={(e) => handleCustomerDraftChange('email', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
                 <div>
                   <label className={styles.smallLabel}>Preferred Contact</label>
-                  <div className={styles.readOnlyValue}>
-                    {job.preferred_contact || '-'}
-                  </div>
+                  <div className={styles.readOnlyValue}>{job.preferred_contact || '-'}</div>
                 </div>
               </div>
             </div>
@@ -605,9 +770,11 @@ export default function JobCard({
                       className={styles.smallField}
                       onFocus={() => {
                         deviceFocusedRef.current = true
+                        onSelectCard?.(job.id)
                       }}
                       onBlur={() => void handleDeviceBlur()}
                       onChange={(e) => handleDeviceDraftChange('brand', e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
 
@@ -618,9 +785,11 @@ export default function JobCard({
                       className={styles.smallField}
                       onFocus={() => {
                         deviceFocusedRef.current = true
+                        onSelectCard?.(job.id)
                       }}
                       onBlur={() => void handleDeviceBlur()}
                       onChange={(e) => handleDeviceDraftChange('model', e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
                 </div>
@@ -633,9 +802,27 @@ export default function JobCard({
                     className={styles.smallField}
                     onFocus={() => {
                       deviceFocusedRef.current = true
+                      onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleDeviceBlur()}
                     onChange={(e) => handleDeviceDraftChange('device_type', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+
+                <div>
+                  <label className={styles.smallLabel}>Serial / IMEI</label>
+                  <input
+                    value={deviceDraft.serial_imei}
+                    placeholder="Serial number or IMEI"
+                    className={styles.smallField}
+                    onFocus={() => {
+                      deviceFocusedRef.current = true
+                      onSelectCard?.(job.id)
+                    }}
+                    onBlur={() => void handleDeviceBlur()}
+                    onChange={(e) => handleDeviceDraftChange('serial_imei', e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
@@ -646,11 +833,13 @@ export default function JobCard({
                     className={styles.notesField}
                     onFocus={() => {
                       deviceFocusedRef.current = true
+                      onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleDeviceBlur()}
                     onChange={(e) =>
                       handleDeviceDraftChange('fault_description', e.target.value)
                     }
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
               </div>
@@ -669,16 +858,22 @@ export default function JobCard({
                 className={styles.smallField}
                 onFocus={() => {
                   quoteFocusedRef.current = true
+                  onSelectCard?.(job.id)
                 }}
                 onBlur={() => void handleQuoteBlur()}
                 onChange={(e) => handleQuoteChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
               />
 
               <div className={styles.buttonRow}>
                 <button
                   type="button"
                   className={styles.actionButton}
-                  onClick={() => openSms(buildQuoteSms())}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelectCard?.(job.id)
+                    openSms(buildQuoteSms())
+                  }}
                 >
                   Send Quote SMS
                 </button>
@@ -697,31 +892,53 @@ export default function JobCard({
                 className={styles.notesField}
                 onFocus={() => {
                   notesFocusedRef.current = true
+                  onSelectCard?.(job.id)
                 }}
                 onBlur={() => void handleNotesBlur()}
                 onChange={(e) => handleNotesChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
               />
 
               <div className={styles.buttonRow}>
                 <button
                   type="button"
                   className={styles.actionButton}
-                  onClick={() => openSms(buildReadySms())}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelectCard?.(job.id)
+                    openSms(buildReadySms())
+                  }}
                 >
                   Ready for Pickup SMS
                 </button>
               </div>
             </div>
 
-            <InvoicePanel
-              invoice={invoice}
-              actionState={invoiceActionState}
-              onCreateInvoice={() => createInvoiceForJob(job)}
-              onUpdateInvoiceStatus={(status) => {
-                if (!invoice) return Promise.resolve()
-                return updateInvoiceStatusForJob(invoice.id, status)
-              }}
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <InvoicePanel
+                invoice={invoice}
+                items={invoiceItems}
+                actionState={invoiceActionState}
+                itemsActionState={invoiceItemsActionState}
+                onCreateInvoice={() => createInvoiceForJob(job)}
+                onUpdateInvoiceStatus={(status) => {
+                  if (!invoice) return Promise.resolve()
+                  return updateInvoiceStatusForJob(invoice.id, status)
+                }}
+                onAddInvoiceItem={() => {
+                  if (!invoice) return Promise.resolve()
+                  return addInvoiceItemForInvoice(invoice.id)
+                }}
+                onUpdateInvoiceItem={(itemId, updates) => {
+                  if (!invoice) return Promise.resolve()
+                  return updateInvoiceItemForInvoice(invoice.id, itemId, updates)
+                }}
+                onDeleteInvoiceItem={(itemId) => {
+                  if (!invoice) return Promise.resolve()
+                  return deleteInvoiceItemForInvoice(invoice.id, itemId)
+                }}
+              />
+            </div>
           </div>
 
           <div className={styles.mt12}>

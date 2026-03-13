@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import styles from './admin.module.css'
 import type {
   Invoice,
+  InvoiceItem,
   InvoiceStatus,
   RepairRequest,
   RepairStatus,
@@ -13,7 +15,13 @@ import type {
   StatusFilter,
   ViewMode,
 } from './types'
-import { BOARD_COLUMNS, getStatusLabel, STATUSES, formatDateTime } from './utils'
+import {
+  ARCHIVE_COLUMNS,
+  BOARD_COLUMNS,
+  getStatusLabel,
+  STATUSES,
+  formatDateTime,
+} from './utils'
 import SummaryCard from './components/SummaryCard'
 import JobCard from './components/JobCard'
 
@@ -23,12 +31,19 @@ const supabase = createClient(
 )
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
+type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 
 export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
   const [invoicesByJobId, setInvoicesByJobId] = useState<Record<string, Invoice>>({})
+  const [invoiceItemsByInvoiceId, setInvoiceItemsByInvoiceId] = useState<
+    Record<string, InvoiceItem[]>
+  >({})
   const [invoiceActionStates, setInvoiceActionStates] = useState<
     Record<string, InvoiceActionState>
+  >({})
+  const [invoiceItemsActionStates, setInvoiceItemsActionStates] = useState<
+    Record<string, InvoiceItemsActionState>
   >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -39,6 +54,20 @@ export default function AdminPage() {
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({})
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<RepairStatus | null>(null)
+  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
+  const [selectedArchiveJobIds, setSelectedArchiveJobIds] = useState<string[]>([])
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
+    new: false,
+    quoted: false,
+    approved: false,
+    in_progress: false,
+    ready: false,
+    closed: false,
+    rejected: false,
+    cancelled: false,
+  })
+  const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   function getFieldKey(jobId: string, field: SaveField) {
     return `${jobId}:${field}`
@@ -77,11 +106,209 @@ export default function AdminPage() {
     }))
   }
 
+  function setInvoiceItemsActionState(invoiceId: string, state: InvoiceItemsActionState) {
+    setInvoiceItemsActionStates((prev) => ({
+      ...prev,
+      [invoiceId]: state,
+    }))
+  }
+
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
       ...prev,
       [jobId]: !prev[jobId],
     }))
+    setHighlightedJobId(jobId)
+  }
+
+  function selectJobCard(jobId: string) {
+    setHighlightedJobId(jobId)
+  }
+
+  function toggleArchiveSelected(jobId: string) {
+    setSelectedArchiveJobIds((prev) =>
+      prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]
+    )
+    setHighlightedJobId(jobId)
+  }
+
+  function clearArchiveSelection() {
+    setSelectedArchiveJobIds([])
+  }
+
+  function toggleColumnCollapsed(status: RepairStatus) {
+    setCollapsedColumns((prev) => ({
+      ...prev,
+      [status]: !prev[status],
+    }))
+  }
+
+  async function duplicateJob(sourceJob: RepairRequest) {
+    const { data, error } = await supabase
+      .from('repair_requests')
+      .insert({
+        job_number: null,
+        full_name: sourceJob.full_name,
+        phone: sourceJob.phone,
+        email: sourceJob.email,
+        brand: sourceJob.brand,
+        model: sourceJob.model,
+        device_type: sourceJob.device_type,
+        serial_imei: sourceJob.serial_imei,
+        fault_description: sourceJob.fault_description,
+        status: 'new',
+        preferred_contact: sourceJob.preferred_contact,
+        internal_notes: sourceJob.internal_notes,
+        quoted_price: sourceJob.quoted_price,
+      })
+      .select(`
+        id,
+        job_number,
+        created_at,
+        full_name,
+        phone,
+        email,
+        brand,
+        model,
+        device_type,
+        serial_imei,
+        fault_description,
+        status,
+        preferred_contact,
+        internal_notes,
+        quoted_price
+      `)
+      .single()
+
+    if (error || !data) {
+      setError(error?.message || 'Failed to duplicate job')
+      return
+    }
+
+    const newJob = {
+      ...(data as RepairRequest),
+      internal_notes: data.internal_notes ?? '',
+      quoted_price: data.quoted_price ?? null,
+      serial_imei: data.serial_imei ?? null,
+    }
+
+    setJobs((prev) => [newJob, ...prev])
+    setExpandedJobs((prev) => ({
+      ...prev,
+      [newJob.id]: true,
+    }))
+    setHighlightedJobId(newJob.id)
+
+    window.setTimeout(() => {
+      const el = jobRefs.current[newJob.id]
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+      }
+    }, 150)
+  }
+
+  async function bulkUpdateArchiveStatus(targetStatus: RepairStatus) {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    const selectedSet = new Set(selectedArchiveJobIds)
+    const previousJobs = jobs
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        selectedSet.has(job.id) ? { ...job, status: targetStatus } : job
+      )
+    )
+
+    const { error } = await supabase
+      .from('repair_requests')
+      .update({ status: targetStatus })
+      .in('id', selectedArchiveJobIds)
+
+    if (error) {
+      setJobs(previousJobs)
+      setError(error.message)
+      setBulkBusy(false)
+      return
+    }
+
+    setSelectedArchiveJobIds([])
+    setBulkBusy(false)
+  }
+
+  async function bulkDuplicateArchiveJobs() {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    const selectedJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
+
+    const inserts = selectedJobs.map((job) => ({
+      job_number: null,
+      full_name: job.full_name,
+      phone: job.phone,
+      email: job.email,
+      brand: job.brand,
+      model: job.model,
+      device_type: job.device_type,
+      serial_imei: job.serial_imei,
+      fault_description: job.fault_description,
+      status: 'new' as RepairStatus,
+      preferred_contact: job.preferred_contact,
+      internal_notes: job.internal_notes,
+      quoted_price: job.quoted_price,
+    }))
+
+    const { data, error } = await supabase
+      .from('repair_requests')
+      .insert(inserts)
+      .select(`
+        id,
+        job_number,
+        created_at,
+        full_name,
+        phone,
+        email,
+        brand,
+        model,
+        device_type,
+        serial_imei,
+        fault_description,
+        status,
+        preferred_contact,
+        internal_notes,
+        quoted_price
+      `)
+
+    if (error) {
+      setError(error.message)
+      setBulkBusy(false)
+      return
+    }
+
+    const newJobs = ((data || []) as RepairRequest[]).map((job) => ({
+      ...job,
+      internal_notes: job.internal_notes ?? '',
+      quoted_price: job.quoted_price ?? null,
+      serial_imei: job.serial_imei ?? null,
+    }))
+
+    setJobs((prev) => [...newJobs, ...prev])
+    setExpandedJobs((prev) => {
+      const next = { ...prev }
+      for (const job of newJobs) next[job.id] = false
+      return next
+    })
+
+    setSelectedArchiveJobIds([])
+    if (newJobs[0]) setHighlightedJobId(newJobs[0].id)
+    setBulkBusy(false)
   }
 
   async function loadJobs() {
@@ -97,6 +324,7 @@ export default function AdminPage() {
         brand,
         model,
         device_type,
+        serial_imei,
         fault_description,
         status,
         preferred_contact,
@@ -105,14 +333,13 @@ export default function AdminPage() {
       `)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      throw error
-    }
+    if (error) throw error
 
     const safeJobs = ((data || []) as RepairRequest[]).map((job) => ({
       ...job,
       internal_notes: job.internal_notes ?? '',
       quoted_price: job.quoted_price ?? null,
+      serial_imei: job.serial_imei ?? null,
     }))
 
     setJobs(safeJobs)
@@ -138,19 +365,23 @@ export default function AdminPage() {
         customer_phone,
         customer_email,
         bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
         subtotal,
         total,
         notes,
         issued_at,
         paid_at,
+        sent_at,
+        sent_to_email,
         created_at,
         updated_at
       `)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      throw error
-    }
+    if (error) throw error
 
     const latestByJob: Record<string, Invoice> = {}
 
@@ -158,6 +389,9 @@ export default function AdminPage() {
       if (!latestByJob[raw.repair_request_id]) {
         latestByJob[raw.repair_request_id] = {
           ...raw,
+          tax_rate: Number(raw.tax_rate ?? 0),
+          subtotal_ex_tax: Number(raw.subtotal_ex_tax ?? 0),
+          tax_amount: Number(raw.tax_amount ?? 0),
           subtotal: Number(raw.subtotal ?? 0),
           total: Number(raw.total ?? 0),
         }
@@ -167,12 +401,129 @@ export default function AdminPage() {
     setInvoicesByJobId(latestByJob)
   }
 
+  async function loadInvoiceItems() {
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select(`
+        id,
+        invoice_id,
+        description,
+        qty,
+        unit_price,
+        line_total,
+        sort_order,
+        created_at
+      `)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    if (error) throw error
+
+    const grouped: Record<string, InvoiceItem[]> = {}
+
+    for (const item of (data || []) as InvoiceItem[]) {
+      const invoiceId = item.invoice_id
+      if (!grouped[invoiceId]) grouped[invoiceId] = []
+
+      grouped[invoiceId].push({
+        ...item,
+        qty: Number(item.qty ?? 0),
+        unit_price: Number(item.unit_price ?? 0),
+        line_total: Number(item.line_total ?? 0),
+        sort_order: Number(item.sort_order ?? 0),
+      })
+    }
+
+    setInvoiceItemsByInvoiceId(grouped)
+  }
+
+  async function refreshInvoiceById(invoiceId: string) {
+    const { data: invoiceData, error: invoiceError } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
+        subtotal,
+        total,
+        notes,
+        issued_at,
+        paid_at,
+        sent_at,
+        sent_to_email,
+        created_at,
+        updated_at
+      `)
+      .eq('id', invoiceId)
+      .single()
+
+    if (invoiceError || !invoiceData) {
+      throw invoiceError || new Error('Failed to refresh invoice')
+    }
+
+    const normalizedInvoice: Invoice = {
+      ...(invoiceData as Invoice),
+      tax_rate: Number(invoiceData.tax_rate ?? 0),
+      subtotal_ex_tax: Number(invoiceData.subtotal_ex_tax ?? 0),
+      tax_amount: Number(invoiceData.tax_amount ?? 0),
+      subtotal: Number(invoiceData.subtotal ?? 0),
+      total: Number(invoiceData.total ?? 0),
+    }
+
+    const { data: itemsData, error: itemsError } = await supabase
+      .from('invoice_items')
+      .select(`
+        id,
+        invoice_id,
+        description,
+        qty,
+        unit_price,
+        line_total,
+        sort_order,
+        created_at
+      `)
+      .eq('invoice_id', invoiceId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    if (itemsError) {
+      throw itemsError
+    }
+
+    const normalizedItems = ((itemsData || []) as InvoiceItem[]).map((item) => ({
+      ...item,
+      qty: Number(item.qty ?? 0),
+      unit_price: Number(item.unit_price ?? 0),
+      line_total: Number(item.line_total ?? 0),
+      sort_order: Number(item.sort_order ?? 0),
+    }))
+
+    setInvoicesByJobId((prev) => ({
+      ...prev,
+      [normalizedInvoice.repair_request_id]: normalizedInvoice,
+    }))
+
+    setInvoiceItemsByInvoiceId((prev) => ({
+      ...prev,
+      [invoiceId]: normalizedItems,
+    }))
+  }
+
   async function loadAllData() {
     setLoading(true)
     setError('')
 
     try {
-      await Promise.all([loadJobs(), loadInvoices()])
+      await Promise.all([loadJobs(), loadInvoices(), loadInvoiceItems()])
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load dashboard data'
       setError(message)
@@ -184,6 +535,37 @@ export default function AdminPage() {
   useEffect(() => {
     void loadAllData()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (loading) return
+
+    const params = new URLSearchParams(window.location.search)
+    const highlightJob = params.get('highlightJob')
+
+    if (!highlightJob) return
+
+    setHighlightedJobId(highlightJob)
+
+    setExpandedJobs((prev) => ({
+      ...prev,
+      [highlightJob]: true,
+    }))
+
+    window.setTimeout(() => {
+      const el = jobRefs.current[highlightJob]
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+      }
+    }, 150)
+
+    const nextUrl = new URL(window.location.href)
+    nextUrl.searchParams.delete('highlightJob')
+    window.history.replaceState({}, '', nextUrl.toString())
+  }, [loading])
 
   async function updateStatus(id: string, newStatus: RepairStatus) {
     const existingJob = jobs.find((job) => job.id === id)
@@ -300,6 +682,7 @@ export default function AdminPage() {
         | 'brand'
         | 'model'
         | 'device_type'
+        | 'serial_imei'
         | 'fault_description'
       >
     >,
@@ -326,6 +709,7 @@ export default function AdminPage() {
         brand,
         model,
         device_type,
+        serial_imei,
         fault_description
       `)
       .single()
@@ -348,6 +732,7 @@ export default function AdminPage() {
               brand: data.brand,
               model: data.model,
               device_type: data.device_type ?? null,
+              serial_imei: data.serial_imei ?? null,
               fault_description: data.fault_description,
             }
           : job
@@ -386,6 +771,10 @@ export default function AdminPage() {
         customer_name: job.full_name,
         customer_phone: job.phone,
         customer_email: job.email,
+        tax_mode: 'exclusive',
+        tax_rate: 0.1,
+        subtotal_ex_tax: amount,
+        tax_amount: 0,
         subtotal: amount,
         total: amount,
         notes: job.internal_notes || null,
@@ -399,11 +788,17 @@ export default function AdminPage() {
         customer_phone,
         customer_email,
         bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
         subtotal,
         total,
         notes,
         issued_at,
         paid_at,
+        sent_at,
+        sent_to_email,
         created_at,
         updated_at
       `)
@@ -429,16 +824,18 @@ export default function AdminPage() {
       return
     }
 
-    setInvoicesByJobId((prev) => ({
-      ...prev,
-      [job.id]: {
-        ...(insertedInvoice as Invoice),
-        subtotal: Number(insertedInvoice.subtotal ?? 0),
-        total: Number(insertedInvoice.total ?? 0),
-      },
-    }))
+    try {
+      await supabase.rpc('recalculate_invoice_totals', {
+        p_invoice_id: insertedInvoice.id,
+      })
 
-    setInvoiceActionState(job.id, 'idle')
+      await refreshInvoiceById(insertedInvoice.id)
+      setInvoiceActionState(job.id, 'idle')
+      setInvoiceItemsActionState(insertedInvoice.id, 'idle')
+      setHighlightedJobId(job.id)
+    } catch {
+      setInvoiceActionState(job.id, 'error')
+    }
   }
 
   async function updateInvoiceStatusForJob(invoiceId: string, status: InvoiceStatus) {
@@ -447,21 +844,27 @@ export default function AdminPage() {
 
     setInvoiceActionState(invoice.repair_request_id, 'saving')
 
+    const nowIso = new Date().toISOString()
+
     const updates: {
       status: InvoiceStatus
       issued_at?: string | null
       paid_at?: string | null
     } = { status }
 
+    if (status === 'draft') {
+      updates.issued_at = null
+      updates.paid_at = null
+    }
+
     if (status === 'issued') {
-      updates.issued_at = new Date().toISOString()
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = null
     }
 
     if (status === 'paid') {
-      updates.paid_at = new Date().toISOString()
-      if (!invoice.issued_at) {
-        updates.issued_at = new Date().toISOString()
-      }
+      updates.paid_at = nowIso
+      updates.issued_at = invoice.issued_at || nowIso
     }
 
     if (status === 'void') {
@@ -481,11 +884,17 @@ export default function AdminPage() {
         customer_phone,
         customer_email,
         bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
         subtotal,
         total,
         notes,
         issued_at,
         paid_at,
+        sent_at,
+        sent_to_email,
         created_at,
         updated_at
       `)
@@ -500,16 +909,144 @@ export default function AdminPage() {
       ...prev,
       [invoice.repair_request_id]: {
         ...(data as Invoice),
+        tax_rate: Number(data.tax_rate ?? 0),
+        subtotal_ex_tax: Number(data.subtotal_ex_tax ?? 0),
+        tax_amount: Number(data.tax_amount ?? 0),
         subtotal: Number(data.subtotal ?? 0),
         total: Number(data.total ?? 0),
       },
     }))
 
     setInvoiceActionState(invoice.repair_request_id, 'idle')
+    setHighlightedJobId(invoice.repair_request_id)
+  }
+
+  async function addInvoiceItemForInvoice(invoiceId: string) {
+    const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+    if (!invoice) return
+
+    const currentItems = invoiceItemsByInvoiceId[invoiceId] || []
+    setInvoiceItemsActionState(invoiceId, 'saving')
+
+    const nextSortOrder =
+      currentItems.length > 0
+        ? Math.max(...currentItems.map((item) => item.sort_order)) + 1
+        : 0
+
+    const { error } = await supabase.from('invoice_items').insert({
+      invoice_id: invoiceId,
+      description: 'New item',
+      qty: 1,
+      unit_price: 0,
+      line_total: 0,
+      sort_order: nextSortOrder,
+    })
+
+    if (error) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoiceId,
+    })
+
+    if (recalcError) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    try {
+      await refreshInvoiceById(invoiceId)
+      setInvoiceItemsActionState(invoiceId, 'idle')
+      setHighlightedJobId(invoice.repair_request_id)
+    } catch {
+      setInvoiceItemsActionState(invoiceId, 'error')
+    }
+  }
+
+  async function updateInvoiceItemForInvoice(
+    invoiceId: string,
+    itemId: string,
+    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
+  ) {
+    const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+
+    setInvoiceItemsActionState(invoiceId, 'saving')
+
+    const safeUpdates = {
+      ...(updates.description !== undefined
+        ? { description: updates.description.trim() || 'Item' }
+        : {}),
+      ...(updates.qty !== undefined
+        ? { qty: Number.isFinite(updates.qty) ? updates.qty : 0 }
+        : {}),
+      ...(updates.unit_price !== undefined
+        ? { unit_price: Number.isFinite(updates.unit_price) ? updates.unit_price : 0 }
+        : {}),
+    }
+
+    const { error } = await supabase
+      .from('invoice_items')
+      .update(safeUpdates)
+      .eq('id', itemId)
+
+    if (error) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoiceId,
+    })
+
+    if (recalcError) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    try {
+      await refreshInvoiceById(invoiceId)
+      setInvoiceItemsActionState(invoiceId, 'idle')
+      if (invoice) setHighlightedJobId(invoice.repair_request_id)
+    } catch {
+      setInvoiceItemsActionState(invoiceId, 'error')
+    }
+  }
+
+  async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
+    const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+
+    setInvoiceItemsActionState(invoiceId, 'saving')
+
+    const { error } = await supabase.from('invoice_items').delete().eq('id', itemId)
+
+    if (error) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoiceId,
+    })
+
+    if (recalcError) {
+      setInvoiceItemsActionState(invoiceId, 'error')
+      return
+    }
+
+    try {
+      await refreshInvoiceById(invoiceId)
+      setInvoiceItemsActionState(invoiceId, 'idle')
+      if (invoice) setHighlightedJobId(invoice.repair_request_id)
+    } catch {
+      setInvoiceItemsActionState(invoiceId, 'error')
+    }
   }
 
   function handleDragStart(jobId: string) {
     setDraggedJobId(jobId)
+    setHighlightedJobId(jobId)
   }
 
   function handleDragEnd() {
@@ -569,6 +1106,7 @@ export default function AdminPage() {
       await updateStatus(droppedJobId, status)
     }
 
+    setHighlightedJobId(droppedJobId)
     setDraggedJobId(null)
   }
 
@@ -587,6 +1125,7 @@ export default function AdminPage() {
         job.brand,
         job.model,
         job.device_type || '',
+        job.serial_imei || '',
         job.fault_description,
         job.status,
         job.preferred_contact || '',
@@ -605,21 +1144,19 @@ export default function AdminPage() {
   }, [jobs, search, statusFilter, invoicesByJobId])
 
   const jobsByStatus = useMemo(() => {
-    return BOARD_COLUMNS.reduce((acc, status) => {
+    const allColumnStatuses = [...BOARD_COLUMNS, ...ARCHIVE_COLUMNS]
+
+    return allColumnStatuses.reduce((acc, status) => {
       acc[status] = filteredJobs.filter((job) => job.status === status)
       return acc
     }, {} as Record<RepairStatus, RepairRequest[]>)
-  }, [filteredJobs])
-
-  const hiddenJobs = useMemo(() => {
-    return filteredJobs.filter((job) => !BOARD_COLUMNS.includes(job.status))
   }, [filteredJobs])
 
   const summary = useMemo(() => {
     const totalJobs = filteredJobs.length
     const quotedCount = filteredJobs.filter((j) => j.status === 'quoted').length
     const inProgressCount = filteredJobs.filter((j) => j.status === 'in_progress').length
-    const readyCount = filteredJobs.filter((j) => j.status === 'completed').length
+    const readyCount = filteredJobs.filter((j) => j.status === 'ready').length
     const quotedValue = filteredJobs.reduce((sum, j) => sum + (j.quoted_price ?? 0), 0)
     const invoiceCount = filteredJobs.filter((j) => !!invoicesByJobId[j.id]).length
 
@@ -633,6 +1170,16 @@ export default function AdminPage() {
     }
   }, [filteredJobs, invoicesByJobId])
 
+  const archiveJobs = useMemo(
+    () => filteredJobs.filter((job) => ARCHIVE_COLUMNS.includes(job.status)),
+    [filteredJobs]
+  )
+
+  useEffect(() => {
+    const archiveIds = new Set(archiveJobs.map((job) => job.id))
+    setSelectedArchiveJobIds((prev) => prev.filter((id) => archiveIds.has(id)))
+  }, [archiveJobs])
+
   return (
     <main className={styles.page}>
       <div className={styles.topBar}>
@@ -645,6 +1192,14 @@ export default function AdminPage() {
         </div>
 
         <div className={styles.toolbar}>
+          <Link href="/admin/jobs/new" className={styles.viewButton}>
+            New Job
+          </Link>
+
+          <Link href="/admin/invoices" className={styles.viewButton}>
+            View Invoices
+          </Link>
+
           {(['board', 'list', 'details', 'tiles'] as const).map((mode) => (
             <button
               key={mode}
@@ -714,7 +1269,7 @@ export default function AdminPage() {
                 key={status}
                 className={`${styles.column} ${
                   dragOverStatus === status ? styles.columnDragOver : ''
-                }`}
+                } ${collapsedColumns[status] ? styles.columnCollapsed : ''}`}
                 onDragOver={(e) => handleColumnDragOver(e, status)}
                 onDragLeave={(e) => handleColumnDragLeave(e, status)}
                 onDrop={(e) => void handleColumnDrop(e, status)}
@@ -726,90 +1281,236 @@ export default function AdminPage() {
                     >
                       {getStatusLabel(status)}
                     </span>
-                    <span className={styles.columnCount}>
-                      {jobsByStatus[status]?.length || 0}
-                    </span>
+
+                    <div className={styles.columnHeaderActions}>
+                      <span className={styles.columnCount}>
+                        {jobsByStatus[status]?.length || 0}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.columnToggleButton}
+                        onClick={() => toggleColumnCollapsed(status)}
+                      >
+                        {collapsedColumns[status] ? 'Expand' : 'Minimise'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className={styles.columnCardsWrap}>
-                  {(jobsByStatus[status] || []).length === 0 ? (
-                    <div className={styles.emptyColumn}>No jobs</div>
-                  ) : (
-                    (jobsByStatus[status] || []).map((job) => (
-                      <JobCard
-                        key={job.id}
-                        job={job}
-                        expanded={!!expandedJobs[job.id]}
-                        toggleExpanded={toggleExpanded}
-                        updateStatus={updateStatus}
-                        updateQuote={updateQuote}
-                        updateNotes={updateNotes}
-                        updateJobBasics={updateJobBasics}
-                        statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
-                        quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
-                        notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
-                        jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
-                        customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
-                        deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
-                        setFieldState={setFieldState}
-                        draggableEnabled
-                        isDragging={draggedJobId === job.id}
-                        onDragStart={handleDragStart}
-                        onDragEnd={handleDragEnd}
-                        invoice={invoicesByJobId[job.id] ?? null}
-                        invoiceActionState={invoiceActionStates[job.id] || 'idle'}
-                        createInvoiceForJob={createInvoiceForJob}
-                        updateInvoiceStatusForJob={updateInvoiceStatusForJob}
-                      />
-                    ))
-                  )}
-                </div>
+                {!collapsedColumns[status] && (
+                  <div className={styles.columnCardsWrap}>
+                    {(jobsByStatus[status] || []).length === 0 ? (
+                      <div className={styles.emptyColumn}>No jobs</div>
+                    ) : (
+                      (jobsByStatus[status] || []).map((job) => {
+                        const invoice = invoicesByJobId[job.id] ?? null
+                        const invoiceItems = invoice
+                          ? invoiceItemsByInvoiceId[invoice.id] || []
+                          : []
+
+                        return (
+                          <JobCard
+                            key={job.id}
+                            job={job}
+                            expanded={!!expandedJobs[job.id]}
+                            toggleExpanded={toggleExpanded}
+                            updateStatus={updateStatus}
+                            updateQuote={updateQuote}
+                            updateNotes={updateNotes}
+                            updateJobBasics={updateJobBasics}
+                            statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                            quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                            notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                            jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                            customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                            deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
+                            setFieldState={setFieldState}
+                            draggableEnabled
+                            isDragging={draggedJobId === job.id}
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
+                            invoice={invoice}
+                            invoiceItems={invoiceItems}
+                            invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                            invoiceItemsActionState={
+                              invoice ? invoiceItemsActionStates[invoice.id] || 'idle' : 'idle'
+                            }
+                            createInvoiceForJob={createInvoiceForJob}
+                            updateInvoiceStatusForJob={updateInvoiceStatusForJob}
+                            addInvoiceItemForInvoice={addInvoiceItemForInvoice}
+                            updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                            deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                            highlighted={highlightedJobId === job.id}
+                            cardRef={(el) => {
+                              jobRefs.current[job.id] = el
+                            }}
+                            onSelectCard={selectJobCard}
+                            onDuplicateJob={duplicateJob}
+                          />
+                        )
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          {hiddenJobs.length > 0 && (
-            <section className={styles.otherStatusesSection}>
-              <h2 className={styles.sectionTitle}>Other statuses</h2>
-              <div className={styles.listGrid}>
-                {hiddenJobs.map((job) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    expanded={!!expandedJobs[job.id]}
-                    toggleExpanded={toggleExpanded}
-                    updateStatus={updateStatus}
-                    updateQuote={updateQuote}
-                    updateNotes={updateNotes}
-                    updateJobBasics={updateJobBasics}
-                    statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
-                    quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
-                    notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
-                    jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
-                    customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
-                    deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
-                    setFieldState={setFieldState}
-                    draggableEnabled
-                    isDragging={draggedJobId === job.id}
-                    onDragStart={handleDragStart}
-                    onDragEnd={handleDragEnd}
-                    invoice={invoicesByJobId[job.id] ?? null}
-                    invoiceActionState={invoiceActionStates[job.id] || 'idle'}
-                    createInvoiceForJob={createInvoiceForJob}
-                    updateInvoiceStatusForJob={updateInvoiceStatusForJob}
-                  />
-                ))}
+          <section className={styles.otherStatusesSection}>
+            <div className={styles.archiveHeader}>
+              <h2 className={styles.sectionTitle}>Archive statuses</h2>
+              <p className={styles.archiveSubtitle}>
+                Closed, rejected and cancelled jobs in a tighter view.
+              </p>
+            </div>
+
+            <div className={styles.bulkBar}>
+              <div className={styles.bulkBarText}>
+                Selected archive jobs: <strong>{selectedArchiveJobIds.length}</strong>
               </div>
-            </section>
-          )}
+
+              <div className={styles.bulkBarActions}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => void bulkUpdateArchiveStatus('new')}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  {bulkBusy ? 'Working...' : 'Reopen to New'}
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => void bulkUpdateArchiveStatus('ready')}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  {bulkBusy ? 'Working...' : 'Move to Ready'}
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => void bulkDuplicateArchiveJobs()}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  {bulkBusy ? 'Working...' : 'Duplicate Selected'}
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.miniButton}
+                  onClick={clearArchiveSelection}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.archiveGrid}>
+              {ARCHIVE_COLUMNS.map((status) => (
+                <div
+                  key={status}
+                  className={`${styles.column} ${
+                    collapsedColumns[status] ? styles.columnCollapsed : ''
+                  }`}
+                >
+                  <div className={styles.columnHeaderSticky}>
+                    <div className={styles.columnHeader}>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`status_${status}`]}`}
+                      >
+                        {getStatusLabel(status)}
+                      </span>
+
+                      <div className={styles.columnHeaderActions}>
+                        <span className={styles.columnCount}>
+                          {jobsByStatus[status]?.length || 0}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.columnToggleButton}
+                          onClick={() => toggleColumnCollapsed(status)}
+                        >
+                          {collapsedColumns[status] ? 'Expand' : 'Minimise'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!collapsedColumns[status] && (
+                    <div className={styles.columnCardsWrap}>
+                      {(jobsByStatus[status] || []).length === 0 ? (
+                        <div className={styles.emptyColumn}>No jobs</div>
+                      ) : (
+                        (jobsByStatus[status] || []).map((job) => {
+                          const invoice = invoicesByJobId[job.id] ?? null
+                          const invoiceItems = invoice
+                            ? invoiceItemsByInvoiceId[invoice.id] || []
+                            : []
+
+                          return (
+                            <JobCard
+                              key={job.id}
+                              job={job}
+                              expanded={!!expandedJobs[job.id]}
+                              toggleExpanded={toggleExpanded}
+                              updateStatus={updateStatus}
+                              updateQuote={updateQuote}
+                              updateNotes={updateNotes}
+                              updateJobBasics={updateJobBasics}
+                              statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                              quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                              notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                              jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                              customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                              deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
+                              setFieldState={setFieldState}
+                              invoice={invoice}
+                              invoiceItems={invoiceItems}
+                              invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                              invoiceItemsActionState={
+                                invoice ? invoiceItemsActionStates[invoice.id] || 'idle' : 'idle'
+                              }
+                              createInvoiceForJob={createInvoiceForJob}
+                              updateInvoiceStatusForJob={updateInvoiceStatusForJob}
+                              addInvoiceItemForInvoice={addInvoiceItemForInvoice}
+                              updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                              deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                              highlighted={highlightedJobId === job.id}
+                              cardRef={(el) => {
+                                jobRefs.current[job.id] = el
+                              }}
+                              onSelectCard={selectJobCard}
+                              compact
+                              onDuplicateJob={duplicateJob}
+                              selectable
+                              selected={selectedArchiveJobIds.includes(job.id)}
+                              onToggleSelected={toggleArchiveSelected}
+                            />
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         </>
       )}
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'tiles' && (
         <div className={styles.tilesGrid}>
           {filteredJobs.map((job) => (
-            <div key={job.id} className={styles.tile}>
+            <div
+              key={job.id}
+              className={`${styles.tile} ${
+                highlightedJobId === job.id ? styles.jobCardHighlighted : ''
+              }`}
+              onClick={() => setHighlightedJobId(job.id)}
+            >
               <div className={styles.tileHeader}>
                 <strong>{job.job_number || 'Pending'}</strong>
                 <span
@@ -832,8 +1533,7 @@ export default function AdminPage() {
                 <strong>Quote:</strong> {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
               </p>
               <p className={styles.tileText}>
-                <strong>Invoice:</strong>{' '}
-                {invoicesByJobId[job.id]?.invoice_number || '-'}
+                <strong>Invoice:</strong> {invoicesByJobId[job.id]?.invoice_number || '-'}
               </p>
             </div>
           ))}
@@ -857,7 +1557,11 @@ export default function AdminPage() {
             </thead>
             <tbody>
               {filteredJobs.map((job) => (
-                <tr key={job.id}>
+                <tr
+                  key={job.id}
+                  className={highlightedJobId === job.id ? styles.tableRowHighlighted : ''}
+                  onClick={() => setHighlightedJobId(job.id)}
+                >
                   <td>{job.job_number || 'Pending'}</td>
                   <td>{job.full_name}</td>
                   <td>{job.phone}</td>
@@ -883,29 +1587,47 @@ export default function AdminPage() {
 
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'details' && (
         <div className={styles.listGrid}>
-          {filteredJobs.map((job) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              expanded={!!expandedJobs[job.id]}
-              toggleExpanded={toggleExpanded}
-              updateStatus={updateStatus}
-              updateQuote={updateQuote}
-              updateNotes={updateNotes}
-              updateJobBasics={updateJobBasics}
-              statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
-              quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
-              notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
-              jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
-              customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
-              deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
-              setFieldState={setFieldState}
-              invoice={invoicesByJobId[job.id] ?? null}
-              invoiceActionState={invoiceActionStates[job.id] || 'idle'}
-              createInvoiceForJob={createInvoiceForJob}
-              updateInvoiceStatusForJob={updateInvoiceStatusForJob}
-            />
-          ))}
+          {filteredJobs.map((job) => {
+            const invoice = invoicesByJobId[job.id] ?? null
+            const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
+
+            return (
+              <JobCard
+                key={job.id}
+                job={job}
+                expanded={!!expandedJobs[job.id]}
+                toggleExpanded={toggleExpanded}
+                updateStatus={updateStatus}
+                updateQuote={updateQuote}
+                updateNotes={updateNotes}
+                updateJobBasics={updateJobBasics}
+                statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
+                quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
+                jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
+                customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
+                deviceSaveState={saveStates[`${job.id}:device`] || 'idle'}
+                setFieldState={setFieldState}
+                invoice={invoice}
+                invoiceItems={invoiceItems}
+                invoiceActionState={invoiceActionStates[job.id] || 'idle'}
+                invoiceItemsActionState={
+                  invoice ? invoiceItemsActionStates[invoice.id] || 'idle' : 'idle'
+                }
+                createInvoiceForJob={createInvoiceForJob}
+                updateInvoiceStatusForJob={updateInvoiceStatusForJob}
+                addInvoiceItemForInvoice={addInvoiceItemForInvoice}
+                updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                highlighted={highlightedJobId === job.id}
+                cardRef={(el) => {
+                  jobRefs.current[job.id] = el
+                }}
+                onSelectCard={selectJobCard}
+                onDuplicateJob={duplicateJob}
+              />
+            )
+          })}
         </div>
       )}
     </main>

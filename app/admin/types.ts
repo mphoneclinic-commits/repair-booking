@@ -3,7 +3,7 @@ export type RepairStatus =
   | 'quoted'
   | 'approved'
   | 'in_progress'
-  | 'completed'
+  | 'ready'
   | 'closed'
   | 'rejected'
   | 'cancelled'
@@ -18,6 +18,7 @@ export type RepairRequest = {
   brand: string
   model: string
   device_type: string | null
+  serial_imei: string | null
   fault_description: string
   status: RepairStatus
   preferred_contact: string | null
@@ -26,6 +27,7 @@ export type RepairRequest = {
 }
 
 export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
+export type InvoiceTaxMode = 'exclusive' | 'inclusive' | 'none'
 
 export type Invoice = {
   id: string
@@ -36,11 +38,19 @@ export type Invoice = {
   customer_phone: string
   customer_email: string | null
   bill_to_address: string | null
+
+  tax_mode: InvoiceTaxMode
+  tax_rate: number
+  subtotal_ex_tax: number
+  tax_amount: number
   subtotal: number
   total: number
+
   notes: string | null
   issued_at: string | null
   paid_at: string | null
+  sent_at: string | null
+  sent_to_email: string | null
   created_at: string
   updated_at: string
 }

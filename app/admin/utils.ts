@@ -6,7 +6,7 @@ export const STATUSES = [
   'quoted',
   'approved',
   'in_progress',
-  'completed',
+  'ready',
   'closed',
   'rejected',
   'cancelled',
@@ -17,9 +17,10 @@ export const BOARD_COLUMNS: RepairStatus[] = [
   'quoted',
   'approved',
   'in_progress',
-  'completed',
-  'closed',
+  'ready',
 ]
+
+export const ARCHIVE_COLUMNS: RepairStatus[] = ['closed', 'rejected', 'cancelled']
 
 export function formatDateTime(dateString: string) {
   return new Intl.DateTimeFormat('en-AU', {
@@ -41,7 +42,7 @@ export function getStatusLabel(status: string): string {
     quoted: 'Quoted',
     approved: 'Approved',
     in_progress: 'In Progress',
-    completed: 'Ready',
+    ready: 'Ready',
     closed: 'Closed',
     rejected: 'Rejected',
     cancelled: 'Cancelled',

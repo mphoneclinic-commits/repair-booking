@@ -1,0 +1,406 @@
+.page {
+  min-height: 100vh;
+  background: #eef2f7;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.shell {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.topActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.topActionsRight {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.printButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.document {
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.brand {
+  font-size: 28px;
+  font-weight: 900;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.brandMeta {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.invoiceHeaderRight {
+  text-align: right;
+}
+
+.invoiceTitle {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #2563eb;
+  margin-bottom: 8px;
+}
+
+.invoiceNumber {
+  font-size: 22px;
+  font-weight: 900;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.invoiceDateLine {
+  font-size: 14px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.metaCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.metaTitle {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.metaValueStrong {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.metaValue {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.metaRowCompact {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.metaRowStack {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.tableSection,
+.notesSection,
+.summarySection {
+  margin-top: 18px;
+}
+
+.sectionHeading {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.itemsTable {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.itemsTable thead tr {
+  background: #f8fafc;
+}
+
+.itemsTable th,
+.itemsTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.itemsTable th {
+  font-size: 13px;
+  font-weight: 900;
+  color: #475569;
+}
+
+.itemsTable td {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.numberCell {
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+.emptyTableCell {
+  text-align: center;
+  color: #64748b;
+}
+
+.summarySection {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.summaryBox {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.summaryTotal {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 2px solid #cbd5e1;
+  font-size: 17px;
+  color: #0f172a;
+}
+
+.notesText {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #334155;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.footer {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.messageCard,
+.messageCardError {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+.messageCardError {
+  color: #b91c1c;
+}
+
+@media (max-width: 780px) {
+  .page {
+    padding: 14px;
+  }
+
+  .document {
+    padding: 16px;
+  }
+
+  .header,
+  .topActions,
+  .metaGrid {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .invoiceHeaderRight {
+    text-align: left;
+  }
+
+  .itemsTable th,
+  .itemsTable td {
+    padding: 10px;
+    font-size: 13px;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  .page {
+    background: #ffffff;
+    padding: 0;
+  }
+
+  .shell {
+    max-width: none;
+    margin: 0;
+  }
+
+  .topActions {
+    display: none;
+  }
+
+  .document {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 12px 0 0;
+  }
+
+  .header {
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e2e8f0;
+    gap: 18px;
+  }
+
+  .brand {
+    font-size: 26px;
+  }
+
+  .brandMeta,
+  .metaValue,
+  .metaRowCompact,
+  .metaRowStack,
+  .notesText,
+  .footer,
+  .itemsTable td,
+  .itemsTable th,
+  .summaryRow,
+  .invoiceDateLine {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .invoiceTitle {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .invoiceNumber {
+    font-size: 20px;
+    margin-bottom: 6px;
+  }
+
+  .metaGrid {
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .metaCard,
+  .summaryBox,
+  .notesText {
+    padding: 12px;
+  }
+
+  .tableSection,
+  .notesSection,
+  .summarySection {
+    margin-top: 14px;
+  }
+
+  .sectionHeading {
+    margin-bottom: 8px;
+    font-size: 11px;
+  }
+
+  .itemsTable th,
+  .itemsTable td {
+    padding: 8px 10px;
+  }
+
+  .summaryBox {
+    max-width: 300px;
+  }
+
+  .footer {
+    margin-top: 14px;
+    padding-top: 10px;
+  }
+
+  .metaCard,
+  .tableSection,
+  .summarySection,
+  .notesSection,
+  .footer,
+  .itemsTable,
+  .itemsTable tr,
+  .summaryBox {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
