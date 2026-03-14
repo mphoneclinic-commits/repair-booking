@@ -16,7 +16,7 @@ type InvoiceRow = Invoice & {
   job_number: string | null
 }
 
-const STATUS_FILTERS: Array<'all' | InvoiceStatus> = ['all', 'draft', 'issued', 'paid', 'void']
+const STATUS_FILTERS: Array<'all' | InvoiceStatus> = ['all', 'issued', 'paid', 'void']
 
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
@@ -97,6 +97,42 @@ export default function AdminInvoicesPage() {
 
     setInvoices(rows)
     setLoading(false)
+  }
+
+  async function markInvoiceStatus(invoice: InvoiceRow, status: InvoiceStatus) {
+    const nowIso = new Date().toISOString()
+
+    const updates: {
+      status: InvoiceStatus
+      issued_at?: string | null
+      paid_at?: string | null
+    } = { status }
+
+    if (status === 'issued') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = null
+    }
+
+    if (status === 'paid') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = nowIso
+    }
+
+    if (status === 'void') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = null
+    }
+
+    const { error } = await supabase
+      .from('invoices')
+      .update(updates)
+      .eq('id', invoice.id)
+
+    if (!error) {
+      void loadInvoices()
+    } else {
+      setError(error.message)
+    }
   }
 
   useEffect(() => {
@@ -200,7 +236,7 @@ export default function AdminInvoicesPage() {
                 <th>Issued</th>
                 <th>Paid</th>
                 <th>Sent</th>
-                <th>Open</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -222,12 +258,55 @@ export default function AdminInvoicesPage() {
                   <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
                   <td>{invoice.sent_at ? formatDateTime(invoice.sent_at) : '-'}</td>
                   <td>
-                    <Link
-                      href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
-                      className={styles.actionButton}
-                    >
-                      Open
-                    </Link>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+{invoice.status === 'issued' && (
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={() => void markInvoiceStatus(invoice, 'paid')}
+  >
+    Mark Paid
+  </button>
+)}
+
+{invoice.status === 'paid' && (
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={() => void markInvoiceStatus(invoice, 'issued')}
+  >
+    Mark Unpaid
+  </button>
+)}
+
+{invoice.status !== 'void' && (
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={() => void markInvoiceStatus(invoice, 'void')}
+  >
+    Void
+  </button>
+)}
+
+{invoice.status === 'void' && (
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={() => void markInvoiceStatus(invoice, 'issued')}
+  >
+    Restore Issued
+  </button>
+)}
+
+<Link
+  href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
+  className={styles.actionButton}
+>
+  Open
+</Link>
+                      
+                    </div>
                   </td>
                 </tr>
               ))}

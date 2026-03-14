@@ -1,16 +1,4 @@
-import type { RepairStatus } from './types'
-
-export const STATUSES = [
-  'all',
-  'new',
-  'quoted',
-  'approved',
-  'in_progress',
-  'ready',
-  'closed',
-  'rejected',
-  'cancelled',
-] as const
+import type { RepairStatus, StatusFilter } from './types'
 
 export const BOARD_COLUMNS: RepairStatus[] = [
   'new',
@@ -22,50 +10,75 @@ export const BOARD_COLUMNS: RepairStatus[] = [
 
 export const ARCHIVE_COLUMNS: RepairStatus[] = ['closed', 'rejected', 'cancelled']
 
-export function formatDateTime(dateString: string) {
-  return new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Melbourne',
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  }).format(new Date(dateString))
+export const STATUSES: StatusFilter[] = [
+  'all',
+  'new',
+  'quoted',
+  'approved',
+  'in_progress',
+  'ready',
+  'closed',
+  'rejected',
+  'cancelled',
+]
+
+export function getStatusLabel(status: RepairStatus | StatusFilter): string {
+  switch (status) {
+    case 'all':
+      return 'All statuses'
+    case 'new':
+      return 'New'
+    case 'quoted':
+      return 'Quoted'
+    case 'approved':
+      return 'Approved'
+    case 'in_progress':
+      return 'In Progress'
+    case 'ready':
+      return 'Ready'
+    case 'closed':
+      return 'Closed'
+    case 'rejected':
+      return 'Rejected'
+    case 'cancelled':
+      return 'Cancelled'
+    default:
+      return String(status)
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+  }
 }
 
-export function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    all: 'All statuses',
-    new: 'New',
-    quoted: 'Quoted',
-    approved: 'Approved',
-    in_progress: 'In Progress',
-    ready: 'Ready',
-    closed: 'Closed',
-    rejected: 'Rejected',
-    cancelled: 'Cancelled',
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '-'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
   }
 
-  return labels[status] || status
+  return new Intl.DateTimeFormat('en-AU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
 }
 
-export function normalizePhone(value: string) {
-  return value.replace(/\D/g, '').slice(0, 10)
+export function normalizePhone(value: string | null | undefined): string {
+  return (value || '').replace(/\D/g, '')
 }
 
-export function normalizeQuoteInput(value: string) {
-  const cleaned = value.replace(/[^\d.]/g, '')
+export function normalizeQuoteInput(value: string): string {
+  const cleaned = value.replace(/[^0-9.]/g, '')
+
   const firstDotIndex = cleaned.indexOf('.')
-
   if (firstDotIndex === -1) return cleaned
 
   const beforeDot = cleaned.slice(0, firstDotIndex + 1)
-  const afterDot = cleaned
-    .slice(firstDotIndex + 1)
-    .replace(/\./g, '')
-    .slice(0, 2)
+  const afterDot = cleaned.slice(firstDotIndex + 1).replace(/\./g, '')
 
   return `${beforeDot}${afterDot}`
 }

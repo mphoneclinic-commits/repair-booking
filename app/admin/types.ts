@@ -27,7 +27,7 @@ export type RepairRequest = {
   is_hidden: boolean
 }
 
-export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
+export type InvoiceStatus = 'issued' | 'paid' | 'void'
 
 export type Invoice = {
   id: string

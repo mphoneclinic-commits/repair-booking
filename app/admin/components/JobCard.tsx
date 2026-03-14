@@ -51,6 +51,7 @@ export default function JobCard({
   addInvoiceItemForInvoice,
   updateInvoiceItemForInvoice,
   deleteInvoiceItemForInvoice,
+  removeInvoiceForJob,
   highlighted = false,
   cardRef,
   onSelectCard,
@@ -110,6 +111,7 @@ export default function JobCard({
     updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
   ) => Promise<void>
   deleteInvoiceItemForInvoice: (invoiceId: string, itemId: string) => Promise<void>
+  removeInvoiceForJob: (job: RepairRequest) => Promise<void>
   highlighted?: boolean
   cardRef?: (el: HTMLDivElement | null) => void
   onSelectCard?: (jobId: string) => void
@@ -879,6 +881,20 @@ export default function JobCard({
                   Ready for Pickup SMS
                 </button>
 
+                {onDuplicateJob ? (
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSelectCard?.(job.id)
+                      void onDuplicateJob(job)
+                    }}
+                  >
+                    Duplicate Job
+                  </button>
+                ) : null}
+
                 {isArchiveStatus ? (
                   <button
                     type="button"
@@ -932,6 +948,7 @@ export default function JobCard({
                   if (!invoice) return Promise.resolve()
                   return deleteInvoiceItemForInvoice(invoice.id, itemId)
                 }}
+                onRemoveInvoice={() => removeInvoiceForJob(job)}
               />
             </div>
           </div>

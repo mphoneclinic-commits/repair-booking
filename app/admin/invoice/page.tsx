@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import styles from './invoice.module.css'
-import type { Invoice, InvoiceItem } from '../types'
+import type { Invoice, InvoiceItem, InvoiceStatus } from '../types'
 import { formatDateTime } from '../utils'
 
 const supabase = createClient(
@@ -116,6 +116,78 @@ export default function InvoicePrintPage() {
     void loadInvoicePage()
   }, [invoiceId])
 
+  async function updateInvoiceStatus(status: InvoiceStatus) {
+    if (!invoice) return
+
+    setError('')
+
+    const nowIso = new Date().toISOString()
+
+    const updates: {
+      status: InvoiceStatus
+      issued_at?: string | null
+      paid_at?: string | null
+    } = { status }
+
+    if (status === 'issued') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = null
+    }
+
+    if (status === 'paid') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = nowIso
+    }
+
+    if (status === 'void') {
+      updates.issued_at = invoice.issued_at || nowIso
+      updates.paid_at = null
+    }
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .update(updates)
+      .eq('id', invoice.id)
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
+        subtotal,
+        total,
+        notes,
+        issued_at,
+        paid_at,
+        sent_at,
+        sent_to_email,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (error || !data) {
+      setError(error?.message || 'Failed to update invoice')
+      return
+    }
+
+    setInvoice({
+      ...(data as Invoice),
+      tax_rate: Number(data.tax_rate ?? 0),
+      subtotal_ex_tax: Number(data.subtotal_ex_tax ?? 0),
+      tax_amount: Number(data.tax_amount ?? 0),
+      subtotal: Number(data.subtotal ?? 0),
+      total: Number(data.total ?? 0),
+    })
+  }
+
   const totalQty = useMemo(() => {
     return items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)
   }, [items])
@@ -156,13 +228,55 @@ export default function InvoicePrintPage() {
             Back to Admin
           </Link>
 
-          <button
-            type="button"
-            className={styles.printButton}
-            onClick={() => window.print()}
-          >
-            Print Invoice
-          </button>
+          <div className={styles.topActionsRight}>
+{invoice.status === 'issued' && (
+  <button
+    type="button"
+    className={styles.secondaryButton}
+    onClick={() => void updateInvoiceStatus('paid')}
+  >
+    Mark Paid
+  </button>
+)}
+
+{invoice.status === 'paid' && (
+  <button
+    type="button"
+    className={styles.secondaryButton}
+    onClick={() => void updateInvoiceStatus('issued')}
+  >
+    Mark Unpaid
+  </button>
+)}
+
+{invoice.status !== 'void' && (
+  <button
+    type="button"
+    className={styles.secondaryButton}
+    onClick={() => void updateInvoiceStatus('void')}
+  >
+    Mark Void
+  </button>
+)}
+
+{invoice.status === 'void' && (
+  <button
+    type="button"
+    className={styles.secondaryButton}
+    onClick={() => void updateInvoiceStatus('issued')}
+  >
+    Restore Issued
+  </button>
+)}
+
+            <button
+              type="button"
+              className={styles.printButton}
+              onClick={() => window.print()}
+            >
+              Print Invoice
+            </button>
+          </div>
         </div>
 
         <article className={styles.document}>

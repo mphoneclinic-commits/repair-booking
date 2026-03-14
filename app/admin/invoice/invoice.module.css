@@ -94,6 +94,41 @@
   font-weight: 700;
 }
 
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status_draft {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.status_issued {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1e3a8a;
+}
+
+.status_paid {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #166534;
+}
+
+.status_void {
+  background: #e5e7eb;
+  border-color: #6b7280;
+  color: #374151;
+}
+
 .metaGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -130,23 +165,6 @@
   color: #334155;
   line-height: 1.4;
   word-break: break-word;
-}
-
-.metaRowCompact {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 10px;
-  font-size: 14px;
-  color: #334155;
-}
-
-.metaRowStack {
-  margin-top: 10px;
-  display: grid;
-  gap: 4px;
-  font-size: 14px;
-  color: #334155;
 }
 
 .tableSection,
@@ -334,8 +352,6 @@
 
   .brandMeta,
   .metaValue,
-  .metaRowCompact,
-  .metaRowStack,
   .notesText,
   .footer,
   .itemsTable td,
@@ -402,95 +418,5 @@
   .summaryBox {
     break-inside: avoid;
     page-break-inside: avoid;
-  }
-}
-.groupedJobCard {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px;
-  background: #ffffff;
-}
-.singleJobSummary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 16px;
-  background: #ffffff;
-}
-
-.referencesTableWrap {
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.referencesTable {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.referencesTable thead tr {
-  background: #f8fafc;
-}
-
-.referencesTable th,
-.referencesTable td {
-  padding: 12px 14px;
-  border-bottom: 1px solid #e2e8f0;
-  text-align: left;
-  vertical-align: top;
-}
-
-.referencesTable th {
-  font-size: 13px;
-  font-weight: 900;
-  color: #475569;
-}
-
-.referencesTable td {
-  font-size: 14px;
-  color: #0f172a;
-}
-
-.referencesTable tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-@media (max-width: 780px) {
-  .singleJobSummary {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .referencesTable th,
-  .referencesTable td {
-    padding: 10px 10px;
-    font-size: 13px;
-  }
-}
-
-@media print {
-  .singleJobSummary {
-    gap: 10px;
-    padding: 10px;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .referencesTableWrap,
-  .referencesTable,
-  .referencesTable tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .referencesTable th,
-  .referencesTable td {
-    padding: 7px 8px;
-    font-size: 12px;
-    line-height: 1.3;
   }
 }

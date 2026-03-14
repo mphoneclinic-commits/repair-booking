@@ -3,8 +3,6 @@
 import Link from 'next/link'
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem, InvoiceStatus } from '../types'
-import { formatDateTime } from '../utils'
-import InvoiceItemsEditor from './InvoiceItemsEditor'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
@@ -19,6 +17,7 @@ export default function InvoicePanel({
   onAddInvoiceItem,
   onUpdateInvoiceItem,
   onDeleteInvoiceItem,
+  onRemoveInvoice,
 }: {
   invoice: Invoice | null
   items: InvoiceItem[]
@@ -32,22 +31,31 @@ export default function InvoicePanel({
     updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
   ) => Promise<void>
   onDeleteInvoiceItem: (itemId: string) => Promise<void>
+  onRemoveInvoice: () => Promise<void>
 }) {
-  const isBusy = actionState === 'saving'
+  const busy = actionState === 'saving' || itemsActionState === 'saving'
 
-  if (!invoice) {
-    return (
-      <div className={styles.expandedSectionCard}>
-        <div className={styles.inputTopRow}>
-          <div className={styles.expandedSectionTitle}>Invoice</div>
-          {actionState === 'error' ? (
-            <span className={styles.invoiceErrorText}>Action failed</span>
-          ) : null}
+  return (
+    <div className={styles.expandedSectionCard}>
+      <div className={styles.inputTopRow}>
+        <div className={styles.expandedSectionTitle}>Invoice</div>
+        <div className={styles.readOnlyValue}>
+          {actionState === 'saving'
+            ? 'Saving...'
+            : actionState === 'error'
+              ? 'Error'
+              : itemsActionState === 'saving'
+                ? 'Updating items...'
+                : itemsActionState === 'error'
+                  ? 'Item error'
+                  : 'Ready'}
         </div>
+      </div>
 
-        <div className={styles.invoiceEmptyState}>
-          <p className={styles.invoiceSummaryText}>
-            No invoice has been created for this repair yet.
+      {!invoice ? (
+        <>
+          <p className={styles.summaryRow}>
+            No invoice created for this job yet.
           </p>
 
           <div className={styles.buttonRow}>
@@ -55,142 +63,199 @@ export default function InvoicePanel({
               type="button"
               className={styles.actionButton}
               onClick={() => void onCreateInvoice()}
-              disabled={isBusy}
+              disabled={busy}
             >
-              {isBusy ? 'Creating...' : 'Create Invoice'}
+              {actionState === 'saving' ? 'Creating...' : 'Create Invoice'}
             </button>
           </div>
-        </div>
-      </div>
-    )
-  }
+        </>
+      ) : (
+        <>
+          <div className={styles.formGrid}>
+            <div>
+              <label className={styles.smallLabel}>Invoice Number</label>
+              <div className={styles.readOnlyValue}>{invoice.invoice_number}</div>
+            </div>
 
-  return (
-    <div className={styles.expandedSectionCard}>
-      <div className={styles.inputTopRow}>
-        <div className={styles.expandedSectionTitle}>Invoice</div>
-        <span className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}>
-          {invoice.status.toUpperCase()}
-        </span>
-      </div>
+            <div>
+              <label className={styles.smallLabel}>Status</label>
+              <div className={styles.readOnlyValue}>{invoice.status.toUpperCase()}</div>
+            </div>
 
-      <div className={styles.invoiceSummaryGrid}>
-        <div>
-          <div className={styles.sectionLabel}>Invoice Number</div>
-          <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
-        </div>
+            <div>
+              <label className={styles.smallLabel}>Issued</label>
+              <div className={styles.readOnlyValue}>{invoice.issued_at || '-'}</div>
+            </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Total</div>
-          <div className={styles.invoiceValue}>${Number(invoice.total ?? 0).toFixed(2)}</div>
-        </div>
+            <div>
+              <label className={styles.smallLabel}>Paid</label>
+              <div className={styles.readOnlyValue}>{invoice.paid_at || '-'}</div>
+            </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Customer</div>
-          <div className={styles.invoiceSummaryText}>{invoice.customer_name}</div>
-        </div>
+            <div>
+              <label className={styles.smallLabel}>Subtotal</label>
+              <div className={styles.readOnlyValue}>${Number(invoice.subtotal ?? 0).toFixed(2)}</div>
+            </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Phone</div>
-          <div className={styles.invoiceSummaryText}>{invoice.customer_phone}</div>
-        </div>
-
-        <div>
-          <div className={styles.sectionLabel}>Email</div>
-          <div className={styles.invoiceSummaryText}>{invoice.customer_email || '-'}</div>
-        </div>
-
-        <div>
-          <div className={styles.sectionLabel}>Created</div>
-          <div className={styles.invoiceSummaryText}>{formatDateTime(invoice.created_at)}</div>
-        </div>
-
-        <div>
-          <div className={styles.sectionLabel}>Issued</div>
-          <div className={styles.invoiceSummaryText}>
-            {invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}
+            <div>
+              <label className={styles.smallLabel}>Total</label>
+              <div className={styles.readOnlyValue}>${Number(invoice.total ?? 0).toFixed(2)}</div>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Paid</div>
-          <div className={styles.invoiceSummaryText}>
-            {invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}
+          <div className={styles.buttonRow}>
+            <Link
+              href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
+              className={styles.actionButton}
+            >
+              Open Invoice
+            </Link>
+
+            {invoice.status !== 'paid' && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onUpdateInvoiceStatus('paid')}
+                disabled={busy}
+              >
+                Mark Paid
+              </button>
+            )}
+
+            {invoice.status === 'paid' && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onUpdateInvoiceStatus('issued')}
+                disabled={busy}
+              >
+                Mark Unpaid
+              </button>
+            )}
+
+            {invoice.status !== 'void' && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onUpdateInvoiceStatus('void')}
+                disabled={busy}
+              >
+                Mark Void
+              </button>
+            )}
+
+            {invoice.status === 'void' && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onUpdateInvoiceStatus('issued')}
+                disabled={busy}
+              >
+                Restore Issued
+              </button>
+            )}
+
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => void onRemoveInvoice()}
+              disabled={busy}
+            >
+              Remove Invoice
+            </button>
           </div>
-        </div>
-      </div>
 
-      {invoice.notes ? (
-        <div className={styles.mt12}>
-          <div className={styles.sectionLabel}>Notes</div>
-          <p className={styles.summaryRow}>{invoice.notes}</p>
-        </div>
-      ) : null}
+          <div className={styles.mt12}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Invoice Items</div>
+              <div className={styles.readOnlyValue}>
+                {items.length} item{items.length === 1 ? '' : 's'}
+              </div>
+            </div>
 
-      {actionState === 'error' ? (
-        <p className={styles.invoiceErrorText}>Invoice action failed. Try again.</p>
-      ) : null}
+            {items.length === 0 ? (
+              <p className={styles.summaryRow}>No invoice items yet.</p>
+            ) : (
+              <div className={styles.formGrid}>
+                {items.map((item) => (
+                  <div key={item.id} className={styles.expandedSectionCard}>
+                    <div>
+                      <label className={styles.smallLabel}>Description</label>
+                      <input
+                        value={item.description}
+                        className={styles.smallField}
+                        onChange={(e) =>
+                          void onUpdateInvoiceItem(item.id, {
+                            description: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
 
-      <div className={styles.buttonRow}>
-        <Link
-          href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
-          className={styles.actionButton}
-        >
-          Open Invoice
-        </Link>
+                    <div className={styles.twoCol}>
+                      <div>
+                        <label className={styles.smallLabel}>Qty</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={item.qty}
+                          className={styles.smallField}
+                          onChange={(e) =>
+                            void onUpdateInvoiceItem(item.id, {
+                              qty: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
 
-        {invoice.status !== 'draft' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={() => void onUpdateInvoiceStatus('draft')}
-            disabled={isBusy}
-          >
-            {isBusy ? 'Saving...' : 'Set Draft'}
-          </button>
-        )}
+                      <div>
+                        <label className={styles.smallLabel}>Unit Price</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={item.unit_price}
+                          className={styles.smallField}
+                          onChange={(e) =>
+                            void onUpdateInvoiceItem(item.id, {
+                              unit_price: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
 
-        {invoice.status !== 'issued' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={() => void onUpdateInvoiceStatus('issued')}
-            disabled={isBusy}
-          >
-            {isBusy ? 'Saving...' : 'Mark Issued'}
-          </button>
-        )}
+                    <p className={styles.summaryRow}>
+                      <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
+                    </p>
 
-        {invoice.status !== 'paid' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={() => void onUpdateInvoiceStatus('paid')}
-            disabled={isBusy}
-          >
-            {isBusy ? 'Saving...' : 'Mark Paid'}
-          </button>
-        )}
+                    <div className={styles.buttonRow}>
+                      <button
+                        type="button"
+                        className={styles.actionButton}
+                        onClick={() => void onDeleteInvoiceItem(item.id)}
+                        disabled={busy}
+                      >
+                        Delete Item
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {invoice.status !== 'void' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={() => void onUpdateInvoiceStatus('void')}
-            disabled={isBusy}
-          >
-            {isBusy ? 'Saving...' : 'Void Invoice'}
-          </button>
-        )}
-      </div>
-
-      <InvoiceItemsEditor
-        items={items}
-        actionState={itemsActionState}
-        onAddItem={onAddInvoiceItem}
-        onUpdateItem={onUpdateInvoiceItem}
-        onDeleteItem={onDeleteInvoiceItem}
-      />
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onAddInvoiceItem()}
+                disabled={busy}
+              >
+                Add Item
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
