@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-import styles from '../admin.module.css'
+import styles from '../../admin.module.css'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
