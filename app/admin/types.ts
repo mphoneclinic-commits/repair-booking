@@ -25,6 +25,7 @@ export type RepairRequest = {
   internal_notes: string | null
   quoted_price: number | null
   is_hidden: boolean
+  fault_photo_url?: string | null   // ← NEW: optional photo URL
 }
 
 export type InvoiceStatus = 'issued' | 'paid' | 'void'
@@ -72,7 +73,9 @@ export type InvoiceRepairLink = {
 }
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+
 export type ViewMode = 'board' | 'list' | 'details' | 'tiles'
+
 export type StatusFilter = 'all' | RepairStatus
 
 export type SaveField =
