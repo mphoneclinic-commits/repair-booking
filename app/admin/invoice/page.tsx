@@ -18,6 +18,7 @@ export default function InvoicePrintPage() {
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('') // ← New: for feedback
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -35,6 +36,7 @@ export default function InvoicePrintPage() {
 
       setLoading(true)
       setError('')
+      setSuccessMessage('')
 
       try {
         const { data: invoiceData, error: invoiceError } = await supabase
@@ -120,9 +122,9 @@ export default function InvoicePrintPage() {
     if (!invoice) return
 
     setError('')
+    setSuccessMessage('')
 
     const nowIso = new Date().toISOString()
-
     const updates: {
       status: InvoiceStatus
       issued_at?: string | null
@@ -133,18 +135,17 @@ export default function InvoicePrintPage() {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
     }
-
     if (status === 'paid') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = nowIso
     }
-
     if (status === 'void') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
     }
 
-    const { data, error } = await supabase
+    // Update invoice status
+    const { data, error: updateError } = await supabase
       .from('invoices')
       .update(updates)
       .eq('id', invoice.id)
@@ -173,19 +174,45 @@ export default function InvoicePrintPage() {
       `)
       .single()
 
-    if (error || !data) {
-      setError(error?.message || 'Failed to update invoice')
+    if (updateError || !data) {
+      setError(updateError?.message || 'Failed to update invoice status')
       return
     }
 
-    setInvoice({
+    // NEW: If marked as PAID, also close the linked job (if not already closed)
+    if (status === 'paid' && data.repair_request_id) {
+      const { data: jobData, error: jobError } = await supabase
+        .from('repair_requests')
+        .select('status')
+        .eq('id', data.repair_request_id)
+        .single()
+
+      if (!jobError && jobData && jobData.status !== 'closed') {
+        const { error: closeError } = await supabase
+          .from('repair_requests')
+          .update({ status: 'closed' })
+          .eq('id', data.repair_request_id)
+
+        if (closeError) {
+          console.warn('Could not auto-close job:', closeError.message)
+          // Don't block the invoice update — just warn
+        } else {
+          setSuccessMessage('Invoice marked paid & job closed.')
+        }
+      }
+    }
+
+    const normalizedInvoice: Invoice = {
       ...(data as Invoice),
       tax_rate: Number(data.tax_rate ?? 0),
       subtotal_ex_tax: Number(data.subtotal_ex_tax ?? 0),
       tax_amount: Number(data.tax_amount ?? 0),
       subtotal: Number(data.subtotal ?? 0),
       total: Number(data.total ?? 0),
-    })
+    }
+
+    setInvoice(normalizedInvoice)
+    setSuccessMessage(`Invoice updated to ${status.toUpperCase()}`)
   }
 
   const totalQty = useMemo(() => {
@@ -209,7 +236,6 @@ export default function InvoicePrintPage() {
           <div className={styles.messageCardError}>
             {error || 'Invoice could not be loaded.'}
           </div>
-
           <div className={styles.topActions}>
             <Link href="/admin" className={styles.secondaryButton}>
               Back to Admin
@@ -227,7 +253,6 @@ export default function InvoicePrintPage() {
           <Link href="/admin" className={styles.secondaryButton}>
             Back to Admin
           </Link>
-
           <div className={styles.topActionsRight}>
             {invoice.status === 'issued' && (
               <button
@@ -238,7 +263,6 @@ export default function InvoicePrintPage() {
                 Mark Paid
               </button>
             )}
-
             {invoice.status === 'paid' && (
               <button
                 type="button"
@@ -248,7 +272,6 @@ export default function InvoicePrintPage() {
                 Mark Unpaid
               </button>
             )}
-
             {invoice.status !== 'void' && (
               <button
                 type="button"
@@ -258,7 +281,6 @@ export default function InvoicePrintPage() {
                 Mark Void
               </button>
             )}
-
             {invoice.status === 'void' && (
               <button
                 type="button"
@@ -268,7 +290,6 @@ export default function InvoicePrintPage() {
                 Restore Issued
               </button>
             )}
-
             <button
               type="button"
               className={styles.printButton}
@@ -279,6 +300,13 @@ export default function InvoicePrintPage() {
           </div>
         </div>
 
+        {/* NEW: Success message display */}
+        {successMessage && (
+          <div className={styles.successBanner} style={{ marginBottom: '16px' }}>
+            {successMessage}
+          </div>
+        )}
+
         <article className={styles.document}>
           <header className={styles.header}>
             <div>
@@ -286,7 +314,6 @@ export default function InvoicePrintPage() {
               <div className={styles.brandMeta}>Device Repairs & Diagnostics</div>
               <div className={styles.brandMeta}>Melbourne, Victoria</div>
             </div>
-
             <div className={styles.invoiceHeaderRight}>
               <div className={styles.invoiceTitle}>TAX INVOICE</div>
               <div className={styles.invoiceNumber}>{invoice.invoice_number}</div>
@@ -306,7 +333,6 @@ export default function InvoicePrintPage() {
                 <div className={styles.metaValue}>{invoice.bill_to_address}</div>
               ) : null}
             </div>
-
             <div className={styles.metaCard}>
               <div className={styles.metaTitle}>Invoice Date</div>
               <div className={styles.metaValueStrong}>
@@ -319,7 +345,6 @@ export default function InvoicePrintPage() {
 
           <section className={styles.tableSection}>
             <div className={styles.sectionHeading}>Invoice Items</div>
-
             <table className={styles.itemsTable}>
               <thead>
                 <tr>

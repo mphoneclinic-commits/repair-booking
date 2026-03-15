@@ -36,25 +36,20 @@ type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 
 function sortJobs(list: RepairRequest[], sortMode: SortMode) {
   const copy = [...list]
-
   copy.sort((a, b) => {
     if (sortMode === 'newest') {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     }
-
     if (sortMode === 'oldest') {
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     }
-
     if (sortMode === 'customer') {
       return a.full_name.localeCompare(b.full_name, undefined, { sensitivity: 'base' })
     }
-
     const aJob = a.job_number || ''
     const bJob = b.job_number || ''
     return aJob.localeCompare(bJob, undefined, { numeric: true, sensitivity: 'base' })
   })
-
   return copy
 }
 
@@ -62,7 +57,6 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
   const [hiddenJobs, setHiddenJobs] = useState<RepairRequest[]>([])
   const [showHidden, setShowHidden] = useState(false)
-
   const [invoicesByJobId, setInvoicesByJobId] = useState<Record<string, Invoice>>({})
   const [invoiceItemsByInvoiceId, setInvoiceItemsByInvoiceId] = useState<
     Record<string, InvoiceItem[]>
@@ -98,6 +92,7 @@ export default function AdminPage() {
     rejected: false,
     cancelled: false,
   })
+
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   function getFieldKey(jobId: string, field: SaveField) {
@@ -113,12 +108,10 @@ export default function AdminPage() {
 
   function setFieldSaved(jobId: string, field: SaveField) {
     const key = getFieldKey(jobId, field)
-
     setSaveStates((prev) => ({
       ...prev,
       [key]: 'saved',
     }))
-
     window.setTimeout(() => {
       setSaveStates((prev) => {
         if (prev[key] !== 'saved') return prev
@@ -258,7 +251,6 @@ export default function AdminPage() {
   async function hideJob(id: string) {
     const previousVisible = jobs
     const previousHidden = hiddenJobs
-
     const jobToHide = jobs.find((job) => job.id === id)
     if (!jobToHide) return
 
@@ -286,7 +278,6 @@ export default function AdminPage() {
   async function unhideJob(id: string) {
     const previousVisible = jobs
     const previousHidden = hiddenJobs
-
     const jobToUnhide = hiddenJobs.find((job) => job.id === id)
     if (!jobToUnhide) return
 
@@ -311,14 +302,12 @@ export default function AdminPage() {
 
   async function bulkHideArchiveJobs() {
     if (selectedArchiveJobIds.length === 0) return
-
     setBulkBusy(true)
     setError('')
 
     const selectedSet = new Set(selectedArchiveJobIds)
     const previousVisible = jobs
     const previousHidden = hiddenJobs
-
     const jobsToHide = jobs.filter((job) => selectedSet.has(job.id))
 
     setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
@@ -350,14 +339,12 @@ export default function AdminPage() {
 
   async function bulkUnhideHiddenJobs() {
     if (selectedHiddenJobIds.length === 0) return
-
     setBulkBusy(true)
     setError('')
 
     const selectedSet = new Set(selectedHiddenJobIds)
     const previousVisible = jobs
     const previousHidden = hiddenJobs
-
     const jobsToUnhide = hiddenJobs.filter((job) => selectedSet.has(job.id))
 
     setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
@@ -385,7 +372,6 @@ export default function AdminPage() {
 
   async function bulkUpdateArchiveStatus(targetStatus: RepairStatus) {
     if (selectedArchiveJobIds.length === 0) return
-
     setBulkBusy(true)
     setError('')
 
@@ -416,12 +402,10 @@ export default function AdminPage() {
 
   async function bulkDuplicateArchiveJobs() {
     if (selectedArchiveJobIds.length === 0) return
-
     setBulkBusy(true)
     setError('')
 
     const selectedJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
-
     const inserts = selectedJobs.map((job) => ({
       job_number: null,
       full_name: job.full_name,
@@ -481,8 +465,8 @@ export default function AdminPage() {
       for (const job of newJobs) next[job.id] = false
       return next
     })
-
     setSelectedArchiveJobIds([])
+
     if (newJobs[0]) setHighlightedJobId(newJobs[0].id)
     setBulkBusy(false)
   }
@@ -563,7 +547,6 @@ export default function AdminPage() {
     if (error) throw error
 
     const latestByJob: Record<string, Invoice> = {}
-
     for (const raw of (data || []) as Invoice[]) {
       if (!latestByJob[raw.repair_request_id]) {
         latestByJob[raw.repair_request_id] = {
@@ -599,11 +582,9 @@ export default function AdminPage() {
     if (error) throw error
 
     const grouped: Record<string, InvoiceItem[]> = {}
-
     for (const item of (data || []) as InvoiceItem[]) {
       const invoiceId = item.invoice_id
       if (!grouped[invoiceId]) grouped[invoiceId] = []
-
       grouped[invoiceId].push({
         ...item,
         qty: Number(item.qty ?? 0),
@@ -700,7 +681,6 @@ export default function AdminPage() {
   async function loadAllData() {
     setLoading(true)
     setError('')
-
     try {
       await Promise.all([loadJobs(), loadInvoices(), loadInvoiceItems()])
     } catch (err) {
@@ -711,9 +691,39 @@ export default function AdminPage() {
     }
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // Realtime subscription + initial load
+  // ────────────────────────────────────────────────────────────────
+
   useEffect(() => {
-    void loadAllData()
-  }, [])
+    loadAllData() // Initial full load
+
+    // Realtime channel for automatic updates
+    const channel = supabase
+      .channel('admin-dashboard-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'repair_requests' },
+        (payload) => {
+          console.log('Repair change detected:', payload) // optional debug
+          void loadJobs() // Reload jobs on any change
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'invoices' },
+        (payload) => {
+          console.log('Invoice change detected:', payload) // optional debug
+          void loadInvoices() // Reload invoices on any change
+        }
+      )
+      .subscribe()
+
+    // Cleanup on unmount
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, []) // Empty deps → runs once on mount
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -721,11 +731,9 @@ export default function AdminPage() {
 
     const params = new URLSearchParams(window.location.search)
     const highlightJob = params.get('highlightJob')
-
     if (!highlightJob) return
 
     setHighlightedJobId(highlightJob)
-
     setExpandedJobs((prev) => ({
       ...prev,
       [highlightJob]: true,
@@ -1001,7 +1009,6 @@ export default function AdminPage() {
 
     if (invoiceInsertError || !insertedInvoice) {
       setInvoiceActionState(job.id, 'error')
-
       if (invoiceInsertError?.message?.toLowerCase().includes('duplicate')) {
         setError('This job already has an invoice and cannot be invoiced again.')
       } else {
@@ -1081,7 +1088,6 @@ export default function AdminPage() {
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
       )
     )
-
     setHiddenJobs((prev) =>
       prev.map((existingJob) =>
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
@@ -1107,7 +1113,6 @@ export default function AdminPage() {
     setError('')
 
     const nowIso = new Date().toISOString()
-
     const updates: {
       status: InvoiceStatus
       issued_at?: string | null
@@ -1118,12 +1123,10 @@ export default function AdminPage() {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
     }
-
     if (status === 'paid') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = nowIso
     }
-
     if (status === 'void') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
@@ -1230,7 +1233,6 @@ export default function AdminPage() {
     updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
   ) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
-
     setInvoiceItemsActionState(invoiceId, 'saving')
 
     const safeUpdates = {
@@ -1275,7 +1277,6 @@ export default function AdminPage() {
 
   async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
-
     setInvoiceItemsActionState(invoiceId, 'saving')
 
     const { error } = await supabase.from('invoice_items').delete().eq('id', itemId)
@@ -1387,7 +1388,6 @@ export default function AdminPage() {
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
       )
     )
-
     setHiddenJobs((prev) =>
       prev.map((existingJob) =>
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
@@ -1419,7 +1419,6 @@ export default function AdminPage() {
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'move'
     }
-
     if (dragOverStatus !== status) {
       setDragOverStatus(status)
     }
@@ -1431,7 +1430,6 @@ export default function AdminPage() {
   ) {
     const nextTarget = event.relatedTarget as Node | null
     if (nextTarget && event.currentTarget.contains(nextTarget)) return
-
     if (dragOverStatus === status) {
       setDragOverStatus(null)
     }
@@ -1442,12 +1440,9 @@ export default function AdminPage() {
     status: RepairStatus
   ) {
     event.preventDefault()
-
     const droppedJobId =
       draggedJobId || event.dataTransfer.getData('text/plain') || null
-
     setDragOverStatus(null)
-
     if (!droppedJobId) {
       setDraggedJobId(null)
       return
@@ -1469,11 +1464,9 @@ export default function AdminPage() {
 
   const filteredJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
-
     return jobs.filter((job) => {
       const matchesStatus =
         statusFilter === 'all' ? true : job.status === statusFilter
-
       const haystack = [
         job.job_number || '',
         job.full_name,
@@ -1493,7 +1486,6 @@ export default function AdminPage() {
       ]
         .join(' ')
         .toLowerCase()
-
       const matchesSearch = term ? haystack.includes(term) : true
       return matchesStatus && matchesSearch
     })
@@ -1501,7 +1493,6 @@ export default function AdminPage() {
 
   const filteredHiddenJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
-
     return hiddenJobs.filter((job) => {
       const haystack = [
         job.job_number || '',
@@ -1522,14 +1513,12 @@ export default function AdminPage() {
       ]
         .join(' ')
         .toLowerCase()
-
       return term ? haystack.includes(term) : true
     })
   }, [hiddenJobs, search, invoicesByJobId])
 
   const jobsByStatus = useMemo(() => {
     const allColumnStatuses = [...BOARD_COLUMNS, ...ARCHIVE_COLUMNS]
-
     return allColumnStatuses.reduce((acc, status) => {
       acc[status] = filteredJobs.filter((job) => job.status === status)
       return acc
@@ -1591,20 +1580,16 @@ export default function AdminPage() {
             Repair jobs, quotes, notes, editing and workflow management
           </p>
         </div>
-
         <div className={styles.toolbar}>
           <Link href="/admin/jobs/new" className={styles.viewButton}>
             New Job
           </Link>
-
           <Link href="/admin/invoices" className={styles.viewButton}>
             View Invoices
           </Link>
-
           <Link href="/admin/customers" className={styles.viewButton}>
             Customers
           </Link>
-
           {(['board', 'list', 'details', 'tiles'] as const).map((mode) => (
             <button
               key={mode}
@@ -1619,7 +1604,6 @@ export default function AdminPage() {
                 : mode.charAt(0).toUpperCase() + mode.slice(1)}
             </button>
           ))}
-
           <button type="button" onClick={() => void loadAllData()} className={styles.button}>
             Refresh
           </button>
@@ -1643,7 +1627,6 @@ export default function AdminPage() {
           placeholder="Search customer, phone, job number, device, notes, invoice..."
           className={styles.field}
         />
-
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -1686,7 +1669,6 @@ export default function AdminPage() {
                     <span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>
                       {getStatusLabel(status)}
                     </span>
-
                     <div className={styles.columnHeaderActions}>
                       <span className={styles.columnCount}>
                         {jobsByStatus[status]?.length || 0}
@@ -1712,7 +1694,6 @@ export default function AdminPage() {
                         const invoiceItems = invoice
                           ? invoiceItemsByInvoiceId[invoice.id] || []
                           : []
-
                         return (
                           <JobCard
                             key={job.id}
@@ -1776,7 +1757,6 @@ export default function AdminPage() {
               <div className={styles.bulkBarText}>
                 Selected archive jobs: <strong>{selectedArchiveJobIds.length}</strong>
               </div>
-
               <div className={styles.bulkBarActions}>
                 <button
                   type="button"
@@ -1787,7 +1767,6 @@ export default function AdminPage() {
                 >
                   {showHidden ? 'Hide Hidden Jobs' : 'Show Hidden Jobs'}
                 </button>
-
                 <select
                   value={archiveSort}
                   onChange={(e) => setArchiveSort(e.target.value as SortMode)}
@@ -1798,7 +1777,6 @@ export default function AdminPage() {
                   <option value="customer">Sort: Customer</option>
                   <option value="job_number">Sort: Job Number</option>
                 </select>
-
                 <button
                   type="button"
                   className={styles.actionButton}
@@ -1807,7 +1785,6 @@ export default function AdminPage() {
                 >
                   {bulkBusy ? 'Working...' : 'Reopen to New'}
                 </button>
-
                 <button
                   type="button"
                   className={styles.actionButton}
@@ -1816,7 +1793,6 @@ export default function AdminPage() {
                 >
                   {bulkBusy ? 'Working...' : 'Move to Ready'}
                 </button>
-
                 <button
                   type="button"
                   className={styles.actionButton}
@@ -1825,7 +1801,6 @@ export default function AdminPage() {
                 >
                   {bulkBusy ? 'Working...' : 'Duplicate Selected'}
                 </button>
-
                 <button
                   type="button"
                   className={styles.actionButton}
@@ -1834,7 +1809,6 @@ export default function AdminPage() {
                 >
                   {bulkBusy ? 'Working...' : 'Hide Selected'}
                 </button>
-
                 <button
                   type="button"
                   className={styles.miniButton}
@@ -1859,7 +1833,6 @@ export default function AdminPage() {
                       <span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>
                         {getStatusLabel(status)}
                       </span>
-
                       <div className={styles.columnHeaderActions}>
                         <span className={styles.columnCount}>
                           {sortedArchiveJobsByStatus[status]?.length || 0}
@@ -1885,7 +1858,6 @@ export default function AdminPage() {
                           const invoiceItems = invoice
                             ? invoiceItemsByInvoiceId[invoice.id] || []
                             : []
-
                           return (
                             <JobCard
                               key={job.id}
@@ -1956,7 +1928,6 @@ export default function AdminPage() {
                   {getStatusLabel(job.status)}
                 </span>
               </div>
-
               <p className={styles.tileName}>{job.full_name}</p>
               <p className={styles.tileText}>{job.phone}</p>
               <p className={styles.tileDevice}>
@@ -2025,7 +1996,6 @@ export default function AdminPage() {
           {filteredJobs.map((job) => {
             const invoice = invoicesByJobId[job.id] ?? null
             const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
-
             return (
               <JobCard
                 key={job.id}
@@ -2082,7 +2052,6 @@ export default function AdminPage() {
             <div className={styles.bulkBarText}>
               Selected hidden jobs: <strong>{selectedHiddenJobIds.length}</strong>
             </div>
-
             <div className={styles.bulkBarActions}>
               <select
                 value={hiddenSort}
@@ -2094,7 +2063,6 @@ export default function AdminPage() {
                 <option value="customer">Sort: Customer</option>
                 <option value="job_number">Sort: Job Number</option>
               </select>
-
               <button
                 type="button"
                 className={styles.actionButton}
@@ -2103,7 +2071,6 @@ export default function AdminPage() {
               >
                 {bulkBusy ? 'Working...' : 'Unhide Selected'}
               </button>
-
               <button
                 type="button"
                 className={styles.miniButton}
@@ -2122,7 +2089,6 @@ export default function AdminPage() {
               {sortedHiddenJobs.map((job) => {
                 const invoice = invoicesByJobId[job.id] ?? null
                 const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
-
                 return (
                   <JobCard
                     key={job.id}

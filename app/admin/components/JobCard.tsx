@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
 import type {
   Invoice,
@@ -19,6 +20,12 @@ import {
 } from '../utils'
 import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
+
+// Initialize Supabase client inside this component
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
@@ -126,13 +133,11 @@ export default function JobCard({
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
   const [localJobNumber, setLocalJobNumber] = useState(job.job_number ?? '')
-
   const [customerDraft, setCustomerDraft] = useState({
     full_name: job.full_name,
     phone: job.phone,
     email: job.email ?? '',
   })
-
   const [deviceDraft, setDeviceDraft] = useState({
     brand: job.brand,
     model: job.model,
@@ -140,6 +145,11 @@ export default function JobCard({
     serial_imei: job.serial_imei ?? '',
     fault_description: job.fault_description,
   })
+
+  // Photo states
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -203,11 +213,62 @@ export default function JobCard({
     }
   }, [])
 
+  // Photo handlers
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setPhotoFile(file)
+      setUploadError('')
+    }
+  }
+
+  async function handlePhotoUpload() {
+    if (!photoFile) return
+
+    setUploadingPhoto(true)
+    setUploadError('')
+
+    const fileExt = photoFile.name.split('.').pop()
+    const fileName = `${job.id}-${Date.now()}.${fileExt}`
+    const filePath = `fault-photos/${fileName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('fault-photos')
+      .upload(filePath, photoFile)
+
+    if (uploadError) {
+      setUploadError('Photo upload failed: ' + uploadError.message)
+      setUploadingPhoto(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
+    const publicUrl = urlData.publicUrl
+
+    const { error: updateError } = await supabase
+      .from('repair_requests')
+      .update({ fault_photo_url: publicUrl })
+      .eq('id', job.id)
+
+    if (updateError) {
+      setUploadError('Failed to save photo URL: ' + updateError.message)
+    } else {
+      // Optimistic update in local state
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, fault_photo_url: publicUrl } : j))
+      )
+      setHiddenJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, fault_photo_url: publicUrl } : j))
+      )
+      setPhotoFile(null)
+    }
+
+    setUploadingPhoto(false)
+  }
+
   async function flushQuote(rawValue: string) {
     const normalized = normalizeQuoteInput(rawValue).trim()
-    const nextValue =
-      normalized === '' ? null : Number.isNaN(Number(normalized)) ? null : Number(normalized)
-
+    const nextValue = normalized === '' ? null : Number(normalized)
     const currentDbValue = job.quoted_price ?? null
 
     if (nextValue === currentDbValue) {
@@ -215,7 +276,28 @@ export default function JobCard({
       return
     }
 
-    await updateQuote(job.id, nextValue)
+    const originalQuote = job.quoted_price
+    setJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, quoted_price: nextValue } : j))
+    )
+    setHiddenJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, quoted_price: nextValue } : j))
+    )
+    setFieldState(job.id, 'quote', 'saving')
+
+    const success = await updateQuote(job.id, nextValue)
+
+    if (!success) {
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, quoted_price: originalQuote } : j))
+      )
+      setHiddenJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, quoted_price: originalQuote } : j))
+      )
+      setFieldState(job.id, 'quote', 'error')
+    } else {
+      setFieldSaved(job.id, 'quote')
+    }
   }
 
   async function flushNotes(value: string) {
@@ -225,7 +307,28 @@ export default function JobCard({
       return
     }
 
-    await updateNotes(job.id, value)
+    const originalNotes = job.internal_notes
+    setJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, internal_notes: value } : j))
+    )
+    setHiddenJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, internal_notes: value } : j))
+    )
+    setFieldState(job.id, 'notes', 'saving')
+
+    const success = await updateNotes(job.id, value)
+
+    if (!success) {
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, internal_notes: originalNotes } : j))
+      )
+      setHiddenJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, internal_notes: originalNotes } : j))
+      )
+      setFieldState(job.id, 'notes', 'error')
+    } else {
+      setFieldSaved(job.id, 'notes')
+    }
   }
 
   async function flushJobNumber(value: string) {
@@ -237,24 +340,38 @@ export default function JobCard({
       return
     }
 
-    await updateJobBasics(
+    const originalJobNumber = job.job_number
+    setJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, job_number: trimmed || null } : j))
+    )
+    setHiddenJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, job_number: trimmed || null } : j))
+    )
+    setFieldState(job.id, 'job_number', 'saving')
+
+    const success = await updateJobBasics(
       job.id,
-      {
-        job_number: trimmed || null,
-      },
+      { job_number: trimmed || null },
       'job_number'
     )
+
+    if (!success) {
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, job_number: originalJobNumber } : j))
+      )
+      setHiddenJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, job_number: originalJobNumber } : j))
+      )
+      setFieldState(job.id, 'job_number', 'error')
+    } else {
+      setFieldSaved(job.id, 'job_number')
+    }
   }
 
-  async function flushCustomer(nextDraft: {
-    full_name: string
-    phone: string
-    email: string
-  }) {
+  async function flushCustomer(nextDraft: { full_name: string; phone: string; email: string }) {
     const fullName = nextDraft.full_name.trim()
     const phone = normalizePhone(nextDraft.phone)
     const email = nextDraft.email.trim()
-
     const currentName = job.full_name
     const currentPhone = job.phone
     const currentEmail = job.email ?? ''
@@ -269,15 +386,40 @@ export default function JobCard({
       return
     }
 
-    await updateJobBasics(
+    const originalCustomer = {
+      full_name: job.full_name,
+      phone: job.phone,
+      email: job.email ?? '',
+    }
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id ? { ...j, full_name: fullName, phone, email: email || null } : j
+      )
+    )
+    setHiddenJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id ? { ...j, full_name: fullName, phone, email: email || null } : j
+      )
+    )
+    setFieldState(job.id, 'customer', 'saving')
+
+    const success = await updateJobBasics(
       job.id,
-      {
-        full_name: fullName,
-        phone,
-        email: email || null,
-      },
+      { full_name: fullName, phone, email: email || null },
       'customer'
     )
+
+    if (!success) {
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, ...originalCustomer } : j))
+      )
+      setHiddenJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, ...originalCustomer } : j))
+      )
+      setFieldState(job.id, 'customer', 'error')
+    } else {
+      setFieldSaved(job.id, 'customer')
+    }
   }
 
   async function flushDevice(nextDraft: {
@@ -315,24 +457,48 @@ export default function JobCard({
       return
     }
 
-    await updateJobBasics(
+    const originalDevice = {
+      brand: job.brand,
+      model: job.model,
+      device_type: job.device_type ?? '',
+      serial_imei: job.serial_imei ?? '',
+      fault_description: job.fault_description,
+    }
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id
+          ? { ...j, brand, model, device_type: deviceType || null, serial_imei: serialImei || null, fault_description: fault }
+          : j
+      )
+    )
+    setHiddenJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id
+          ? { ...j, brand, model, device_type: deviceType || null, serial_imei: serialImei || null, fault_description: fault }
+          : j
+      )
+    )
+    setFieldState(job.id, 'device', 'saving')
+
+    const success = await updateJobBasics(
       job.id,
-      {
-        brand,
-        model,
-        device_type: deviceType || null,
-        serial_imei: serialImei || null,
-        fault_description: fault,
-      },
+      { brand, model, device_type: deviceType || null, serial_imei: serialImei || null, fault_description: fault },
       'device'
     )
+
+    if (!success) {
+      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...originalDevice } : j)))
+      setHiddenJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...originalDevice } : j)))
+      setFieldState(job.id, 'device', 'error')
+    } else {
+      setFieldSaved(job.id, 'device')
+    }
   }
 
   function handleQuoteChange(value: string) {
     const normalized = normalizeQuoteInput(value)
     setLocalQuote(normalized)
     setFieldState(job.id, 'quote', 'dirty')
-
     if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
     quoteTimerRef.current = setTimeout(() => {
       void flushQuote(normalized)
@@ -342,7 +508,6 @@ export default function JobCard({
   function handleNotesChange(value: string) {
     setLocalNotes(value)
     setFieldState(job.id, 'notes', 'dirty')
-
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
     notesTimerRef.current = setTimeout(() => {
       void flushNotes(value)
@@ -352,7 +517,6 @@ export default function JobCard({
   function handleJobNumberChange(value: string) {
     setLocalJobNumber(value)
     setFieldState(job.id, 'job_number', 'dirty')
-
     if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
     jobNumberTimerRef.current = setTimeout(() => {
       void flushJobNumber(value)
@@ -367,10 +531,8 @@ export default function JobCard({
       ...customerDraft,
       [key]: key === 'phone' ? normalizePhone(value) : value,
     }
-
     setCustomerDraft(next)
     setFieldState(job.id, 'customer', 'dirty')
-
     if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
     customerTimerRef.current = setTimeout(() => {
       void flushCustomer(next)
@@ -385,10 +547,8 @@ export default function JobCard({
       ...deviceDraft,
       [key]: value,
     }
-
     setDeviceDraft(next)
     setFieldState(job.id, 'device', 'dirty')
-
     if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
     deviceTimerRef.current = setTimeout(() => {
       void flushDevice(next)
@@ -429,7 +589,6 @@ export default function JobCard({
     const customerName = job.full_name.split(' ')[0] || job.full_name
     const quoteText =
       job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-
     return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please reply to approve or contact The Mobile Phone Clinic for details.`
   }
 
@@ -475,12 +634,10 @@ export default function JobCard({
           </label>
         </div>
       ) : null}
-
       <div>
         <div className={styles.sectionLabel}>Customer</div>
         <p className={styles.customerName}>{job.full_name}</p>
       </div>
-
       <div>
         <div className={styles.sectionLabel}>Device</div>
         <p className={styles.deviceTitle}>
@@ -488,13 +645,11 @@ export default function JobCard({
           {job.device_type ? ` • ${job.device_type}` : ''}
         </p>
       </div>
-
       <div className={styles.compactMetaRow}>
         <div>
           <div className={styles.sectionLabel}>Job</div>
           <p className={styles.metaText}>{job.job_number || 'Pending'}</p>
         </div>
-
         <div>
           <div className={styles.sectionLabel}>Quote</div>
           <p className={styles.metaText}>
@@ -502,14 +657,12 @@ export default function JobCard({
           </p>
         </div>
       </div>
-
       {job.serial_imei ? (
         <div>
           <div className={styles.sectionLabel}>Serial / IMEI</div>
           <p className={styles.metaText}>{job.serial_imei}</p>
         </div>
       ) : null}
-
       <div>
         <div className={styles.sectionLabel}>Booked</div>
         <p className={styles.metaText}>{formatDateTime(job.created_at)}</p>
@@ -542,12 +695,10 @@ export default function JobCard({
             {job.job_number || 'Pending Job Number'}
           </div>
         </div>
-
         <div className={styles.cardActions}>
           <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
             {getStatusLabel(job.status)}
           </span>
-
           <button
             type="button"
             onClick={(e) => {
@@ -571,12 +722,10 @@ export default function JobCard({
               <div className={styles.sectionLabel}>Customer</div>
               <p className={styles.customerName}>{job.full_name}</p>
             </div>
-
             <div>
               <div className={styles.sectionLabel}>Phone</div>
               <p className={styles.phoneText}>{job.phone}</p>
             </div>
-
             <div>
               <div className={styles.sectionLabel}>Device</div>
               <p className={styles.deviceTitle}>
@@ -584,12 +733,10 @@ export default function JobCard({
                 {job.device_type ? ` • ${job.device_type}` : ''}
               </p>
             </div>
-
             <div>
               <div className={styles.sectionLabel}>Fault</div>
               <p className={styles.collapsedFault}>{job.fault_description}</p>
             </div>
-
             <div>
               <div className={styles.sectionLabel}>Quote</div>
               <p className={styles.metaText}>
@@ -606,7 +753,6 @@ export default function JobCard({
                 <div className={styles.expandedSectionTitle}>Job Details</div>
                 <SaveIndicator state={jobNumberSaveState} />
               </div>
-
               <div className={styles.mt10}>
                 <label className={styles.smallLabel}>Job Number</label>
                 <input
@@ -622,13 +768,11 @@ export default function JobCard({
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
-
               <div className={styles.mt12}>
                 <div className={styles.inputTopRow}>
                   <label className={styles.smallLabel}>Status</label>
                   <SaveIndicator state={statusSaveState} />
                 </div>
-
                 <div className={styles.statusButtonsWrap}>
                   {(
                     [
@@ -666,7 +810,6 @@ export default function JobCard({
                 <div className={styles.expandedSectionTitle}>Customer Details</div>
                 <SaveIndicator state={customerSaveState} />
               </div>
-
               <div className={styles.formGrid}>
                 <div>
                   <label className={styles.smallLabel}>Full Name</label>
@@ -682,7 +825,6 @@ export default function JobCard({
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Phone</label>
                   <input
@@ -699,7 +841,6 @@ export default function JobCard({
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Email</label>
                   <input
@@ -714,7 +855,6 @@ export default function JobCard({
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Preferred Contact</label>
                   <div className={styles.readOnlyValue}>{job.preferred_contact || '-'}</div>
@@ -727,7 +867,6 @@ export default function JobCard({
                 <div className={styles.expandedSectionTitle}>Device Details</div>
                 <SaveIndicator state={deviceSaveState} />
               </div>
-
               <div className={styles.formGrid}>
                 <div className={styles.twoCol}>
                   <div>
@@ -744,7 +883,6 @@ export default function JobCard({
                       onClick={(e) => e.stopPropagation()}
                     />
                   </div>
-
                   <div>
                     <label className={styles.smallLabel}>Model</label>
                     <input
@@ -760,7 +898,6 @@ export default function JobCard({
                     />
                   </div>
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Device Type</label>
                   <input
@@ -776,7 +913,6 @@ export default function JobCard({
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Serial / IMEI</label>
                   <input
@@ -792,7 +928,6 @@ export default function JobCard({
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
-
                 <div>
                   <label className={styles.smallLabel}>Fault Description</label>
                   <textarea
@@ -817,7 +952,6 @@ export default function JobCard({
                 <label className={styles.expandedSectionTitle}>Quote</label>
                 <SaveIndicator state={quoteSaveState} />
               </div>
-
               <input
                 inputMode="decimal"
                 value={localQuote}
@@ -831,7 +965,6 @@ export default function JobCard({
                 onChange={(e) => handleQuoteChange(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
               />
-
               <div className={styles.buttonRow}>
                 <button
                   type="button"
@@ -852,7 +985,6 @@ export default function JobCard({
                 <label className={styles.expandedSectionTitle}>Internal Notes</label>
                 <SaveIndicator state={notesSaveState} />
               </div>
-
               <textarea
                 value={localNotes}
                 placeholder="Diagnostics, parts ordered, quote sent, approval received, reminders..."
@@ -865,7 +997,6 @@ export default function JobCard({
                 onChange={(e) => handleNotesChange(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
               />
-
               <div className={styles.buttonRow}>
                 <button
                   type="button"
@@ -878,7 +1009,6 @@ export default function JobCard({
                 >
                   Ready for Pickup SMS
                 </button>
-
                 {onDuplicateJob ? (
                   <button
                     type="button"
@@ -892,7 +1022,6 @@ export default function JobCard({
                     Duplicate Job
                   </button>
                 ) : null}
-
                 {isArchiveStatus ? (
                   <button
                     type="button"
@@ -906,7 +1035,6 @@ export default function JobCard({
                     Hide Job
                   </button>
                 ) : null}
-
                 {job.is_hidden ? (
                   <button
                     type="button"
@@ -920,6 +1048,54 @@ export default function JobCard({
                     Unhide Job
                   </button>
                 ) : null}
+              </div>
+            </div>
+
+            {/* Photo Upload Section */}
+            <div className={styles.expandedSectionCard}>
+              <div className={styles.inputTopRow}>
+                <div className={styles.expandedSectionTitle}>Fault Photo</div>
+                {uploadingPhoto && <span style={{ color: '#b45309' }}>Uploading...</span>}
+              </div>
+
+              {job.fault_photo_url ? (
+                <div style={{ margin: '12px 0' }}>
+                  <img
+                    src={job.fault_photo_url}
+                    alt="Fault photo"
+                    style={{ maxWidth: '100%', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                  />
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
+                    Uploaded photo
+                  </p>
+                </div>
+              ) : (
+                <p style={{ color: '#64748b', fontSize: '14px' }}>No photo uploaded yet</p>
+              )}
+
+              <div style={{ marginTop: '12px' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  disabled={uploadingPhoto}
+                  style={{ display: 'block', marginBottom: '8px' }}
+                />
+                {photoFile && (
+                  <div style={{ margin: '8px 0', fontSize: '14px' }}>
+                    Selected: {photoFile.name}
+                    <button
+                      type="button"
+                      onClick={handlePhotoUpload}
+                      disabled={uploadingPhoto}
+                      className={styles.actionButton}
+                      style={{ marginLeft: '12px', padding: '6px 12px' }}
+                    >
+                      {uploadingPhoto ? 'Uploading...' : 'Upload Photo'}
+                    </button>
+                  </div>
+                )}
+                {uploadError && <p className={styles.errorText}>{uploadError}</p>}
               </div>
             </div>
 
