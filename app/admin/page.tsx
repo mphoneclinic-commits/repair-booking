@@ -691,10 +691,6 @@ export default function AdminPage() {
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Realtime subscription + initial load
-  // ────────────────────────────────────────────────────────────────
-
   useEffect(() => {
     loadAllData() // Initial full load
 
@@ -1811,6 +1807,35 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
+                  className={styles.actionButton}
+                  onClick={async () => {
+                    if (selectedArchiveJobIds.length === 0) return
+                    if (!window.confirm(`Are you sure you want to delete ${selectedArchiveJobIds.length} selected jobs? This cannot be undone.`)) return
+
+                    setBulkBusy(true)
+                    setError('')
+
+                    const { error } = await supabase
+                      .from('repair_requests')
+                      .delete()
+                      .in('id', selectedArchiveJobIds)
+
+                    if (error) {
+                      setError(error.message)
+                      setBulkBusy(false)
+                      return
+                    }
+
+                    void loadAllData()
+                    setSelectedArchiveJobIds([])
+                    setBulkBusy(false)
+                  }}
+                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+                >
+                  {bulkBusy ? 'Deleting...' : 'Delete Selected'}
+                </button>
+                <button
+                  type="button"
                   className={styles.miniButton}
                   onClick={clearArchiveSelection}
                   disabled={bulkBusy || selectedArchiveJobIds.length === 0}
@@ -2070,6 +2095,35 @@ export default function AdminPage() {
                 disabled={bulkBusy || selectedHiddenJobIds.length === 0}
               >
                 {bulkBusy ? 'Working...' : 'Unhide Selected'}
+              </button>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={async () => {
+                  if (selectedHiddenJobIds.length === 0) return
+                  if (!window.confirm(`Are you sure you want to delete ${selectedHiddenJobIds.length} selected jobs? This cannot be undone.`)) return
+
+                  setBulkBusy(true)
+                  setError('')
+
+                  const { error } = await supabase
+                    .from('repair_requests')
+                    .delete()
+                    .in('id', selectedHiddenJobIds)
+
+                  if (error) {
+                    setError(error.message)
+                    setBulkBusy(false)
+                    return
+                  }
+
+                  void loadAllData()
+                  setSelectedHiddenJobIds([])
+                  setBulkBusy(false)
+                }}
+                disabled={bulkBusy || selectedHiddenJobIds.length === 0}
+              >
+                {bulkBusy ? 'Deleting...' : 'Delete Selected'}
               </button>
               <button
                 type="button"

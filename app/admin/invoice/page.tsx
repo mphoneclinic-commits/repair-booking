@@ -18,7 +18,8 @@ export default function InvoicePrintPage() {
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('') // ← New: for feedback
+  const [successMessage, setSuccessMessage] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -144,7 +145,6 @@ export default function InvoicePrintPage() {
       updates.paid_at = null
     }
 
-    // Update invoice status
     const { data, error: updateError } = await supabase
       .from('invoices')
       .update(updates)
@@ -179,7 +179,6 @@ export default function InvoicePrintPage() {
       return
     }
 
-    // NEW: If marked as PAID, also close the linked job (if not already closed)
     if (status === 'paid' && data.repair_request_id) {
       const { data: jobData, error: jobError } = await supabase
         .from('repair_requests')
@@ -195,7 +194,6 @@ export default function InvoicePrintPage() {
 
         if (closeError) {
           console.warn('Could not auto-close job:', closeError.message)
-          // Don't block the invoice update — just warn
         } else {
           setSuccessMessage('Invoice marked paid & job closed.')
         }
@@ -213,6 +211,43 @@ export default function InvoicePrintPage() {
 
     setInvoice(normalizedInvoice)
     setSuccessMessage(`Invoice updated to ${status.toUpperCase()}`)
+  }
+
+  async function deleteInvoice() {
+    if (!invoice) return
+    if (!window.confirm('Are you sure you want to delete this invoice? This cannot be undone.')) return
+
+    setDeleting(true)
+    setError('')
+    setSuccessMessage('')
+
+    const { error: deleteItemsError } = await supabase
+      .from('invoice_items')
+      .delete()
+      .eq('invoice_id', invoice.id)
+
+    if (deleteItemsError) {
+      setError(deleteItemsError.message)
+      setDeleting(false)
+      return
+    }
+
+    const { error: deleteInvoiceError } = await supabase
+      .from('invoices')
+      .delete()
+      .eq('id', invoice.id)
+
+    if (deleteInvoiceError) {
+      setError(deleteInvoiceError.message)
+      setDeleting(false)
+      return
+    }
+
+    setSuccessMessage('Invoice deleted successfully.')
+    setDeleting(false)
+    setTimeout(() => {
+      window.location.href = '/admin'
+    }, 2000)
   }
 
   const totalQty = useMemo(() => {
@@ -249,10 +284,11 @@ export default function InvoicePrintPage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <div className={styles.topActions}>
-          <Link href="/admin" className={styles.secondaryButton}>
-            Back to Admin
-          </Link>
+        <div className={styles.topBar}>
+          <div>
+            <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
+            <h1 className={styles.pageTitle}>Invoice {invoice.invoice_number}</h1>
+          </div>
           <div className={styles.topActionsRight}>
             {invoice.status === 'issued' && (
               <button
@@ -297,12 +333,19 @@ export default function InvoicePrintPage() {
             >
               Print Invoice
             </button>
+            <button
+              type="button"
+              className={styles.deleteButton}
+              onClick={deleteInvoice}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : 'Delete Invoice'}
+            </button>
           </div>
         </div>
 
-        {/* NEW: Success message display */}
         {successMessage && (
-          <div className={styles.successBanner} style={{ marginBottom: '16px' }}>
+          <div className={styles.successBanner}>
             {successMessage}
           </div>
         )}
@@ -322,7 +365,6 @@ export default function InvoicePrintPage() {
               </div>
             </div>
           </header>
-
           <section className={styles.metaGrid}>
             <div className={styles.metaCard}>
               <div className={styles.metaTitle}>Bill To</div>
@@ -342,7 +384,6 @@ export default function InvoicePrintPage() {
               </div>
             </div>
           </section>
-
           <section className={styles.tableSection}>
             <div className={styles.sectionHeading}>Invoice Items</div>
             <table className={styles.itemsTable}>
@@ -378,7 +419,6 @@ export default function InvoicePrintPage() {
               </tbody>
             </table>
           </section>
-
           <section className={styles.summarySection}>
             <div className={styles.summaryBox}>
               <div className={styles.summaryRow}>
@@ -399,14 +439,12 @@ export default function InvoicePrintPage() {
               </div>
             </div>
           </section>
-
           {invoice.notes ? (
             <section className={styles.notesSection}>
               <div className={styles.sectionHeading}>Notes</div>
               <p className={styles.notesText}>{invoice.notes}</p>
             </section>
           ) : null}
-
           <footer className={styles.footer}>
             <div>Thank you for choosing The Mobile Phone Clinic.</div>
             <div>This document was generated from the admin dashboard.</div>

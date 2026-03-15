@@ -1484,3 +1484,118 @@ padding: 8px 11px;
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+/* admin.module.css updates - add these to the bottom or integrate */
+
+/* Top Bar Modern Design */
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.pageTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.pageSubtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.viewButton {
+  background-color: #f3f4f6;
+  color: #374151;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.viewButton:hover {
+  background-color: #22c55e;
+  color: #ffffff;
+}
+
+.viewButtonActive {
+  background-color: #22c55e;
+  color: #ffffff;
+}
+
+.button {
+  background-color: #f3f4f6;
+  color: #374151;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.button:hover {
+  background-color: #22c55e;
+  color: #ffffff;
+}
+
+/* Success Banner */
+.successBanner {
+  background-color: #d1fae5;
+  color: #065f46;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Delete Button */
+.deleteButton {
+  background-color: #ef4444;
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.deleteButton:hover {
+  background-color: #dc2626;
+}
+
+/* Add to existing statusBadge for green theme contrast */
+.statusBadge {
+  background-color: #22c55e; /* Adjust per status if needed */
+  color: #ffffff;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Ensure no underlines on links */
+/*a {text-decoration: none;*/

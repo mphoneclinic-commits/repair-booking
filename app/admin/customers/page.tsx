@@ -32,7 +32,6 @@ function buildCustomerKey(job: RepairRequest) {
   const phone = normalizePhone(job.phone)
   const email = (job.email || '').trim().toLowerCase()
   const name = job.full_name.trim().toLowerCase()
-
   if (phone) return `phone:${phone}`
   if (email) return `email:${email}`
   return `name:${name}`
@@ -49,7 +48,6 @@ export default function CustomersPage() {
     async function loadData() {
       setLoading(true)
       setError('')
-
       try {
         const [{ data: jobsData, error: jobsError }, { data: invoiceData, error: invoiceError }] =
           await Promise.all([
@@ -74,7 +72,6 @@ export default function CustomersPage() {
                 is_hidden
               `)
               .order('created_at', { ascending: false }),
-
             supabase
               .from('invoices')
               .select(`
@@ -102,10 +99,8 @@ export default function CustomersPage() {
               `)
               .order('created_at', { ascending: false }),
           ])
-
         if (jobsError) throw jobsError
         if (invoiceError) throw invoiceError
-
         const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
           ...job,
           internal_notes: job.internal_notes ?? '',
@@ -113,7 +108,6 @@ export default function CustomersPage() {
           serial_imei: job.serial_imei ?? null,
           is_hidden: Boolean(job.is_hidden),
         }))
-
         const safeInvoices = ((invoiceData || []) as Invoice[]).map((invoice) => ({
           ...invoice,
           tax_rate: Number(invoice.tax_rate ?? 0),
@@ -122,7 +116,6 @@ export default function CustomersPage() {
           subtotal: Number(invoice.subtotal ?? 0),
           total: Number(invoice.total ?? 0),
         }))
-
         setJobs(safeJobs)
         setInvoices(safeInvoices)
       } catch (err) {
@@ -131,7 +124,6 @@ export default function CustomersPage() {
         setLoading(false)
       }
     }
-
     void loadData()
   }, [])
 
@@ -140,13 +132,10 @@ export default function CustomersPage() {
       acc[invoice.repair_request_id] = (acc[invoice.repair_request_id] || 0) + 1
       return acc
     }, {})
-
     const map = new Map<string, CustomerGroup>()
-
     for (const job of jobs) {
       const key = buildCustomerKey(job)
       const existing = map.get(key)
-
       if (!existing) {
         map.set(key, {
           key,
@@ -168,18 +157,14 @@ export default function CustomersPage() {
         }
         existing.invoiceCount += invoiceCountByJobId[job.id] || 0
         existing.totalQuoted += job.quoted_price ?? 0
-
         if (!existing.phone && job.phone) existing.phone = job.phone
         if (!existing.email && job.email) existing.email = job.email
       }
     }
-
     const term = search.trim().toLowerCase()
-
     return Array.from(map.values())
       .filter((group) => {
         if (!term) return true
-
         const haystack = [
           group.displayName,
           group.phone,
@@ -198,7 +183,6 @@ export default function CustomersPage() {
         ]
           .join(' ')
           .toLowerCase()
-
         return haystack.includes(term)
       })
       .sort((a, b) => {
@@ -218,18 +202,15 @@ export default function CustomersPage() {
             Grouped repair history across visible and hidden jobs
           </p>
         </div>
-
         <div className={styles.toolbar}>
           <Link href="/admin" className={styles.viewButton}>
             Back to Dashboard
           </Link>
-
           <Link href="/admin/invoices" className={styles.viewButton}>
             View Invoices
           </Link>
         </div>
       </div>
-
       <div className={styles.filtersWrap}>
         <input
           value={search}
@@ -241,14 +222,11 @@ export default function CustomersPage() {
           Customers found: <strong style={{ marginLeft: 6 }}>{customerGroups.length}</strong>
         </div>
       </div>
-
       {loading && <p className={styles.message}>Loading customers...</p>}
       {!!error && <p className={styles.errorText}>{error}</p>}
-
       {!loading && !error && customerGroups.length === 0 && (
         <p className={styles.message}>No matching customers.</p>
       )}
-
       {!loading && !error && customerGroups.length > 0 && (
         <div className={styles.customerGrid}>
           {customerGroups.map((customer) => (
@@ -256,18 +234,17 @@ export default function CustomersPage() {
               <div className={styles.customerCardHeader}>
                 <div>
                   <h2 className={styles.customerTitle}>
-               <Link
-  href={`/admin/customer?key=${encodeURIComponent(customer.key)}`}
-  className={styles.customerLink}
->
-  {customer.displayName}
-</Link>
+                    <Link
+                      href={`/admin/customer?key=${encodeURIComponent(customer.key)}`}
+                      className={styles.customerLink}
+                    >
+                      {customer.displayName}
+                    </Link>
                   </h2>
                   <p className={styles.customerMeta}>
                     {customer.phone || '-'} {customer.email ? `• ${customer.email}` : ''}
                   </p>
                 </div>
-
                 <div className={styles.customerStats}>
                   <span className={styles.statusBadge}>Jobs {customer.jobs.length}</span>
                   <span className={styles.statusBadge}>Visible {customer.visibleJobs.length}</span>
@@ -275,14 +252,12 @@ export default function CustomersPage() {
                   <span className={styles.statusBadge}>Invoices {customer.invoiceCount}</span>
                 </div>
               </div>
-
               <div className={styles.customerSummaryRow}>
                 <div className={styles.summaryCard}>
                   <div className={styles.summaryLabel}>Quoted Total</div>
                   <div className={styles.summaryValue}>${customer.totalQuoted.toFixed(2)}</div>
                 </div>
               </div>
-
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
@@ -291,7 +266,6 @@ export default function CustomersPage() {
                       <th>Device</th>
                       <th>Serial / IMEI</th>
                       <th>Status</th>
-                      <th>Visible</th>
                       <th>Quote</th>
                       <th>Booked</th>
                     </tr>
@@ -302,7 +276,6 @@ export default function CustomersPage() {
                         <td>{job.job_number || 'Pending'}</td>
                         <td>
                           {job.brand} {job.model}
-                          {job.device_type ? ` • ${job.device_type}` : ''}
                         </td>
                         <td>{job.serial_imei || '-'}</td>
                         <td>
@@ -310,7 +283,6 @@ export default function CustomersPage() {
                             {getStatusLabel(job.status)}
                           </span>
                         </td>
-                        <td>{job.is_hidden ? 'Hidden' : 'Visible'}</td>
                         <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
                         <td>{formatDateTime(job.created_at)}</td>
                       </tr>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
 import type {
   Invoice,
@@ -19,6 +20,11 @@ import {
 } from '../utils'
 import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
@@ -139,7 +145,6 @@ export default function JobCard({
     fault_description: job.fault_description,
   })
 
-  // Photo states
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadError, setUploadError] = useState('')
@@ -157,15 +162,21 @@ export default function JobCard({
   const deviceFocusedRef = useRef(false)
 
   useEffect(() => {
-    if (!quoteFocusedRef.current) setLocalQuote(job.quoted_price?.toString() ?? '')
+    if (!quoteFocusedRef.current) {
+      setLocalQuote(job.quoted_price?.toString() ?? '')
+    }
   }, [job.quoted_price])
 
   useEffect(() => {
-    if (!notesFocusedRef.current) setLocalNotes(job.internal_notes ?? '')
+    if (!notesFocusedRef.current) {
+      setLocalNotes(job.internal_notes ?? '')
+    }
   }, [job.internal_notes])
 
   useEffect(() => {
-    if (!jobNumberFocusedRef.current) setLocalJobNumber(job.job_number ?? '')
+    if (!jobNumberFocusedRef.current) {
+      setLocalJobNumber(job.job_number ?? '')
+    }
   }, [job.job_number])
 
   useEffect(() => {
@@ -200,9 +211,13 @@ export default function JobCard({
     }
   }, [])
 
+  // Photo handlers
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setPhotoFile(file)
+    if (file) {
+      setPhotoFile(file)
+      setUploadError('')
+    }
   }
 
   async function handlePhotoUpload() {
@@ -211,32 +226,35 @@ export default function JobCard({
     setUploadingPhoto(true)
     setUploadError('')
 
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(',')[1]
+    const fileExt = photoFile.name.split('.').pop()
+    const fileName = `${job.id}-${Date.now()}.${fileExt}`
+    const filePath = `fault-photos/${fileName}`
 
-      const res = await fetch('/.netlify/functions/upload-fault-photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: job.id,
-          fileName: photoFile.name,
-          fileData: base64
-        })
-      })
+    const { error: uploadError } = await supabase.storage
+      .from('fault-photos')
+      .upload(filePath, photoFile)
 
-      const result = await res.json()
-
-      if (result.success) {
-        setPhotoFile(null)
-        alert('Photo uploaded successfully!')
-        window.location.reload() // Refresh to show photo (or use realtime)
-      } else {
-        setUploadError(result.error || 'Upload failed')
-      }
+    if (uploadError) {
+      setUploadError('Photo upload failed: ' + uploadError.message)
       setUploadingPhoto(false)
+      return
     }
-    reader.readAsDataURL(photoFile)
+
+    const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
+    const publicUrl = urlData.publicUrl
+
+    const { error: updateError } = await supabase
+      .from('repair_requests')
+      .update({ fault_photo_url: publicUrl })
+      .eq('id', job.id)
+
+    if (updateError) {
+      setUploadError('Failed to save photo URL: ' + updateError.message)
+    } else {
+      setPhotoFile(null)
+    }
+
+    setUploadingPhoto(false)
   }
 
   async function flushQuote(rawValue: string) {
@@ -257,7 +275,9 @@ export default function JobCard({
       setFieldState(job.id, 'quote', 'error')
     } else {
       setFieldState(job.id, 'quote', 'saved')
-      setTimeout(() => setFieldState(job.id, 'quote', 'idle'), 1300)
+      setTimeout(() => {
+        setFieldState(job.id, 'quote', 'idle')
+      }, 1300)
     }
   }
 
@@ -276,7 +296,9 @@ export default function JobCard({
       setFieldState(job.id, 'notes', 'error')
     } else {
       setFieldState(job.id, 'notes', 'saved')
-      setTimeout(() => setFieldState(job.id, 'notes', 'idle'), 1300)
+      setTimeout(() => {
+        setFieldState(job.id, 'notes', 'idle')
+      }, 1300)
     }
   }
 
@@ -301,7 +323,9 @@ export default function JobCard({
       setFieldState(job.id, 'job_number', 'error')
     } else {
       setFieldState(job.id, 'job_number', 'saved')
-      setTimeout(() => setFieldState(job.id, 'job_number', 'idle'), 1300)
+      setTimeout(() => {
+        setFieldState(job.id, 'job_number', 'idle')
+      }, 1300)
     }
   }
 
@@ -335,7 +359,9 @@ export default function JobCard({
       setFieldState(job.id, 'customer', 'error')
     } else {
       setFieldState(job.id, 'customer', 'saved')
-      setTimeout(() => setFieldState(job.id, 'customer', 'idle'), 1300)
+      setTimeout(() => {
+        setFieldState(job.id, 'customer', 'idle')
+      }, 1300)
     }
   }
 
@@ -386,7 +412,9 @@ export default function JobCard({
       setFieldState(job.id, 'device', 'error')
     } else {
       setFieldState(job.id, 'device', 'saved')
-      setTimeout(() => setFieldState(job.id, 'device', 'idle'), 1300)
+      setTimeout(() => {
+        setFieldState(job.id, 'device', 'idle')
+      }, 1300)
     }
   }
 
