@@ -1,4 +1,4 @@
-import type { RepairStatus, StatusFilter } from '../types'
+import type { RepairStatus, StatusFilter } from './types'
 
 export const BOARD_COLUMNS: RepairStatus[] = [
   'new',
