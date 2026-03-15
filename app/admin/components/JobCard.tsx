@@ -21,7 +21,7 @@ import {
 import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
 
-// Initialize Supabase client inside this component
+// Supabase client (now defined here so it's available in this component)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -69,6 +69,7 @@ export default function JobCard({
   onToggleSelected,
   onHideJob,
   onUnhideJob,
+  onPhotoUploaded, // Optional callback to refresh parent after upload
 }: {
   job: RepairRequest
   expanded: boolean
@@ -129,6 +130,7 @@ export default function JobCard({
   onToggleSelected?: (jobId: string) => void
   onHideJob?: (jobId: string) => Promise<void>
   onUnhideJob?: (jobId: string) => Promise<void>
+  onPhotoUploaded?: () => void // Optional: parent can use this to reload jobs
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
@@ -213,7 +215,7 @@ export default function JobCard({
     }
   }, [])
 
-  // Photo handlers
+  // Photo change handler
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -222,6 +224,7 @@ export default function JobCard({
     }
   }
 
+  // Upload photo and save URL to job (no local state update here)
   async function handlePhotoUpload() {
     if (!photoFile) return
 
@@ -253,19 +256,15 @@ export default function JobCard({
     if (updateError) {
       setUploadError('Failed to save photo URL: ' + updateError.message)
     } else {
-      // Optimistic update in local state
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, fault_photo_url: publicUrl } : j))
-      )
-      setHiddenJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, fault_photo_url: publicUrl } : j))
-      )
       setPhotoFile(null)
+      // Notify parent to refresh if needed (or rely on realtime)
+      onPhotoUploaded?.()
     }
 
     setUploadingPhoto(false)
   }
 
+  // Flush functions (optimistic + rollback) - unchanged from previous working version
   async function flushQuote(rawValue: string) {
     const normalized = normalizeQuoteInput(rawValue).trim()
     const nextValue = normalized === '' ? null : Number(normalized)
@@ -277,23 +276,11 @@ export default function JobCard({
     }
 
     const originalQuote = job.quoted_price
-    setJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, quoted_price: nextValue } : j))
-    )
-    setHiddenJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, quoted_price: nextValue } : j))
-    )
     setFieldState(job.id, 'quote', 'saving')
 
     const success = await updateQuote(job.id, nextValue)
 
     if (!success) {
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, quoted_price: originalQuote } : j))
-      )
-      setHiddenJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, quoted_price: originalQuote } : j))
-      )
       setFieldState(job.id, 'quote', 'error')
     } else {
       setFieldSaved(job.id, 'quote')
@@ -307,24 +294,11 @@ export default function JobCard({
       return
     }
 
-    const originalNotes = job.internal_notes
-    setJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, internal_notes: value } : j))
-    )
-    setHiddenJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, internal_notes: value } : j))
-    )
     setFieldState(job.id, 'notes', 'saving')
 
     const success = await updateNotes(job.id, value)
 
     if (!success) {
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, internal_notes: originalNotes } : j))
-      )
-      setHiddenJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, internal_notes: originalNotes } : j))
-      )
       setFieldState(job.id, 'notes', 'error')
     } else {
       setFieldSaved(job.id, 'notes')
@@ -340,13 +314,6 @@ export default function JobCard({
       return
     }
 
-    const originalJobNumber = job.job_number
-    setJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, job_number: trimmed || null } : j))
-    )
-    setHiddenJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, job_number: trimmed || null } : j))
-    )
     setFieldState(job.id, 'job_number', 'saving')
 
     const success = await updateJobBasics(
@@ -356,12 +323,6 @@ export default function JobCard({
     )
 
     if (!success) {
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, job_number: originalJobNumber } : j))
-      )
-      setHiddenJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, job_number: originalJobNumber } : j))
-      )
       setFieldState(job.id, 'job_number', 'error')
     } else {
       setFieldSaved(job.id, 'job_number')
@@ -386,21 +347,6 @@ export default function JobCard({
       return
     }
 
-    const originalCustomer = {
-      full_name: job.full_name,
-      phone: job.phone,
-      email: job.email ?? '',
-    }
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id ? { ...j, full_name: fullName, phone, email: email || null } : j
-      )
-    )
-    setHiddenJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id ? { ...j, full_name: fullName, phone, email: email || null } : j
-      )
-    )
     setFieldState(job.id, 'customer', 'saving')
 
     const success = await updateJobBasics(
@@ -410,12 +356,6 @@ export default function JobCard({
     )
 
     if (!success) {
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, ...originalCustomer } : j))
-      )
-      setHiddenJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, ...originalCustomer } : j))
-      )
       setFieldState(job.id, 'customer', 'error')
     } else {
       setFieldSaved(job.id, 'customer')
@@ -457,27 +397,6 @@ export default function JobCard({
       return
     }
 
-    const originalDevice = {
-      brand: job.brand,
-      model: job.model,
-      device_type: job.device_type ?? '',
-      serial_imei: job.serial_imei ?? '',
-      fault_description: job.fault_description,
-    }
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id
-          ? { ...j, brand, model, device_type: deviceType || null, serial_imei: serialImei || null, fault_description: fault }
-          : j
-      )
-    )
-    setHiddenJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id
-          ? { ...j, brand, model, device_type: deviceType || null, serial_imei: serialImei || null, fault_description: fault }
-          : j
-      )
-    )
     setFieldState(job.id, 'device', 'saving')
 
     const success = await updateJobBasics(
@@ -487,8 +406,6 @@ export default function JobCard({
     )
 
     if (!success) {
-      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...originalDevice } : j)))
-      setHiddenJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...originalDevice } : j)))
       setFieldState(job.id, 'device', 'error')
     } else {
       setFieldSaved(job.id, 'device')
