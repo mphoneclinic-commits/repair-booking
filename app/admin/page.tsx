@@ -1,14 +1,8 @@
-
-
 'use client'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import styles from '../admin.module.css'  // ← Changed to ../
-import type { Customer, RepairRequest } from '../types'  // Assuming types are in parent
-import { formatDateTime } from '../utils'  // ← Changed to ../
-import SummaryCard from '../components/SummaryCard'  // ← Changed to ../
-import JobCard from '../components/JobCard'  // ← Changed to ../
+import styles from './admin.module.css'
 import type {
   Invoice,
   InvoiceItem,
@@ -27,18 +21,15 @@ import {
   STATUSES,
   formatDateTime,
 } from './utils'
-import SummaryCard from '../components/SummaryCard'
-import JobCard from '../components/JobCard'
-
+import SummaryCard from './components/SummaryCard'
+import JobCard from './components/JobCard'
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
-
 function sortJobs(list: RepairRequest[], sortMode: SortMode) {
   const copy = [...list]
   copy.sort((a, b) => {
@@ -57,7 +48,6 @@ function sortJobs(list: RepairRequest[], sortMode: SortMode) {
   })
   return copy
 }
-
 export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
   const [hiddenJobs, setHiddenJobs] = useState<RepairRequest[]>([])
@@ -97,20 +87,16 @@ export default function AdminPage() {
     rejected: false,
     cancelled: false,
   })
-
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
-
   function getFieldKey(jobId: string, field: SaveField) {
     return `${jobId}:${field}`
   }
-
   function setFieldState(jobId: string, field: SaveField, state: SaveState) {
     setSaveStates((prev) => ({
       ...prev,
       [getFieldKey(jobId, field)]: state,
     }))
   }
-
   function setFieldSaved(jobId: string, field: SaveField) {
     const key = getFieldKey(jobId, field)
     setSaveStates((prev) => ({
@@ -127,21 +113,18 @@ export default function AdminPage() {
       })
     }, 1300)
   }
-
   function setInvoiceActionState(jobId: string, state: InvoiceActionState) {
     setInvoiceActionStates((prev) => ({
       ...prev,
       [jobId]: state,
     }))
   }
-
   function setInvoiceItemsActionState(invoiceId: string, state: InvoiceItemsActionState) {
     setInvoiceItemsActionStates((prev) => ({
       ...prev,
       [invoiceId]: state,
     }))
   }
-
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
       ...prev,
@@ -149,40 +132,33 @@ export default function AdminPage() {
     }))
     setHighlightedJobId(jobId)
   }
-
   function selectJobCard(jobId: string) {
     setHighlightedJobId(jobId)
   }
-
   function toggleArchiveSelected(jobId: string) {
     setSelectedArchiveJobIds((prev) =>
       prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]
     )
     setHighlightedJobId(jobId)
   }
-
   function toggleHiddenSelected(jobId: string) {
     setSelectedHiddenJobIds((prev) =>
       prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]
     )
     setHighlightedJobId(jobId)
   }
-
   function clearArchiveSelection() {
     setSelectedArchiveJobIds([])
   }
-
   function clearHiddenSelection() {
     setSelectedHiddenJobIds([])
   }
-
   function toggleColumnCollapsed(status: RepairStatus) {
     setCollapsedColumns((prev) => ({
       ...prev,
       [status]: !prev[status],
     }))
   }
-
   async function duplicateJob(sourceJob: RepairRequest) {
     const { data, error } = await supabase
       .from('repair_requests')
@@ -221,12 +197,10 @@ export default function AdminPage() {
         is_hidden
       `)
       .single()
-
     if (error || !data) {
       setError(error?.message || 'Failed to duplicate job')
       return
     }
-
     const newJob = {
       ...(data as RepairRequest),
       internal_notes: data.internal_notes ?? '',
@@ -234,14 +208,12 @@ export default function AdminPage() {
       serial_imei: data.serial_imei ?? null,
       is_hidden: Boolean(data.is_hidden),
     }
-
     setJobs((prev) => [newJob, ...prev])
     setExpandedJobs((prev) => ({
       ...prev,
       [newJob.id]: true,
     }))
     setHighlightedJobId(newJob.id)
-
     window.setTimeout(() => {
       const el = jobRefs.current[newJob.id]
       if (el) {
@@ -252,80 +224,65 @@ export default function AdminPage() {
       }
     }, 150)
   }
-
   async function hideJob(id: string) {
     const previousVisible = jobs
     const previousHidden = hiddenJobs
     const jobToHide = jobs.find((job) => job.id === id)
     if (!jobToHide) return
-
     setJobs((prev) => prev.filter((job) => job.id !== id))
     setHiddenJobs((prev) => [{ ...jobToHide, is_hidden: true }, ...prev])
     setSelectedArchiveJobIds((prev) => prev.filter((jobId) => jobId !== id))
-
     const { error } = await supabase
       .from('repair_requests')
       .update({ is_hidden: true })
       .eq('id', id)
-
     if (error) {
       setJobs(previousVisible)
       setHiddenJobs(previousHidden)
       setError(error.message)
       return
     }
-
     if (highlightedJobId === id) {
       setHighlightedJobId(null)
     }
   }
-
   async function unhideJob(id: string) {
     const previousVisible = jobs
     const previousHidden = hiddenJobs
     const jobToUnhide = hiddenJobs.find((job) => job.id === id)
     if (!jobToUnhide) return
-
     setHiddenJobs((prev) => prev.filter((job) => job.id !== id))
     setJobs((prev) => [{ ...jobToUnhide, is_hidden: false }, ...prev])
     setSelectedHiddenJobIds((prev) => prev.filter((jobId) => jobId !== id))
-
     const { error } = await supabase
       .from('repair_requests')
       .update({ is_hidden: false })
       .eq('id', id)
-
     if (error) {
       setJobs(previousVisible)
       setHiddenJobs(previousHidden)
       setError(error.message)
       return
     }
-
     setHighlightedJobId(id)
   }
-
   async function bulkHideArchiveJobs() {
     if (selectedArchiveJobIds.length === 0) return
     setBulkBusy(true)
     setError('')
-
     const selectedSet = new Set(selectedArchiveJobIds)
     const previousVisible = jobs
     const previousHidden = hiddenJobs
     const jobsToHide = jobs.filter((job) => selectedSet.has(job.id))
-
     setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
     setHiddenJobs((prev) => [
       ...jobsToHide.map((job) => ({ ...job, is_hidden: true })),
       ...prev,
     ])
-
     const { error } = await supabase
       .from('repair_requests')
       .update({ is_hidden: true })
       .in('id', selectedArchiveJobIds)
-
     if (error) {
       setJobs(previousVisible)
       setHiddenJobs(previousHidden)
@@ -333,36 +290,29 @@ export default function AdminPage() {
       setBulkBusy(false)
       return
     }
-
     if (highlightedJobId && selectedSet.has(highlightedJobId)) {
       setHighlightedJobId(null)
     }
-
     setSelectedArchiveJobIds([])
     setBulkBusy(false)
   }
-
   async function bulkUnhideHiddenJobs() {
     if (selectedHiddenJobIds.length === 0) return
     setBulkBusy(true)
     setError('')
-
     const selectedSet = new Set(selectedHiddenJobIds)
     const previousVisible = jobs
     const previousHidden = hiddenJobs
     const jobsToUnhide = hiddenJobs.filter((job) => selectedSet.has(job.id))
-
     setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
     setJobs((prev) => [
       ...jobsToUnhide.map((job) => ({ ...job, is_hidden: false })),
       ...prev,
     ])
-
     const { error } = await supabase
       .from('repair_requests')
       .update({ is_hidden: false })
       .in('id', selectedHiddenJobIds)
-
     if (error) {
       setJobs(previousVisible)
       setHiddenJobs(previousHidden)
@@ -370,46 +320,37 @@ export default function AdminPage() {
       setBulkBusy(false)
       return
     }
-
     setSelectedHiddenJobIds([])
     setBulkBusy(false)
   }
-
   async function bulkUpdateArchiveStatus(targetStatus: RepairStatus) {
     if (selectedArchiveJobIds.length === 0) return
     setBulkBusy(true)
     setError('')
-
     const selectedSet = new Set(selectedArchiveJobIds)
     const previousJobs = jobs
-
     setJobs((prev) =>
       prev.map((job) =>
         selectedSet.has(job.id) ? { ...job, status: targetStatus } : job
       )
     )
-
     const { error } = await supabase
       .from('repair_requests')
       .update({ status: targetStatus })
       .in('id', selectedArchiveJobIds)
-
     if (error) {
       setJobs(previousJobs)
       setError(error.message)
       setBulkBusy(false)
       return
     }
-
     setSelectedArchiveJobIds([])
     setBulkBusy(false)
   }
-
   async function bulkDuplicateArchiveJobs() {
     if (selectedArchiveJobIds.length === 0) return
     setBulkBusy(true)
     setError('')
-
     const selectedJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
     const inserts = selectedJobs.map((job) => ({
       job_number: null,
@@ -427,7 +368,6 @@ export default function AdminPage() {
       quoted_price: job.quoted_price,
       is_hidden: false,
     }))
-
     const { data, error } = await supabase
       .from('repair_requests')
       .insert(inserts)
@@ -449,13 +389,11 @@ export default function AdminPage() {
         quoted_price,
         is_hidden
       `)
-
     if (error) {
       setError(error.message)
       setBulkBusy(false)
       return
     }
-
     const newJobs = ((data || []) as RepairRequest[]).map((job) => ({
       ...job,
       internal_notes: job.internal_notes ?? '',
@@ -463,7 +401,6 @@ export default function AdminPage() {
       serial_imei: job.serial_imei ?? null,
       is_hidden: Boolean(job.is_hidden),
     }))
-
     setJobs((prev) => [...newJobs, ...prev])
     setExpandedJobs((prev) => {
       const next = { ...prev }
@@ -471,11 +408,9 @@ export default function AdminPage() {
       return next
     })
     setSelectedArchiveJobIds([])
-
     if (newJobs[0]) setHighlightedJobId(newJobs[0].id)
     setBulkBusy(false)
   }
-
   async function loadJobs() {
     const { data, error } = await supabase
       .from('repair_requests')
@@ -498,9 +433,7 @@ export default function AdminPage() {
         is_hidden
       `)
       .order('created_at', { ascending: false })
-
     if (error) throw error
-
     const allJobs = ((data || []) as RepairRequest[]).map((job) => ({
       ...job,
       internal_notes: job.internal_notes ?? '',
@@ -508,10 +441,8 @@ export default function AdminPage() {
       serial_imei: job.serial_imei ?? null,
       is_hidden: Boolean(job.is_hidden),
     }))
-
     setJobs(allJobs.filter((job) => !job.is_hidden))
     setHiddenJobs(allJobs.filter((job) => job.is_hidden))
-
     setExpandedJobs((prev) => {
       const next = { ...prev }
       for (const job of allJobs) {
@@ -520,7 +451,6 @@ export default function AdminPage() {
       return next
     })
   }
-
   async function loadInvoices() {
     const { data, error } = await supabase
       .from('invoices')
@@ -548,9 +478,7 @@ export default function AdminPage() {
         updated_at
       `)
       .order('created_at', { ascending: false })
-
     if (error) throw error
-
     const latestByJob: Record<string, Invoice> = {}
     for (const raw of (data || []) as Invoice[]) {
       if (!latestByJob[raw.repair_request_id]) {
@@ -564,10 +492,8 @@ export default function AdminPage() {
         }
       }
     }
-
     setInvoicesByJobId(latestByJob)
   }
-
   async function loadInvoiceItems() {
     const { data, error } = await supabase
       .from('invoice_items')
@@ -583,9 +509,7 @@ export default function AdminPage() {
       `)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
-
     if (error) throw error
-
     const grouped: Record<string, InvoiceItem[]> = {}
     for (const item of (data || []) as InvoiceItem[]) {
       const invoiceId = item.invoice_id
@@ -598,10 +522,8 @@ export default function AdminPage() {
         sort_order: Number(item.sort_order ?? 0),
       })
     }
-
     setInvoiceItemsByInvoiceId(grouped)
   }
-
   async function refreshInvoiceById(invoiceId: string) {
     const { data: invoiceData, error: invoiceError } = await supabase
       .from('invoices')
@@ -630,11 +552,9 @@ export default function AdminPage() {
       `)
       .eq('id', invoiceId)
       .single()
-
     if (invoiceError || !invoiceData) {
       throw invoiceError || new Error('Failed to refresh invoice')
     }
-
     const normalizedInvoice: Invoice = {
       ...(invoiceData as Invoice),
       tax_rate: Number(invoiceData.tax_rate ?? 0),
@@ -643,7 +563,6 @@ export default function AdminPage() {
       subtotal: Number(invoiceData.subtotal ?? 0),
       total: Number(invoiceData.total ?? 0),
     }
-
     const { data: itemsData, error: itemsError } = await supabase
       .from('invoice_items')
       .select(`
@@ -659,11 +578,9 @@ export default function AdminPage() {
       .eq('invoice_id', invoiceId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
-
     if (itemsError) {
       throw itemsError
     }
-
     const normalizedItems = ((itemsData || []) as InvoiceItem[]).map((item) => ({
       ...item,
       qty: Number(item.qty ?? 0),
@@ -671,18 +588,15 @@ export default function AdminPage() {
       line_total: Number(item.line_total ?? 0),
       sort_order: Number(item.sort_order ?? 0),
     }))
-
     setInvoicesByJobId((prev) => ({
       ...prev,
       [normalizedInvoice.repair_request_id]: normalizedInvoice,
     }))
-
     setInvoiceItemsByInvoiceId((prev) => ({
       ...prev,
       [invoiceId]: normalizedItems,
     }))
   }
-
   async function loadAllData() {
     setLoading(true)
     setError('')
@@ -695,10 +609,8 @@ export default function AdminPage() {
       setLoading(false)
     }
   }
-
   useEffect(() => {
     loadAllData() // Initial full load
-
     // Realtime channel for automatic updates
     const channel = supabase
       .channel('admin-dashboard-changes')
@@ -719,27 +631,22 @@ export default function AdminPage() {
         }
       )
       .subscribe()
-
     // Cleanup on unmount
     return () => {
       supabase.removeChannel(channel)
     }
   }, []) // Empty deps → runs once on mount
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (loading) return
-
     const params = new URLSearchParams(window.location.search)
     const highlightJob = params.get('highlightJob')
     if (!highlightJob) return
-
     setHighlightedJobId(highlightJob)
     setExpandedJobs((prev) => ({
       ...prev,
       [highlightJob]: true,
     }))
-
     window.setTimeout(() => {
       const el = jobRefs.current[highlightJob]
       if (el) {
@@ -749,44 +656,36 @@ export default function AdminPage() {
         })
       }
     }, 150)
-
     const nextUrl = new URL(window.location.href)
     nextUrl.searchParams.delete('highlightJob')
     window.history.replaceState({}, '', nextUrl.toString())
   }, [loading])
-
   async function updateStatus(id: string, newStatus: RepairStatus) {
     const existingJob =
       jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
     if (!existingJob) return
-
     if (existingJob.status === newStatus) {
       setFieldSaved(id, 'status')
       return
     }
-
     setFieldState(id, 'status', 'saving')
-
     setJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
     )
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
     )
-
     const { data, error } = await supabase
       .from('repair_requests')
       .update({ status: newStatus })
       .eq('id', id)
       .select('id, status')
       .single()
-
     if (error || !data?.status) {
       void loadJobs()
       setFieldState(id, 'status', 'error')
       return
     }
-
     setJobs((prev) =>
       prev.map((job) =>
         job.id === id ? { ...job, status: data.status as RepairStatus } : job
@@ -797,25 +696,20 @@ export default function AdminPage() {
         job.id === id ? { ...job, status: data.status as RepairStatus } : job
       )
     )
-
     setFieldSaved(id, 'status')
   }
-
   async function updateQuote(id: string, price: number | null) {
     setFieldState(id, 'quote', 'saving')
-
     const { data, error } = await supabase
       .from('repair_requests')
       .update({ quoted_price: price })
       .eq('id', id)
       .select('id, quoted_price')
       .single()
-
     if (error) {
       setFieldState(id, 'quote', 'error')
       return false
     }
-
     setJobs((prev) =>
       prev.map((job) =>
         job.id === id
@@ -838,42 +732,34 @@ export default function AdminPage() {
           : job
       )
     )
-
     setFieldSaved(id, 'quote')
     return true
   }
-
   async function updateNotes(id: string, notes: string) {
     setFieldState(id, 'notes', 'saving')
-
     const { data, error } = await supabase
       .from('repair_requests')
       .update({ internal_notes: notes })
       .eq('id', id)
       .select('id, internal_notes')
       .single()
-
     if (error) {
       setFieldState(id, 'notes', 'error')
       return false
     }
-
     const nextNotes =
       typeof data?.internal_notes === 'string'
         ? data.internal_notes
         : data?.internal_notes ?? ''
-
     setJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, internal_notes: nextNotes } : job))
     )
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, internal_notes: nextNotes } : job))
     )
-
     setFieldSaved(id, 'notes')
     return true
   }
-
   async function updateJobBasics(
     id: string,
     updates: Partial<
@@ -893,7 +779,6 @@ export default function AdminPage() {
     field: 'job_number' | 'customer' | 'device'
   ) {
     setFieldState(id, field, 'saving')
-
     const { data, error } = await supabase
       .from('repair_requests')
       .update(updates)
@@ -911,12 +796,10 @@ export default function AdminPage() {
         fault_description
       `)
       .single()
-
     if (error || !data) {
       setFieldState(id, field, 'error')
       return false
     }
-
     const patch = {
       job_number: data.job_number ?? null,
       full_name: data.full_name,
@@ -928,43 +811,35 @@ export default function AdminPage() {
       serial_imei: data.serial_imei ?? null,
       fault_description: data.fault_description,
     }
-
     setJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
     )
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
     )
-
     setFieldSaved(id, field)
     return true
   }
-
   async function createInvoiceForJob(job: RepairRequest) {
     const existing = invoicesByJobId[job.id]
     if (existing) {
       setError(`Job ${job.job_number || job.id} already has invoice ${existing.invoice_number}`)
       return
     }
-
     setInvoiceActionState(job.id, 'saving')
     setError('')
-
     const { data: invoiceNumberData, error: invoiceNumberError } = await supabase.rpc(
       'generate_invoice_number'
     )
-
     if (invoiceNumberError || !invoiceNumberData) {
       setInvoiceActionState(job.id, 'error')
       setError(invoiceNumberError?.message || 'Failed to generate invoice number')
       return
     }
-
     const invoiceNumber = String(invoiceNumberData)
     const amount = Number(job.quoted_price ?? 0)
     const defaultDescription = `Repair service for ${job.brand} ${job.model}`.trim()
     const nowIso = new Date().toISOString()
-
     const { data: insertedInvoice, error: invoiceInsertError } = await supabase
       .from('invoices')
       .insert({
@@ -1007,7 +882,6 @@ export default function AdminPage() {
         updated_at
       `)
       .single()
-
     if (invoiceInsertError || !insertedInvoice) {
       setInvoiceActionState(job.id, 'error')
       if (invoiceInsertError?.message?.toLowerCase().includes('duplicate')) {
@@ -1017,7 +891,6 @@ export default function AdminPage() {
       }
       return
     }
-
     const { error: itemInsertError } = await supabase.from('invoice_items').insert({
       invoice_id: insertedInvoice.id,
       description: defaultDescription,
@@ -1026,18 +899,15 @@ export default function AdminPage() {
       line_total: amount,
       sort_order: 0,
     })
-
     if (itemInsertError) {
       await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
       setInvoiceActionState(job.id, 'error')
       setError(itemInsertError.message || 'Failed to create invoice item')
       return
     }
-
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: insertedInvoice.id,
     })
-
     if (recalcError) {
       await supabase.from('invoice_items').delete().eq('invoice_id', insertedInvoice.id)
       await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
@@ -1045,7 +915,6 @@ export default function AdminPage() {
       setError(recalcError.message || 'Failed to recalculate invoice totals')
       return
     }
-
     const { data: updatedJob, error: closeJobError } = await supabase
       .from('repair_requests')
       .update({ status: 'closed' })
@@ -1069,13 +938,11 @@ export default function AdminPage() {
         is_hidden
       `)
       .single()
-
     if (closeJobError || !updatedJob) {
       setInvoiceActionState(job.id, 'error')
       setError(closeJobError?.message || 'Invoice created but failed to close job')
       return
     }
-
     const normalizedUpdatedJob: RepairRequest = {
       ...(updatedJob as RepairRequest),
       internal_notes: updatedJob.internal_notes ?? '',
@@ -1083,7 +950,6 @@ export default function AdminPage() {
       serial_imei: updatedJob.serial_imei ?? null,
       is_hidden: Boolean(updatedJob.is_hidden),
     }
-
     setJobs((prev) =>
       prev.map((existingJob) =>
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
@@ -1094,7 +960,6 @@ export default function AdminPage() {
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
       )
     )
-
     try {
       await refreshInvoiceById(insertedInvoice.id)
       setInvoiceActionState(job.id, 'idle')
@@ -1105,21 +970,17 @@ export default function AdminPage() {
       setError(err instanceof Error ? err.message : 'Failed to refresh invoice')
     }
   }
-
   async function updateInvoiceStatusForJob(invoiceId: string, status: InvoiceStatus) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
     if (!invoice) return
-
     setInvoiceActionState(invoice.repair_request_id, 'saving')
     setError('')
-
     const nowIso = new Date().toISOString()
     const updates: {
       status: InvoiceStatus
       issued_at?: string | null
       paid_at?: string | null
     } = { status }
-
     if (status === 'issued') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
@@ -1132,7 +993,6 @@ export default function AdminPage() {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
     }
-
     const { data, error } = await supabase
       .from('invoices')
       .update(updates)
@@ -1161,13 +1021,11 @@ export default function AdminPage() {
         updated_at
       `)
       .single()
-
     if (error || !data) {
       setInvoiceActionState(invoice.repair_request_id, 'error')
       setError(error?.message || 'Failed to update invoice status')
       return
     }
-
     setInvoicesByJobId((prev) => ({
       ...prev,
       [invoice.repair_request_id]: {
@@ -1179,23 +1037,18 @@ export default function AdminPage() {
         total: Number(data.total ?? 0),
       },
     }))
-
     setInvoiceActionState(invoice.repair_request_id, 'idle')
     setHighlightedJobId(invoice.repair_request_id)
   }
-
   async function addInvoiceItemForInvoice(invoiceId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
     if (!invoice) return
-
     const currentItems = invoiceItemsByInvoiceId[invoiceId] || []
     setInvoiceItemsActionState(invoiceId, 'saving')
-
     const nextSortOrder =
       currentItems.length > 0
         ? Math.max(...currentItems.map((item) => item.sort_order)) + 1
         : 0
-
     const { error } = await supabase.from('invoice_items').insert({
       invoice_id: invoiceId,
       description: 'New item',
@@ -1204,21 +1057,17 @@ export default function AdminPage() {
       line_total: 0,
       sort_order: nextSortOrder,
     })
-
     if (error) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: invoiceId,
     })
-
     if (recalcError) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     try {
       await refreshInvoiceById(invoiceId)
       setInvoiceItemsActionState(invoiceId, 'idle')
@@ -1227,7 +1076,6 @@ export default function AdminPage() {
       setInvoiceItemsActionState(invoiceId, 'error')
     }
   }
-
   async function updateInvoiceItemForInvoice(
     invoiceId: string,
     itemId: string,
@@ -1235,7 +1083,6 @@ export default function AdminPage() {
   ) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
     setInvoiceItemsActionState(invoiceId, 'saving')
-
     const safeUpdates = {
       ...(updates.description !== undefined
         ? { description: updates.description.trim() || 'Item' }
@@ -1247,26 +1094,21 @@ export default function AdminPage() {
         ? { unit_price: Number.isFinite(updates.unit_price) ? updates.unit_price : 0 }
         : {}),
     }
-
     const { error } = await supabase
       .from('invoice_items')
       .update(safeUpdates)
       .eq('id', itemId)
-
     if (error) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: invoiceId,
     })
-
     if (recalcError) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     try {
       await refreshInvoiceById(invoiceId)
       setInvoiceItemsActionState(invoiceId, 'idle')
@@ -1275,27 +1117,21 @@ export default function AdminPage() {
       setInvoiceItemsActionState(invoiceId, 'error')
     }
   }
-
   async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
     setInvoiceItemsActionState(invoiceId, 'saving')
-
     const { error } = await supabase.from('invoice_items').delete().eq('id', itemId)
-
     if (error) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: invoiceId,
     })
-
     if (recalcError) {
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
-
     try {
       await refreshInvoiceById(invoiceId)
       setInvoiceItemsActionState(invoiceId, 'idle')
@@ -1304,36 +1140,29 @@ export default function AdminPage() {
       setInvoiceItemsActionState(invoiceId, 'error')
     }
   }
-
   async function removeInvoiceForJob(job: RepairRequest) {
     const existingInvoice = invoicesByJobId[job.id]
     if (!existingInvoice) return
-
     setInvoiceActionState(job.id, 'saving')
     setError('')
-
     const { error: deleteItemsError } = await supabase
       .from('invoice_items')
       .delete()
       .eq('invoice_id', existingInvoice.id)
-
     if (deleteItemsError) {
       setInvoiceActionState(job.id, 'error')
       setError(deleteItemsError.message || 'Failed to delete invoice items')
       return
     }
-
     const { error: deleteInvoiceError } = await supabase
       .from('invoices')
       .delete()
       .eq('id', existingInvoice.id)
-
     if (deleteInvoiceError) {
       setInvoiceActionState(job.id, 'error')
       setError(deleteInvoiceError.message || 'Failed to delete invoice')
       return
     }
-
     const { data: updatedJob, error: reopenJobError } = await supabase
       .from('repair_requests')
       .update({ status: 'ready' })
@@ -1357,13 +1186,11 @@ export default function AdminPage() {
         is_hidden
       `)
       .single()
-
     if (reopenJobError || !updatedJob) {
       setInvoiceActionState(job.id, 'error')
       setError(reopenJobError?.message || 'Invoice removed but failed to reopen job')
       return
     }
-
     const normalizedUpdatedJob: RepairRequest = {
       ...(updatedJob as RepairRequest),
       internal_notes: updatedJob.internal_notes ?? '',
@@ -1371,19 +1198,16 @@ export default function AdminPage() {
       serial_imei: updatedJob.serial_imei ?? null,
       is_hidden: Boolean(updatedJob.is_hidden),
     }
-
     setInvoicesByJobId((prev) => {
       const next = { ...prev }
       delete next[job.id]
       return next
     })
-
     setInvoiceItemsByInvoiceId((prev) => {
       const next = { ...prev }
       delete next[existingInvoice.id]
       return next
     })
-
     setJobs((prev) =>
       prev.map((existingJob) =>
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
@@ -1394,24 +1218,19 @@ export default function AdminPage() {
         existingJob.id === job.id ? normalizedUpdatedJob : existingJob
       )
     )
-
     await loadInvoices()
     await loadInvoiceItems()
-
     setInvoiceActionState(job.id, 'idle')
     setHighlightedJobId(job.id)
   }
-
   function handleDragStart(jobId: string) {
     setDraggedJobId(jobId)
     setHighlightedJobId(jobId)
   }
-
   function handleDragEnd() {
     setDraggedJobId(null)
     setDragOverStatus(null)
   }
-
   function handleColumnDragOver(
     event: React.DragEvent<HTMLDivElement>,
     status: RepairStatus
@@ -1424,7 +1243,6 @@ export default function AdminPage() {
       setDragOverStatus(status)
     }
   }
-
   function handleColumnDragLeave(
     event: React.DragEvent<HTMLDivElement>,
     status: RepairStatus
@@ -1435,7 +1253,6 @@ export default function AdminPage() {
       setDragOverStatus(null)
     }
   }
-
   async function handleColumnDrop(
     event: React.DragEvent<HTMLDivElement>,
     status: RepairStatus
@@ -1448,21 +1265,17 @@ export default function AdminPage() {
       setDraggedJobId(null)
       return
     }
-
     const draggedJob = jobs.find((job) => job.id === droppedJobId)
     if (!draggedJob) {
       setDraggedJobId(null)
       return
     }
-
     if (draggedJob.status !== status) {
       await updateStatus(droppedJobId, status)
     }
-
     setHighlightedJobId(droppedJobId)
     setDraggedJobId(null)
   }
-
   const filteredJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
     return jobs.filter((job) => {
@@ -1491,7 +1304,6 @@ export default function AdminPage() {
       return matchesStatus && matchesSearch
     })
   }, [jobs, search, statusFilter, invoicesByJobId])
-
   const filteredHiddenJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
     return hiddenJobs.filter((job) => {
@@ -1517,7 +1329,6 @@ export default function AdminPage() {
       return term ? haystack.includes(term) : true
     })
   }, [hiddenJobs, search, invoicesByJobId])
-
   const jobsByStatus = useMemo(() => {
     const allColumnStatuses = [...BOARD_COLUMNS, ...ARCHIVE_COLUMNS]
     return allColumnStatuses.reduce((acc, status) => {
@@ -1525,18 +1336,15 @@ export default function AdminPage() {
       return acc
     }, {} as Record<RepairStatus, RepairRequest[]>)
   }, [filteredJobs])
-
   const sortedArchiveJobsByStatus = useMemo(() => {
     return ARCHIVE_COLUMNS.reduce((acc, status) => {
       acc[status] = sortJobs(jobsByStatus[status] || [], archiveSort)
       return acc
     }, {} as Record<RepairStatus, RepairRequest[]>)
   }, [jobsByStatus, archiveSort])
-
   const sortedHiddenJobs = useMemo(() => {
     return sortJobs(filteredHiddenJobs, hiddenSort)
   }, [filteredHiddenJobs, hiddenSort])
-
   const summary = useMemo(() => {
     const totalJobs = filteredJobs.length
     const quotedCount = filteredJobs.filter((j) => j.status === 'quoted').length
@@ -1544,7 +1352,6 @@ export default function AdminPage() {
     const readyCount = filteredJobs.filter((j) => j.status === 'ready').length
     const quotedValue = filteredJobs.reduce((sum, j) => sum + (j.quoted_price ?? 0), 0)
     const invoiceCount = filteredJobs.filter((j) => !!invoicesByJobId[j.id]).length
-
     return {
       totalJobs,
       quotedCount,
@@ -1555,22 +1362,18 @@ export default function AdminPage() {
       hiddenCount: filteredHiddenJobs.length,
     }
   }, [filteredJobs, filteredHiddenJobs, invoicesByJobId])
-
   const archiveJobs = useMemo(
     () => filteredJobs.filter((job) => ARCHIVE_COLUMNS.includes(job.status)),
     [filteredJobs]
   )
-
   useEffect(() => {
     const archiveIds = new Set(archiveJobs.map((job) => job.id))
     setSelectedArchiveJobIds((prev) => prev.filter((id) => archiveIds.has(id)))
   }, [archiveJobs])
-
   useEffect(() => {
     const hiddenIds = new Set(filteredHiddenJobs.map((job) => job.id))
     setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
   }, [filteredHiddenJobs])
-
   return (
     <main className={styles.page}>
       <div className={styles.topBar}>
@@ -1610,7 +1413,6 @@ export default function AdminPage() {
           </button>
         </div>
       </div>
-
       <div className={styles.summaryGrid}>
         <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
         <SummaryCard label="Quoted" value={String(summary.quotedCount)} />
@@ -1620,7 +1422,6 @@ export default function AdminPage() {
         <SummaryCard label="Hidden Jobs" value={String(summary.hiddenCount)} />
         <SummaryCard label="Quoted Value" value={`$${summary.quotedValue.toFixed(2)}`} />
       </div>
-
       <div className={styles.filtersWrap}>
         <input
           value={search}
@@ -1640,18 +1441,15 @@ export default function AdminPage() {
           ))}
         </select>
       </div>
-
       <div className={styles.statsBar}>
         Showing <strong>{filteredJobs.length}</strong> visible jobs of{' '}
         <strong>{jobs.length}</strong> active records
       </div>
-
       {loading && <p className={styles.message}>Loading jobs...</p>}
       {!!error && <p className={styles.errorText}>{error}</p>}
       {!loading && !error && filteredJobs.length === 0 && !showHidden && (
         <p className={styles.message}>No matching repair requests.</p>
       )}
-
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'board' && (
         <>
           <div className={styles.boardWrap}>
@@ -1684,7 +1482,6 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-
                 {!collapsedColumns[status] && (
                   <div className={styles.columnCardsWrap}>
                     {(jobsByStatus[status] || []).length === 0 ? (
@@ -1745,7 +1542,6 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
-
           <section className={styles.otherStatusesSection}>
             <div className={styles.archiveHeader}>
               <h2 className={styles.sectionTitle}>Archive statuses</h2>
@@ -1753,7 +1549,6 @@ export default function AdminPage() {
                 Closed, rejected and cancelled jobs in a tighter view.
               </p>
             </div>
-
             <div className={styles.bulkBar}>
               <div className={styles.bulkBarText}>
                 Selected archive jobs: <strong>{selectedArchiveJobIds.length}</strong>
@@ -1816,21 +1611,17 @@ export default function AdminPage() {
                   onClick={async () => {
                     if (selectedArchiveJobIds.length === 0) return
                     if (!window.confirm(`Are you sure you want to delete ${selectedArchiveJobIds.length} selected jobs? This cannot be undone.`)) return
-
                     setBulkBusy(true)
                     setError('')
-
                     const { error } = await supabase
                       .from('repair_requests')
                       .delete()
                       .in('id', selectedArchiveJobIds)
-
                     if (error) {
                       setError(error.message)
                       setBulkBusy(false)
                       return
                     }
-
                     void loadAllData()
                     setSelectedArchiveJobIds([])
                     setBulkBusy(false)
@@ -1849,7 +1640,6 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
-
             <div className={styles.archiveGrid}>
               {ARCHIVE_COLUMNS.map((status) => (
                 <div
@@ -1877,7 +1667,6 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
-
                   {!collapsedColumns[status] && (
                     <div className={styles.columnCardsWrap}>
                       {(sortedArchiveJobsByStatus[status] || []).length === 0 ? (
@@ -1941,7 +1730,6 @@ export default function AdminPage() {
           </section>
         </>
       )}
-
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'tiles' && (
         <div className={styles.tilesGrid}>
           {filteredJobs.map((job) => (
@@ -1977,7 +1765,6 @@ export default function AdminPage() {
           ))}
         </div>
       )}
-
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'list' && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
@@ -2020,7 +1807,6 @@ export default function AdminPage() {
           </table>
         </div>
       )}
-
       {!loading && !error && filteredJobs.length > 0 && viewMode === 'details' && (
         <div className={styles.listGrid}>
           {filteredJobs.map((job) => {
@@ -2068,7 +1854,6 @@ export default function AdminPage() {
           })}
         </div>
       )}
-
       {showHidden && (
         <section className={styles.otherStatusesSection}>
           <div className={styles.archiveHeader}>
@@ -2077,7 +1862,6 @@ export default function AdminPage() {
               Hidden from the main dashboard but still kept in the database.
             </p>
           </div>
-
           <div className={styles.bulkBar}>
             <div className={styles.bulkBarText}>
               Selected hidden jobs: <strong>{selectedHiddenJobIds.length}</strong>
@@ -2107,21 +1891,17 @@ export default function AdminPage() {
                 onClick={async () => {
                   if (selectedHiddenJobIds.length === 0) return
                   if (!window.confirm(`Are you sure you want to delete ${selectedHiddenJobIds.length} selected jobs? This cannot be undone.`)) return
-
                   setBulkBusy(true)
                   setError('')
-
                   const { error } = await supabase
                     .from('repair_requests')
                     .delete()
                     .in('id', selectedHiddenJobIds)
-
                   if (error) {
                     setError(error.message)
                     setBulkBusy(false)
                     return
                   }
-
                   void loadAllData()
                   setSelectedHiddenJobIds([])
                   setBulkBusy(false)
@@ -2140,7 +1920,6 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
-
           {sortedHiddenJobs.length === 0 ? (
             <p className={styles.message}>No hidden jobs.</p>
           ) : (
