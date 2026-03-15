@@ -21,7 +21,7 @@ import {
   getStatusLabel,
   STATUSES,
   formatDateTime,
-} from './utils'
+} from '../utils'
 import SummaryCard from '../components/SummaryCard'
 import JobCard from '../components/JobCard'
 
