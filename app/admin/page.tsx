@@ -1,9 +1,14 @@
 'use client'
 
+'use client'
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import styles from './admin.module.css'
+import styles from '../admin.module.css'  // ← Changed to ../
+import type { Customer, RepairRequest } from '../types'  // Assuming types are in parent
+import { formatDateTime } from '../utils'  // ← Changed to ../
+import SummaryCard from '../components/SummaryCard'  // ← Changed to ../
+import JobCard from '../components/JobCard'  // ← Changed to ../
 import type {
   Invoice,
   InvoiceItem,
@@ -22,8 +27,8 @@ import {
   STATUSES,
   formatDateTime,
 } from './utils'
-import SummaryCard from './components/SummaryCard'
-import JobCard from './components/JobCard'
+import SummaryCard from '../components/SummaryCard'
+import JobCard from '../components/JobCard'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
