@@ -14,7 +14,7 @@ import type {
   SaveState,
   StatusFilter,
   ViewMode,
-} from './types'
+} from '../types'
 import {
   ARCHIVE_COLUMNS,
   BOARD_COLUMNS,
