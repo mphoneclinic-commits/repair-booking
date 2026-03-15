@@ -1,17 +1,15 @@
 'use client'
-
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import jsPDF from 'jspdf'
 import styles from './invoice.module.css'
 import type { Invoice, InvoiceItem, InvoiceStatus } from '../types'
 import { formatDateTime } from '../utils'
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 export default function InvoicePrintPage() {
   const [invoiceId, setInvoiceId] = useState<string>('')
   const [invoice, setInvoice] = useState<Invoice | null>(null)
@@ -20,13 +18,11 @@ export default function InvoicePrintPage() {
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [deleting, setDeleting] = useState(false)
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     setInvoiceId(params.get('id') || '')
   }, [])
-
   useEffect(() => {
     async function loadInvoicePage() {
       if (!invoiceId) {
@@ -34,11 +30,9 @@ export default function InvoicePrintPage() {
         setLoading(false)
         return
       }
-
       setLoading(true)
       setError('')
       setSuccessMessage('')
-
       try {
         const { data: invoiceData, error: invoiceError } = await supabase
           .from('invoices')
@@ -67,11 +61,9 @@ export default function InvoicePrintPage() {
           `)
           .eq('id', invoiceId)
           .single()
-
         if (invoiceError || !invoiceData) {
           throw invoiceError || new Error('Invoice not found')
         }
-
         const normalizedInvoice: Invoice = {
           ...(invoiceData as Invoice),
           tax_rate: Number(invoiceData.tax_rate ?? 0),
@@ -80,7 +72,6 @@ export default function InvoicePrintPage() {
           subtotal: Number(invoiceData.subtotal ?? 0),
           total: Number(invoiceData.total ?? 0),
         }
-
         const { data: itemData, error: itemError } = await supabase
           .from('invoice_items')
           .select(`
@@ -96,9 +87,7 @@ export default function InvoicePrintPage() {
           .eq('invoice_id', invoiceId)
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true })
-
         if (itemError) throw itemError
-
         const normalizedItems = ((itemData || []) as InvoiceItem[]).map((item) => ({
           ...item,
           qty: Number(item.qty ?? 0),
@@ -106,7 +95,6 @@ export default function InvoicePrintPage() {
           line_total: Number(item.line_total ?? 0),
           sort_order: Number(item.sort_order ?? 0),
         }))
-
         setInvoice(normalizedInvoice)
         setItems(normalizedItems)
       } catch (err) {
@@ -115,23 +103,18 @@ export default function InvoicePrintPage() {
         setLoading(false)
       }
     }
-
     void loadInvoicePage()
   }, [invoiceId])
-
   async function updateInvoiceStatus(status: InvoiceStatus) {
     if (!invoice) return
-
     setError('')
     setSuccessMessage('')
-
     const nowIso = new Date().toISOString()
     const updates: {
       status: InvoiceStatus
       issued_at?: string | null
       paid_at?: string | null
     } = { status }
-
     if (status === 'issued') {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
@@ -144,7 +127,6 @@ export default function InvoicePrintPage() {
       updates.issued_at = invoice.issued_at || nowIso
       updates.paid_at = null
     }
-
     const { data, error: updateError } = await supabase
       .from('invoices')
       .update(updates)
@@ -173,25 +155,21 @@ export default function InvoicePrintPage() {
         updated_at
       `)
       .single()
-
     if (updateError || !data) {
       setError(updateError?.message || 'Failed to update invoice status')
       return
     }
-
     if (status === 'paid' && data.repair_request_id) {
       const { data: jobData, error: jobError } = await supabase
         .from('repair_requests')
         .select('status')
         .eq('id', data.repair_request_id)
         .single()
-
       if (!jobError && jobData && jobData.status !== 'closed') {
         const { error: closeError } = await supabase
           .from('repair_requests')
           .update({ status: 'closed' })
           .eq('id', data.repair_request_id)
-
         if (closeError) {
           console.warn('Could not auto-close job:', closeError.message)
         } else {
@@ -199,7 +177,6 @@ export default function InvoicePrintPage() {
         }
       }
     }
-
     const normalizedInvoice: Invoice = {
       ...(data as Invoice),
       tax_rate: Number(data.tax_rate ?? 0),
@@ -208,52 +185,99 @@ export default function InvoicePrintPage() {
       subtotal: Number(data.subtotal ?? 0),
       total: Number(data.total ?? 0),
     }
-
     setInvoice(normalizedInvoice)
     setSuccessMessage(`Invoice updated to ${status.toUpperCase()}`)
   }
-
   async function deleteInvoice() {
     if (!invoice) return
     if (!window.confirm('Are you sure you want to delete this invoice? This cannot be undone.')) return
-
     setDeleting(true)
     setError('')
     setSuccessMessage('')
-
     const { error: deleteItemsError } = await supabase
       .from('invoice_items')
       .delete()
       .eq('invoice_id', invoice.id)
-
     if (deleteItemsError) {
       setError(deleteItemsError.message)
       setDeleting(false)
       return
     }
-
     const { error: deleteInvoiceError } = await supabase
       .from('invoices')
       .delete()
       .eq('id', invoice.id)
-
     if (deleteInvoiceError) {
       setError(deleteInvoiceError.message)
       setDeleting(false)
       return
     }
-
     setSuccessMessage('Invoice deleted successfully.')
     setDeleting(false)
     setTimeout(() => {
       window.location.href = '/admin'
     }, 2000)
   }
+  function generatePDF() {
+    if (!invoice) return
+    const doc = new jsPDF()
+    doc.setFontSize(18)
+    doc.text('TAX INVOICE', 105, 20, { align: 'center' })
+    doc.setFontSize(12)
+    doc.text('The Mobile Phone Clinic', 20, 40)
+    doc.text('Device Repairs & Diagnostics', 20, 50)
+    doc.text('Melbourne, Victoria', 20, 60)
+    doc.text(`Invoice Number: ${invoice.invoice_number}`, 120, 40)
+    doc.text(`Status: ${invoice.status.toUpperCase()}`, 120, 50)
+    doc.text(`Invoice Date: ${invoice.issued_at ? formatDateTime(invoice.issued_at) : formatDateTime(invoice.created_at)}`, 120, 60)
 
+    doc.text('Bill To:', 20, 80)
+    doc.text(invoice.customer_name, 20, 90)
+    if (invoice.customer_phone) doc.text(invoice.customer_phone, 20, 100)
+    if (invoice.customer_email) doc.text(invoice.customer_email, 20, 110)
+    if (invoice.bill_to_address) doc.text(invoice.bill_to_address, 20, 120)
+
+    doc.text('Description', 20, 140)
+    doc.text('Qty', 100, 140)
+    doc.text('Unit Price', 120, 140)
+    doc.text('Line Total', 160, 140)
+
+    let y = 150
+    items.forEach((item) => {
+      doc.text(item.description, 20, y)
+      doc.text(Number(item.qty).toFixed(2), 100, y)
+      doc.text(`$${Number(item.unit_price).toFixed(2)}`, 120, y)
+      doc.text(`$${Number(item.line_total).toFixed(2)}`, 160, y)
+      y += 10
+    })
+
+    y += 10
+    doc.text(`Subtotal: $${Number(invoice.subtotal ?? 0).toFixed(2)}`, 120, y)
+    y += 10
+    doc.text(`GST: $${Number(invoice.tax_amount ?? 0).toFixed(2)}`, 120, y)
+    y += 10
+    doc.text(`Total: $${Number(invoice.total ?? 0).toFixed(2)}`, 120, y)
+
+    y += 20
+    doc.text('Notes:', 20, y)
+    y += 10
+    if (invoice.notes) {
+      const notesLines = doc.splitTextToSize(invoice.notes, 170)
+      doc.text(notesLines, 20, y)
+    } else {
+      doc.text('No notes.', 20, y)
+    }
+
+    y += 30
+    doc.text('Thank you for choosing The Mobile Phone Clinic.', 20, y)
+    y += 10
+    doc.text('This document was generated from the admin dashboard.', 20, y)
+
+    doc.save(`invoice_${invoice.invoice_number}.pdf`)
+  }
   const totalQty = useMemo(() => {
     return items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)
   }, [items])
-
   if (loading) {
     return (
       <main className={styles.page}>
@@ -263,7 +287,6 @@ export default function InvoicePrintPage() {
       </main>
     )
   }
-
   if (error || !invoice) {
     return (
       <main className={styles.page}>
@@ -273,14 +296,13 @@ export default function InvoicePrintPage() {
           </div>
           <div className={styles.topActions}>
             <Link href="/admin" className={styles.secondaryButton}>
-              Back to Admin
+              Return to Dashboard
             </Link>
           </div>
         </div>
       </main>
     )
   }
-
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -290,6 +312,9 @@ export default function InvoicePrintPage() {
             <h1 className={styles.pageTitle}>Invoice {invoice.invoice_number}</h1>
           </div>
           <div className={styles.topActionsRight}>
+            <Link href="/admin" className={styles.secondaryButton}>
+              Return to Dashboard
+            </Link>
             {invoice.status === 'issued' && (
               <button
                 type="button"
@@ -335,6 +360,13 @@ export default function InvoicePrintPage() {
             </button>
             <button
               type="button"
+              className={styles.printButton}
+              onClick={generatePDF}
+            >
+              Print to PDF
+            </button>
+            <button
+              type="button"
               className={styles.deleteButton}
               onClick={deleteInvoice}
               disabled={deleting}
@@ -343,13 +375,11 @@ export default function InvoicePrintPage() {
             </button>
           </div>
         </div>
-
         {successMessage && (
           <div className={styles.successBanner}>
             {successMessage}
           </div>
         )}
-
         <article className={styles.document}>
           <header className={styles.header}>
             <div>
@@ -439,12 +469,10 @@ export default function InvoicePrintPage() {
               </div>
             </div>
           </section>
-          {invoice.notes ? (
-            <section className={styles.notesSection}>
-              <div className={styles.sectionHeading}>Notes</div>
-              <p className={styles.notesText}>{invoice.notes}</p>
-            </section>
-          ) : null}
+          <section className={styles.notesSection}>
+            <div className={styles.sectionHeading}>Notes</div>
+            <p className={styles.notesText}>{invoice.notes || 'No notes provided.'}</p>
+          </section>
           <footer className={styles.footer}>
             <div>Thank you for choosing The Mobile Phone Clinic.</div>
             <div>This document was generated from the admin dashboard.</div>

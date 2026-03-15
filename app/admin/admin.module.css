@@ -1587,15 +1587,5 @@ padding: 8px 11px;
   background-color: #dc2626;
 }
 
-/* Add to existing statusBadge for green theme contrast */
-.statusBadge {
-  background-color: #22c55e; /* Adjust per status if needed */
-  color: #ffffff;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
 
-/* Ensure no underlines on links */
-/*a {text-decoration: none;*/
+
