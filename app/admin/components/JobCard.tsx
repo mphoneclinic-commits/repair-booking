@@ -544,9 +544,7 @@ export default function JobCard({
         </div>
 
         <div className={styles.cardActions}>
-          <span
-            className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}
-          >
+          <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
             {getStatusLabel(job.status)}
           </span>
 

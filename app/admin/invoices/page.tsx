@@ -170,9 +170,7 @@ export default function AdminInvoicesPage() {
         <div>
           <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
           <h1 className={styles.pageTitle}>Invoices</h1>
-          <p className={styles.pageSubtitle}>
-            Search, review and open all invoices
-          </p>
+          <p className={styles.pageSubtitle}>Search, review and open all invoices</p>
         </div>
 
         <div className={styles.toolbar}>
@@ -259,53 +257,52 @@ export default function AdminInvoicesPage() {
                   <td>{invoice.sent_at ? formatDateTime(invoice.sent_at) : '-'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-{invoice.status === 'issued' && (
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={() => void markInvoiceStatus(invoice, 'paid')}
-  >
-    Mark Paid
-  </button>
-)}
+                      {invoice.status === 'issued' && (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void markInvoiceStatus(invoice, 'paid')}
+                        >
+                          Mark Paid
+                        </button>
+                      )}
 
-{invoice.status === 'paid' && (
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={() => void markInvoiceStatus(invoice, 'issued')}
-  >
-    Mark Unpaid
-  </button>
-)}
+                      {invoice.status === 'paid' && (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void markInvoiceStatus(invoice, 'issued')}
+                        >
+                          Mark Unpaid
+                        </button>
+                      )}
 
-{invoice.status !== 'void' && (
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={() => void markInvoiceStatus(invoice, 'void')}
-  >
-    Void
-  </button>
-)}
+                      {invoice.status !== 'void' && (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void markInvoiceStatus(invoice, 'void')}
+                        >
+                          Void
+                        </button>
+                      )}
 
-{invoice.status === 'void' && (
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={() => void markInvoiceStatus(invoice, 'issued')}
-  >
-    Restore Issued
-  </button>
-)}
+                      {invoice.status === 'void' && (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void markInvoiceStatus(invoice, 'issued')}
+                        >
+                          Restore Issued
+                        </button>
+                      )}
 
-<Link
-  href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
-  className={styles.actionButton}
->
-  Open
-</Link>
-                      
+                      <Link
+                        href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
+                        className={styles.actionButton}
+                      >
+                        Open
+                      </Link>
                     </div>
                   </td>
                 </tr>

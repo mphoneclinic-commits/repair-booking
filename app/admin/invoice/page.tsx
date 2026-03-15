@@ -229,45 +229,45 @@ export default function InvoicePrintPage() {
           </Link>
 
           <div className={styles.topActionsRight}>
-{invoice.status === 'issued' && (
-  <button
-    type="button"
-    className={styles.secondaryButton}
-    onClick={() => void updateInvoiceStatus('paid')}
-  >
-    Mark Paid
-  </button>
-)}
+            {invoice.status === 'issued' && (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void updateInvoiceStatus('paid')}
+              >
+                Mark Paid
+              </button>
+            )}
 
-{invoice.status === 'paid' && (
-  <button
-    type="button"
-    className={styles.secondaryButton}
-    onClick={() => void updateInvoiceStatus('issued')}
-  >
-    Mark Unpaid
-  </button>
-)}
+            {invoice.status === 'paid' && (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void updateInvoiceStatus('issued')}
+              >
+                Mark Unpaid
+              </button>
+            )}
 
-{invoice.status !== 'void' && (
-  <button
-    type="button"
-    className={styles.secondaryButton}
-    onClick={() => void updateInvoiceStatus('void')}
-  >
-    Mark Void
-  </button>
-)}
+            {invoice.status !== 'void' && (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void updateInvoiceStatus('void')}
+              >
+                Mark Void
+              </button>
+            )}
 
-{invoice.status === 'void' && (
-  <button
-    type="button"
-    className={styles.secondaryButton}
-    onClick={() => void updateInvoiceStatus('issued')}
-  >
-    Restore Issued
-  </button>
-)}
+            {invoice.status === 'void' && (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void updateInvoiceStatus('issued')}
+              >
+                Restore Issued
+              </button>
+            )}
 
             <button
               type="button"

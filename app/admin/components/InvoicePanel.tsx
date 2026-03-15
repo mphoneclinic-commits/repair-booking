@@ -54,9 +54,7 @@ export default function InvoicePanel({
 
       {!invoice ? (
         <>
-          <p className={styles.summaryRow}>
-            No invoice created for this job yet.
-          </p>
+          <p className={styles.summaryRow}>No invoice created for this job yet.</p>
 
           <div className={styles.buttonRow}>
             <button
@@ -94,12 +92,16 @@ export default function InvoicePanel({
 
             <div>
               <label className={styles.smallLabel}>Subtotal</label>
-              <div className={styles.readOnlyValue}>${Number(invoice.subtotal ?? 0).toFixed(2)}</div>
+              <div className={styles.readOnlyValue}>
+                ${Number(invoice.subtotal ?? 0).toFixed(2)}
+              </div>
             </div>
 
             <div>
               <label className={styles.smallLabel}>Total</label>
-              <div className={styles.readOnlyValue}>${Number(invoice.total ?? 0).toFixed(2)}</div>
+              <div className={styles.readOnlyValue}>
+                ${Number(invoice.total ?? 0).toFixed(2)}
+              </div>
             </div>
           </div>
 
@@ -111,7 +113,7 @@ export default function InvoicePanel({
               Open Invoice
             </Link>
 
-            {invoice.status !== 'paid' && (
+            {invoice.status === 'issued' && (
               <button
                 type="button"
                 className={styles.actionButton}
