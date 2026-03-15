@@ -21,7 +21,7 @@ import {
 import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
 
-// Supabase client (now defined here so it's available in this component)
+// Supabase client local to this component
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -69,7 +69,7 @@ export default function JobCard({
   onToggleSelected,
   onHideJob,
   onUnhideJob,
-  onPhotoUploaded, // Optional callback to refresh parent after upload
+  onPhotoUploaded, // Optional callback to refresh parent
 }: {
   job: RepairRequest
   expanded: boolean
@@ -130,7 +130,7 @@ export default function JobCard({
   onToggleSelected?: (jobId: string) => void
   onHideJob?: (jobId: string) => Promise<void>
   onUnhideJob?: (jobId: string) => Promise<void>
-  onPhotoUploaded?: () => void // Optional: parent can use this to reload jobs
+  onPhotoUploaded?: () => void
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
@@ -215,7 +215,7 @@ export default function JobCard({
     }
   }, [])
 
-  // Photo change handler
+  // Photo handlers
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -224,7 +224,6 @@ export default function JobCard({
     }
   }
 
-  // Upload photo and save URL to job (no local state update here)
   async function handlePhotoUpload() {
     if (!photoFile) return
 
@@ -257,14 +256,14 @@ export default function JobCard({
       setUploadError('Failed to save photo URL: ' + updateError.message)
     } else {
       setPhotoFile(null)
-      // Notify parent to refresh if needed (or rely on realtime)
+      // Optional: notify parent to refresh
       onPhotoUploaded?.()
     }
 
     setUploadingPhoto(false)
   }
 
-  // Flush functions (optimistic + rollback) - unchanged from previous working version
+  // Flush functions (optimistic + rollback, using setFieldState directly)
   async function flushQuote(rawValue: string) {
     const normalized = normalizeQuoteInput(rawValue).trim()
     const nextValue = normalized === '' ? null : Number(normalized)
@@ -275,7 +274,6 @@ export default function JobCard({
       return
     }
 
-    const originalQuote = job.quoted_price
     setFieldState(job.id, 'quote', 'saving')
 
     const success = await updateQuote(job.id, nextValue)
@@ -283,7 +281,10 @@ export default function JobCard({
     if (!success) {
       setFieldState(job.id, 'quote', 'error')
     } else {
-      setFieldSaved(job.id, 'quote')
+      setFieldState(job.id, 'quote', 'saved')
+      setTimeout(() => {
+        setFieldState(job.id, 'quote', 'idle')
+      }, 1300)
     }
   }
 
@@ -301,7 +302,10 @@ export default function JobCard({
     if (!success) {
       setFieldState(job.id, 'notes', 'error')
     } else {
-      setFieldSaved(job.id, 'notes')
+      setFieldState(job.id, 'notes', 'saved')
+      setTimeout(() => {
+        setFieldState(job.id, 'notes', 'idle')
+      }, 1300)
     }
   }
 
@@ -325,7 +329,10 @@ export default function JobCard({
     if (!success) {
       setFieldState(job.id, 'job_number', 'error')
     } else {
-      setFieldSaved(job.id, 'job_number')
+      setFieldState(job.id, 'job_number', 'saved')
+      setTimeout(() => {
+        setFieldState(job.id, 'job_number', 'idle')
+      }, 1300)
     }
   }
 
@@ -358,7 +365,10 @@ export default function JobCard({
     if (!success) {
       setFieldState(job.id, 'customer', 'error')
     } else {
-      setFieldSaved(job.id, 'customer')
+      setFieldState(job.id, 'customer', 'saved')
+      setTimeout(() => {
+        setFieldState(job.id, 'customer', 'idle')
+      }, 1300)
     }
   }
 
@@ -408,7 +418,10 @@ export default function JobCard({
     if (!success) {
       setFieldState(job.id, 'device', 'error')
     } else {
-      setFieldSaved(job.id, 'device')
+      setFieldState(job.id, 'device', 'saved')
+      setTimeout(() => {
+        setFieldState(job.id, 'device', 'idle')
+      }, 1300)
     }
   }
 
