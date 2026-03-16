@@ -25,10 +25,10 @@ export type RepairRequest = {
   internal_notes: string | null
   quoted_price: number | null
   is_hidden: boolean
-  fault_photo_url?: string | null   // ← NEW: optional photo URL
+  fault_photo_url?: string | null
 }
 
-export type InvoiceStatus = 'issued' | 'paid' | 'void'
+export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
 
 export type Invoice = {
   id: string
@@ -46,6 +46,8 @@ export type Invoice = {
   subtotal: number
   total: number
   notes: string | null
+  customer_visible_notes: string | null
+  internal_reference_notes: string | null
   issued_at: string | null
   paid_at: string | null
   sent_at?: string | null

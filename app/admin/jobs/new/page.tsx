@@ -11,6 +11,15 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+const MAX_PHOTO_SIZE_MB = 8
+const ALLOWED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]
+
 function normalizePhone(value: string) {
   return value.replace(/\D/g, '').slice(0, 10)
 }
@@ -45,20 +54,23 @@ export default function NewJobPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+
     const params = new URLSearchParams(window.location.search)
+
     setForm((prev) => ({
       ...prev,
       full_name: params.get('full_name') || prev.full_name,
       phone: params.get('phone') || prev.phone,
       email: params.get('email') || prev.email,
     }))
+
     setLoadingPrefill(false)
   }, [])
 
-  // Duplicate check
   useEffect(() => {
     const phone = normalizePhone(form.phone)
-    if (phone.length < 9) {
+
+    if (phone.length < 10) {
       setDuplicateWarning('')
       setDuplicateJobCount(0)
       setCustomerKeyForDuplicates('')
@@ -82,7 +94,7 @@ export default function NewJobPage() {
       if (count && count > 0) {
         const key = `phone:${phone}`
         setDuplicateWarning(
-          `Warning: This phone already has ${count} open job${count > 1 ? 's' : ''}.`
+          `This phone already has ${count} open job${count > 1 ? 's' : ''}. Check existing jobs before creating another.`
         )
         setDuplicateJobCount(count)
         setCustomerKeyForDuplicates(key)
@@ -93,8 +105,8 @@ export default function NewJobPage() {
       }
     }
 
-    const timer = setTimeout(checkDuplicates, 500)
-    return () => clearTimeout(timer)
+    const timer = window.setTimeout(checkDuplicates, 500)
+    return () => window.clearTimeout(timer)
   }, [form.phone])
 
   function updateField(key: keyof typeof form, value: string) {
@@ -104,20 +116,40 @@ export default function NewJobPage() {
     }))
   }
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setPhotoFile(file)
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null
+
+    if (!file) {
+      setPhotoFile(null)
+      return
     }
+
+    const maxBytes = MAX_PHOTO_SIZE_MB * 1024 * 1024
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setError('Photo must be JPG, PNG, WEBP, HEIC or HEIF.')
+      setPhotoFile(null)
+      return
+    }
+
+    if (file.size > maxBytes) {
+      setError(`Photo must be smaller than ${MAX_PHOTO_SIZE_MB}MB.`)
+      setPhotoFile(null)
+      return
+    }
+
+    setError('')
+    setPhotoFile(file)
   }
 
   async function uploadPhoto(jobId: string) {
     if (!photoFile) return null
 
     setUploadingPhoto(true)
-    const fileExt = photoFile.name.split('.').pop()
+
+    const fileExt = photoFile.name.split('.').pop() || 'jpg'
     const fileName = `${jobId}-${Date.now()}.${fileExt}`
-    const filePath = `fault-photos/${fileName}`
+    const filePath = fileName
 
     const { error: uploadError } = await supabase.storage
       .from('fault-photos')
@@ -131,6 +163,7 @@ export default function NewJobPage() {
     }
 
     const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
+
     setUploadingPhoto(false)
     return urlData.publicUrl
   }
@@ -140,6 +173,15 @@ export default function NewJobPage() {
     setSaving(true)
     setError('')
     setSuccessJobId('')
+
+    const parsedQuote =
+      form.quoted_price.trim() === '' ? null : Number(form.quoted_price)
+
+    if (parsedQuote !== null && !Number.isFinite(parsedQuote)) {
+      setError('Quoted price must be a valid number')
+      setSaving(false)
+      return
+    }
 
     const payload = {
       full_name: form.full_name.trim(),
@@ -151,7 +193,7 @@ export default function NewJobPage() {
       serial_imei: form.serial_imei.trim() || null,
       fault_description: form.fault_description.trim(),
       preferred_contact: form.preferred_contact || null,
-      quoted_price: form.quoted_price.trim() === '' ? null : Number(form.quoted_price),
+      quoted_price: parsedQuote,
       internal_notes: form.internal_notes.trim() || null,
       status: form.status,
     }
@@ -161,26 +203,21 @@ export default function NewJobPage() {
       setSaving(false)
       return
     }
+
     if (!payload.phone || payload.phone.length < 9) {
       setError('Valid Australian phone number required (e.g. 0412345678)')
       setSaving(false)
       return
     }
+
     if (!payload.brand || !payload.model) {
       setError('Brand and model are required')
       setSaving(false)
       return
     }
-    if (!payload.fault_description || payload.fault_description.length < 10) {
-      setError('Please describe the fault in detail')
-      setSaving(false)
-      return
-    }
 
-    if (duplicateJobCount > 0) {
-      setError(
-        `Cannot create job: Phone has ${duplicateJobCount} open job${duplicateJobCount > 1 ? 's' : ''}.`
-      )
+    if (!payload.fault_description || payload.fault_description.length < 10) {
+      setError('Please describe the fault in more detail')
       setSaving(false)
       return
     }
@@ -197,23 +234,27 @@ export default function NewJobPage() {
       return
     }
 
-    let photoUrl = null
     if (photoFile) {
-      photoUrl = await uploadPhoto(data.id)
+      const photoUrl = await uploadPhoto(data.id)
+
       if (photoUrl) {
-        await supabase
+        const { error: photoLinkError } = await supabase
           .from('repair_requests')
           .update({ fault_photo_url: photoUrl })
           .eq('id', data.id)
+
+        if (photoLinkError) {
+          setError('Job created, but the photo link could not be saved.')
+        }
       }
     }
 
     setSuccessJobId(data.id)
     setSaving(false)
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       router.push(`/admin?highlightJob=${data.id}`)
-    }, 2000)
+    }, 1200)
   }
 
   return (
@@ -226,6 +267,7 @@ export default function NewJobPage() {
             Create a repair job with optional prefilled customer details
           </p>
         </div>
+
         <div className={styles.toolbar}>
           <Link href="/admin" className={styles.viewButton}>
             Dashboard
@@ -243,13 +285,14 @@ export default function NewJobPage() {
           {error && <p className={styles.errorText}>{error}</p>}
 
           {duplicateWarning && (
-            <div style={{ background: '#fef3c7', color: '#92400e', padding: '12px', borderRadius: '10px', marginBottom: '16px' }}>
-              {duplicateWarning}
+            <div className={styles.warningBanner}>
+              <div>{duplicateWarning}</div>
+
               {duplicateJobCount > 0 && customerKeyForDuplicates && (
-                <div style={{ marginTop: '8px' }}>
+                <div className={styles.warningBannerLinkRow}>
                   <Link
                     href={`/admin/customer?key=${encodeURIComponent(customerKeyForDuplicates)}`}
-                    style={{ color: '#1e3a8a', fontWeight: 700, textDecoration: 'underline' }}
+                    className={styles.inlineLink}
                   >
                     View existing jobs for this customer →
                   </Link>
@@ -260,7 +303,7 @@ export default function NewJobPage() {
 
           {successJobId ? (
             <div className={styles.successBanner}>
-              Job created successfully! Redirecting to dashboard...
+              Job created successfully. Redirecting to dashboard...
               <div className={styles.buttonRow}>
                 <Link
                   href={`/admin?highlightJob=${successJobId}`}
@@ -403,22 +446,27 @@ export default function NewJobPage() {
               />
             </div>
 
-            {/* Photo Upload Field */}
             <div className={styles.customerFullWidth}>
               <label className={styles.smallLabel}>Fault Photo (optional)</label>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                 onChange={handlePhotoChange}
                 className={styles.smallField}
                 disabled={saving}
               />
-              {uploadingPhoto && <p style={{ marginTop: '8px' }}>Uploading photo...</p>}
-              {photoFile && !uploadingPhoto && (
-                <p style={{ marginTop: '8px', fontSize: '14px', color: '#475569' }}>
-                  Selected: {photoFile.name}
-                </p>
+
+              {uploadingPhoto && (
+                <p className={styles.helperText}>Uploading photo...</p>
               )}
+
+              {photoFile && !uploadingPhoto && (
+                <p className={styles.helperText}>Selected: {photoFile.name}</p>
+              )}
+
+              <p className={styles.helperText}>
+                Accepted: JPG, PNG, WEBP, HEIC, HEIF. Max {MAX_PHOTO_SIZE_MB}MB.
+              </p>
             </div>
           </div>
 
@@ -432,8 +480,7 @@ export default function NewJobPage() {
                 !form.phone.trim() ||
                 !form.brand.trim() ||
                 !form.model.trim() ||
-                !form.fault_description.trim() ||
-                duplicateJobCount > 0
+                !form.fault_description.trim()
               }
             >
               {saving ? 'Creating Job...' : 'Create Job'}

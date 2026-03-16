@@ -6,25 +6,50 @@
 }
 
 .shell {
-  max-width: 920px;
+  max-width: 980px;
   margin: 0 auto;
 }
 
-.topActions {
+.topBar {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
   margin-bottom: 18px;
 }
 
 .topActionsRight {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
+.eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #059669;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.pageTitle {
+  font-size: 28px;
+  line-height: 1.1;
+  margin: 0;
+  color: #0f172a;
+}
+
+.pageSubtitle {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
 .printButton,
-.secondaryButton {
+.secondaryButton,
+.deleteButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -39,11 +64,17 @@
   cursor: pointer;
 }
 
+.deleteButton {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
 .document {
   background: #ffffff;
   border: 1px solid #dbe3ee;
   border-radius: 18px;
-  padding: 20px;
+  padding: 22px;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
 }
 
@@ -54,6 +85,10 @@
   align-items: flex-start;
   padding-bottom: 16px;
   border-bottom: 2px solid #e2e8f0;
+}
+
+.businessDetails {
+  min-width: 0;
 }
 
 .brand {
@@ -86,12 +121,6 @@
   font-weight: 900;
   color: #0f172a;
   margin-bottom: 8px;
-}
-
-.invoiceDateLine {
-  font-size: 14px;
-  color: #334155;
-  font-weight: 700;
 }
 
 .statusPill {
@@ -169,7 +198,8 @@
 
 .tableSection,
 .notesSection,
-.summarySection {
+.summarySection,
+.paymentSection {
   margin-top: 18px;
 }
 
@@ -230,7 +260,7 @@
 
 .summaryBox {
   width: 100%;
-  max-width: 320px;
+  max-width: 340px;
   border: 1px solid #dbe3ee;
   border-radius: 14px;
   padding: 14px;
@@ -254,7 +284,21 @@
   color: #0f172a;
 }
 
-.notesText {
+.notesInput {
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #334155;
+  line-height: 1.55;
+  resize: vertical;
+  font-size: 14px;
+}
+
+.notesPreview {
   margin: 0;
   padding: 14px;
   border: 1px solid #e2e8f0;
@@ -263,6 +307,34 @@
   color: #334155;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.notesActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.paymentCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.paymentRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 14px;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.paymentRow:last-child {
+  border-bottom: 0;
 }
 
 .footer {
@@ -274,6 +346,7 @@
   line-height: 1.5;
 }
 
+.message,
 .messageCard,
 .messageCardError {
   background: #ffffff;
@@ -282,8 +355,23 @@
   border: 1px solid #e2e8f0;
 }
 
+.message {
+  color: #475569;
+  font-size: 15px;
+}
+
 .messageCardError {
   color: #b91c1c;
+}
+
+.successBanner {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-weight: 700;
 }
 
 @media (max-width: 780px) {
@@ -296,7 +384,7 @@
   }
 
   .header,
-  .topActions,
+  .topBar,
   .metaGrid {
     grid-template-columns: 1fr;
     flex-direction: column;
@@ -311,112 +399,235 @@
     padding: 10px;
     font-size: 13px;
   }
+
+  .paymentRow {
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 @page {
   size: A4 portrait;
-  margin: 8mm;
+  margin: 10mm;
 }
 
 @media print {
-  .page {
-    background: #ffffff;
+  .body {
+    background: #ffffff !important;
+    margin: 0;
     padding: 0;
+  }
+
+  .page {
+    background: #ffffff !important;
+    padding: 0;
+    min-height: auto;
   }
 
   .shell {
     max-width: none;
     margin: 0;
+    padding: 0;
   }
 
-  .topActions {
-    display: none;
+  .topBar {
+    display: none !important;
   }
 
   .document {
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 12px 0 0;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .header {
-    padding-bottom: 12px;
-    border-bottom: 2px solid #e2e8f0;
-    gap: 18px;
+    padding: 0 0 10px 0;
+    margin: 0 0 12px 0;
+    border-bottom: 1px solid #cbd5e1;
+    gap: 16px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .brand {
-    font-size: 26px;
+    font-size: 24px;
+    line-height: 1.1;
   }
 
-  .brandMeta,
-  .metaValue,
-  .notesText,
-  .footer,
-  .itemsTable td,
-  .itemsTable th,
-  .summaryRow,
-  .invoiceDateLine {
-    font-size: 12px;
-    line-height: 1.35;
+  .brandMeta {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.3;
+    color: #475569;
+  }
+
+  .invoiceHeaderRight {
+    text-align: right;
   }
 
   .invoiceTitle {
-    font-size: 11px;
-    margin-bottom: 6px;
+    font-size: 10px;
+    margin-bottom: 4px;
+    letter-spacing: 0.12em;
   }
 
   .invoiceNumber {
-    font-size: 20px;
-    margin-bottom: 6px;
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+
+  .statusPill {
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid #cbd5e1;
   }
 
   .metaGrid {
-    gap: 12px;
-    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .metaCard,
-  .summaryBox,
-  .notesText {
-    padding: 12px;
+  .metaCard {
+    background: #ffffff !important;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    padding: 10px;
+  }
+
+  .metaTitle {
+    font-size: 10px;
+    margin-bottom: 6px;
+  }
+
+  .metaValueStrong {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .metaValue {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.3;
   }
 
   .tableSection,
   .notesSection,
-  .summarySection {
-    margin-top: 14px;
+  .summarySection,
+  .paymentSection {
+    margin-top: 12px;
   }
 
   .sectionHeading {
-    margin-bottom: 8px;
-    font-size: 11px;
+    font-size: 10px;
+    margin-bottom: 6px;
+  }
+
+  .itemsTable {
+    border: 1px solid #dbe3ee;
+    border-radius: 0;
+    width: 100%;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .itemsTable thead {
+    display: table-header-group;
+  }
+
+  .itemsTable tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .itemsTable th,
   .itemsTable td {
-    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.25;
+    padding: 6px 8px;
+    background: #ffffff !important;
+  }
+
+  .summarySection {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .summaryBox {
-    max-width: 300px;
+    max-width: 280px;
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    background: #ffffff !important;
+    border: 1px solid #dbe3ee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .summaryRow {
+    font-size: 11px;
+    line-height: 1.25;
+    padding: 5px 0;
+  }
+
+  .summaryTotal {
+    font-size: 13px;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid #cbd5e1;
+  }
+
+  .notesInput,
+  .notesPreview {
+    font-size: 11px;
+    line-height: 1.35;
+    padding: 10px;
+    border-radius: 8px;
+    background: #ffffff !important;
+    border: 1px solid #dbe3ee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .notesActions {
+    display: none !important;
+  }
+
+  .paymentCard {
+    padding: 10px;
+    border-radius: 8px;
+    background: #ffffff !important;
+    border: 1px solid #dbe3ee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .paymentRow {
+    font-size: 11px;
+    line-height: 1.25;
+    padding: 5px 0;
   }
 
   .footer {
-    margin-top: 14px;
-    padding-top: 10px;
-  }
-
-  .metaCard,
-  .tableSection,
-  .summarySection,
-  .notesSection,
-  .footer,
-  .itemsTable,
-  .itemsTable tr,
-  .summaryBox {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #dbe3ee;
+    font-size: 10px;
+    line-height: 1.3;
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .message,
+  .messageCard,
+  .messageCardError,
+  .successBanner {
+    display: none !important;
   }
 }

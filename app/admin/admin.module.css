@@ -1498,7 +1498,7 @@ padding: 8px 11px;
   margin-bottom: 1.5rem;
 }
 
-.eyebrow {
+/*.eyebrow {
   font-size: 0.875rem;
   font-weight: 500;
   color: #6b7280;
@@ -1519,7 +1519,7 @@ padding: 8px 11px;
 .toolbar {
   display: flex;
   gap: 0.5rem;
-}
+}*/
 
 .viewButton {
   background-color: #f3f4f6;
@@ -1559,6 +1559,44 @@ padding: 8px 11px;
   color: #ffffff;
 }
 
+/* admin.module.css updates - add these to the bottom or integrate */
+
+/* Top Bar Modern Design */
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.pageTitle {
+  font-size: 2.25rem;
+  font-weight: 600;
+  color: #183E0B;
+}
+
+.pageSubtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+
 /* Success Banner */
 .successBanner {
   background-color: #d1fae5;
@@ -1589,3 +1627,36 @@ padding: 8px 11px;
 
 
 
+/* Toolbar links no underline */
+.toolbar .viewButton {
+  text-decoration: none;
+}
+
+/* Fix boardWrap gap on right - use auto-fit for flexible columns */
+.boardWrap {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+
+.warningBanner {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 12px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #fcd34d;
+}
+
+.warningBannerLinkRow {
+  margin-top: 8px;
+}
+
+.helperText {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #475569;
+}
