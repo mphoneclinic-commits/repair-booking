@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import styles from '../admin.module.css'
 import type { InvoiceItem } from '../types'
 
@@ -32,18 +32,49 @@ export default function InvoiceItemsEditor({
   onDeleteItem: (itemId: string) => Promise<void>
 }) {
   const [drafts, setDrafts] = useState<DraftMap>({})
+  const [focusedItemId, setFocusedItemId] = useState<string | null>(null)
+
+  const itemIdsSignature = useMemo(
+    () => items.map((item) => item.id).join('|'),
+    [items]
+  )
 
   useEffect(() => {
-    const next: DraftMap = {}
-    for (const item of items) {
-      next[item.id] = {
-        description: item.description,
-        qty: String(item.qty),
-        unit_price: String(item.unit_price),
+    setDrafts((prev) => {
+      const next: DraftMap = {}
+
+      for (const item of items) {
+        const existing = prev[item.id]
+
+        if (existing && focusedItemId === item.id) {
+          next[item.id] = existing
+        } else if (existing) {
+          next[item.id] = {
+            description: existing.description,
+            qty: existing.qty,
+            unit_price: existing.unit_price,
+          }
+        } else {
+          next[item.id] = {
+            description: item.description,
+            qty: String(item.qty),
+            unit_price: String(item.unit_price),
+          }
+        }
       }
+
+      return next
+    })
+  }, [itemIdsSignature, items, focusedItemId])
+
+  useEffect(() => {
+    if (!focusedItemId) return
+
+    const stillExists = items.some((item) => item.id === focusedItemId)
+    if (!stillExists) {
+      setFocusedItemId(null)
     }
-    setDrafts(next)
-  }, [items])
+  }, [items, focusedItemId])
 
   const isBusy = actionState === 'saving'
 
@@ -119,10 +150,14 @@ export default function InvoiceItemsEditor({
                     <input
                       value={draft.description}
                       className={styles.smallField}
+                      onFocus={() => setFocusedItemId(item.id)}
                       onChange={(e) =>
                         setDraftValue(item.id, 'description', e.target.value)
                       }
-                      onBlur={() => void flushItem(item)}
+                      onBlur={async () => {
+                        setFocusedItemId(null)
+                        await flushItem(item)
+                      }}
                     />
                   </div>
 
@@ -132,8 +167,14 @@ export default function InvoiceItemsEditor({
                       inputMode="decimal"
                       value={draft.qty}
                       className={styles.smallField}
-                      onChange={(e) => setDraftValue(item.id, 'qty', e.target.value)}
-                      onBlur={() => void flushItem(item)}
+                      onFocus={() => setFocusedItemId(item.id)}
+                      onChange={(e) =>
+                        setDraftValue(item.id, 'qty', e.target.value)
+                      }
+                      onBlur={async () => {
+                        setFocusedItemId(null)
+                        await flushItem(item)
+                      }}
                     />
                   </div>
 
@@ -143,10 +184,14 @@ export default function InvoiceItemsEditor({
                       inputMode="decimal"
                       value={draft.unit_price}
                       className={styles.smallField}
+                      onFocus={() => setFocusedItemId(item.id)}
                       onChange={(e) =>
                         setDraftValue(item.id, 'unit_price', e.target.value)
                       }
-                      onBlur={() => void flushItem(item)}
+                      onBlur={async () => {
+                        setFocusedItemId(null)
+                        await flushItem(item)
+                      }}
                     />
                   </div>
 

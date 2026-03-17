@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import jsPDF from 'jspdf'
 import styles from './invoice.module.css'
@@ -11,8 +11,10 @@ import type {
   InvoiceRepairLink,
   InvoiceStatus,
   RepairRequest,
+  SaveState,
 } from '../types'
 import { formatDateTime } from '../utils'
+import SaveIndicator from '../components/SaveIndicator'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,16 +26,16 @@ const BUSINESS_DETAILS = {
   address: 'Melbourne, Victoria, Australia',
   landline: '(03) 9547 9991',
   mobile: '0411 369 814',
-  email: 'info@themobilephoneclinic.com.au',
-  abn: '69 155 790 248',
+  email: 'admin@themobilephoneclinic.com.au',
+  abn: '59696 1787 82',
 }
 
 const PAYMENT_DETAILS = {
-  bankName: 'YOUR BANK NAME',
-  accountName: 'YOUR ACCOUNT NAME',
-  bsb: '000-000',
-  accountNumber: '00000000',
-  payId: 'your-payid@example.com',
+  bankName: 'GREAT SOUTHERN BANK',
+  accountName: 'BUN UNG',
+  bsb: '814 282',
+  accountNumber: '520 372 19',
+  payId: '0411 369 814',
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -45,10 +47,21 @@ export default function InvoicePrintPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [linkedJobs, setLinkedJobs] = useState<RepairRequest[]>([])
+
   const [localCustomerNotes, setLocalCustomerNotes] = useState('')
   const [localInternalNotes, setLocalInternalNotes] = useState('')
-  const [savingCustomerNotes, setSavingCustomerNotes] = useState(false)
-  const [savingInternalNotes, setSavingInternalNotes] = useState(false)
+
+  const [customerNotesState, setCustomerNotesState] = useState<SaveState>('idle')
+  const [internalNotesState, setInternalNotesState] = useState<SaveState>('idle')
+
+  const customerNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const internalNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearCustomerSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearInternalSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const customerNotesFocusedRef = useRef(false)
+  const internalNotesFocusedRef = useRef(false)
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -59,6 +72,15 @@ export default function InvoicePrintPage() {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     setInvoiceId(params.get('id') || '')
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (customerNotesTimerRef.current) clearTimeout(customerNotesTimerRef.current)
+      if (internalNotesTimerRef.current) clearTimeout(internalNotesTimerRef.current)
+      if (clearCustomerSavedTimerRef.current) clearTimeout(clearCustomerSavedTimerRef.current)
+      if (clearInternalSavedTimerRef.current) clearTimeout(clearInternalSavedTimerRef.current)
+    }
   }, [])
 
   async function loadInvoicePage(currentInvoiceId: string) {
@@ -118,8 +140,13 @@ export default function InvoicePrintPage() {
         internal_reference_notes: invoiceData.internal_reference_notes ?? null,
       }
 
-      setLocalCustomerNotes(normalizedInvoice.customer_visible_notes || '')
-      setLocalInternalNotes(normalizedInvoice.internal_reference_notes || '')
+      if (!customerNotesFocusedRef.current) {
+        setLocalCustomerNotes(normalizedInvoice.customer_visible_notes || '')
+      }
+
+      if (!internalNotesFocusedRef.current) {
+        setLocalInternalNotes(normalizedInvoice.internal_reference_notes || '')
+      }
 
       const { data: itemData, error: itemError } = await supabase
         .from('invoice_items')
@@ -220,54 +247,119 @@ export default function InvoicePrintPage() {
     void loadInvoicePage(invoiceId)
   }, [invoiceId])
 
-  async function saveCustomerVisibleNotes() {
-    if (!invoice) return
-
-    setSavingCustomerNotes(true)
-    setError('')
-    setSuccessMessage('')
-
-    const { error: updateError } = await supabase
-      .from('invoices')
-      .update({ customer_visible_notes: localCustomerNotes || null })
-      .eq('id', invoice.id)
-
-    if (updateError) {
-      setError(updateError.message || 'Failed to save customer notes')
-      setSavingCustomerNotes(false)
+  function setSavedState(
+    which: 'customer' | 'internal'
+  ) {
+    if (which === 'customer') {
+      setCustomerNotesState('saved')
+      if (clearCustomerSavedTimerRef.current) clearTimeout(clearCustomerSavedTimerRef.current)
+      clearCustomerSavedTimerRef.current = setTimeout(() => {
+        setCustomerNotesState((prev) => (prev === 'saved' ? 'idle' : prev))
+      }, 1300)
       return
     }
 
-    setInvoice((prev) =>
-      prev ? { ...prev, customer_visible_notes: localCustomerNotes || null } : null
-    )
-    setSavingCustomerNotes(false)
-    setSuccessMessage('Customer notes saved.')
+    setInternalNotesState('saved')
+    if (clearInternalSavedTimerRef.current) clearTimeout(clearInternalSavedTimerRef.current)
+    clearInternalSavedTimerRef.current = setTimeout(() => {
+      setInternalNotesState((prev) => (prev === 'saved' ? 'idle' : prev))
+    }, 1300)
   }
 
-  async function saveInternalReferenceNotes() {
+  async function flushCustomerVisibleNotes(nextValue?: string) {
     if (!invoice) return
 
-    setSavingInternalNotes(true)
+    const value = nextValue ?? localCustomerNotes
+    const currentValue = invoice.customer_visible_notes ?? ''
+
+    if (value === currentValue) {
+      setCustomerNotesState('idle')
+      return
+    }
+
+    setCustomerNotesState('saving')
     setError('')
     setSuccessMessage('')
 
     const { error: updateError } = await supabase
       .from('invoices')
-      .update({ internal_reference_notes: localInternalNotes || null })
+      .update({ customer_visible_notes: value || null })
       .eq('id', invoice.id)
 
     if (updateError) {
-      setError(updateError.message || 'Failed to save internal notes')
-      setSavingInternalNotes(false)
+      setCustomerNotesState('error')
+      setError(updateError.message || 'Failed to save customer notes')
       return
     }
 
     setInvoice((prev) =>
-      prev ? { ...prev, internal_reference_notes: localInternalNotes || null } : null
+      prev ? { ...prev, customer_visible_notes: value || null } : null
     )
-    setSavingInternalNotes(false)
-    setSuccessMessage('Internal reference notes saved.')
+    setSavedState('customer')
+  }
+
+  async function flushInternalReferenceNotes(nextValue?: string) {
+    if (!invoice) return
+
+    const value = nextValue ?? localInternalNotes
+    const currentValue = invoice.internal_reference_notes ?? ''
+
+    if (value === currentValue) {
+      setInternalNotesState('idle')
+      return
+    }
+
+    setInternalNotesState('saving')
+    setError('')
+    setSuccessMessage('')
+
+    const { error: updateError } = await supabase
+      .from('invoices')
+      .update({ internal_reference_notes: value || null })
+      .eq('id', invoice.id)
+
+    if (updateError) {
+      setInternalNotesState('error')
+      setError(updateError.message || 'Failed to save internal notes')
+      return
+    }
+
+    setInvoice((prev) =>
+      prev ? { ...prev, internal_reference_notes: value || null } : null
+    )
+    setSavedState('internal')
+  }
+
+  function handleCustomerNotesChange(value: string) {
+    setLocalCustomerNotes(value)
+    setCustomerNotesState('dirty')
+
+    if (customerNotesTimerRef.current) clearTimeout(customerNotesTimerRef.current)
+    customerNotesTimerRef.current = setTimeout(() => {
+      void flushCustomerVisibleNotes(value)
+    }, 900)
+  }
+
+  function handleInternalNotesChange(value: string) {
+    setLocalInternalNotes(value)
+    setInternalNotesState('dirty')
+
+    if (internalNotesTimerRef.current) clearTimeout(internalNotesTimerRef.current)
+    internalNotesTimerRef.current = setTimeout(() => {
+      void flushInternalReferenceNotes(value)
+    }, 900)
+  }
+
+  async function handleCustomerNotesBlur() {
+    customerNotesFocusedRef.current = false
+    if (customerNotesTimerRef.current) clearTimeout(customerNotesTimerRef.current)
+    await flushCustomerVisibleNotes(localCustomerNotes)
+  }
+
+  async function handleInternalNotesBlur() {
+    internalNotesFocusedRef.current = false
+    if (internalNotesTimerRef.current) clearTimeout(internalNotesTimerRef.current)
+    await flushInternalReferenceNotes(localInternalNotes)
   }
 
   async function updateInvoiceStatus(status: InvoiceStatus) {
@@ -352,9 +444,7 @@ export default function InvoicePrintPage() {
           .update({ status: 'closed' })
           .in('id', openJobIds)
 
-        if (closeError) {
-          console.warn('Could not auto-close linked jobs:', closeError.message)
-        } else {
+        if (!closeError) {
           setLinkedJobs((prev) =>
             prev.map((job) =>
               openJobIds.includes(job.id) ? { ...job, status: 'closed' } : job
@@ -608,11 +698,11 @@ export default function InvoicePrintPage() {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
 
-    drawLabelValueRow('Bank', 'YOUR BANK NAME')
-    drawLabelValueRow('Account Name', 'YOUR ACCOUNT NAME')
-    drawLabelValueRow('BSB', '000-000')
-    drawLabelValueRow('Account Number', '00000000')
-    drawLabelValueRow('PayID', 'your-payid@example.com')
+    drawLabelValueRow('Bank', PAYMENT_DETAILS.bankName)
+    drawLabelValueRow('Account Name', PAYMENT_DETAILS.accountName)
+    drawLabelValueRow('BSB', PAYMENT_DETAILS.bsb)
+    drawLabelValueRow('Account Number', PAYMENT_DETAILS.accountNumber)
+    drawLabelValueRow('PayID', PAYMENT_DETAILS.payId)
 
     y += 4
     addPageIfNeeded(8)
@@ -694,7 +784,7 @@ export default function InvoicePrintPage() {
               </button>
             )}
 
-            {(invoice.status === 'issued' || invoice.status === 'draft') && (
+            {(invoice.status === 'draft' || invoice.status === 'issued') && (
               <button
                 type="button"
                 className={styles.secondaryButton}
@@ -838,12 +928,8 @@ export default function InvoicePrintPage() {
                     <tr key={item.id}>
                       <td>{item.description}</td>
                       <td className={styles.numberCell}>{Number(item.qty).toFixed(2)}</td>
-                      <td className={styles.numberCell}>
-                        {formatCurrency(item.unit_price)}
-                      </td>
-                      <td className={styles.numberCell}>
-                        {formatCurrency(item.line_total)}
-                      </td>
+                      <td className={styles.numberCell}>{formatCurrency(item.unit_price)}</td>
+                      <td className={styles.numberCell}>{formatCurrency(item.line_total)}</td>
                     </tr>
                   ))
                 )}
@@ -873,45 +959,37 @@ export default function InvoicePrintPage() {
           </section>
 
           <section className={styles.notesSection}>
-            <div className={styles.sectionHeading}>Customer Visible Notes</div>
+            <div className={styles.inputTopRow}>
+              <div className={styles.sectionHeading}>Customer Visible Notes</div>
+              <SaveIndicator state={customerNotesState} compact />
+            </div>
             <textarea
               value={localCustomerNotes}
-              onChange={(e) => setLocalCustomerNotes(e.target.value)}
+              onChange={(e) => handleCustomerNotesChange(e.target.value)}
+              onFocus={() => {
+                customerNotesFocusedRef.current = true
+              }}
+              onBlur={() => void handleCustomerNotesBlur()}
               className={styles.notesInput}
               placeholder="Add customer-facing notes here..."
-              disabled={savingCustomerNotes}
             />
-            <div className={styles.notesActions}>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => void saveCustomerVisibleNotes()}
-                disabled={savingCustomerNotes}
-              >
-                {savingCustomerNotes ? 'Saving...' : 'Save Customer Notes'}
-              </button>
-            </div>
           </section>
 
           <section className={styles.notesSection}>
-            <div className={styles.sectionHeading}>Internal Reference Notes</div>
+            <div className={styles.inputTopRow}>
+              <div className={styles.sectionHeading}>Internal Reference Notes</div>
+              <SaveIndicator state={internalNotesState} compact />
+            </div>
             <textarea
               value={localInternalNotes}
-              onChange={(e) => setLocalInternalNotes(e.target.value)}
+              onChange={(e) => handleInternalNotesChange(e.target.value)}
+              onFocus={() => {
+                internalNotesFocusedRef.current = true
+              }}
+              onBlur={() => void handleInternalNotesBlur()}
               className={styles.notesInput}
               placeholder="Hidden admin-only notes and references..."
-              disabled={savingInternalNotes}
             />
-            <div className={styles.notesActions}>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => void saveInternalReferenceNotes()}
-                disabled={savingInternalNotes}
-              >
-                {savingInternalNotes ? 'Saving...' : 'Save Internal Notes'}
-              </button>
-            </div>
           </section>
 
           {invoice.customer_visible_notes ? (
@@ -928,23 +1006,23 @@ export default function InvoicePrintPage() {
             <div className={styles.paymentCard}>
               <div className={styles.paymentRow}>
                 <span>Bank</span>
-                <strong>YOUR BANK NAME</strong>
+                <strong>{PAYMENT_DETAILS.bankName}</strong>
               </div>
               <div className={styles.paymentRow}>
                 <span>Account Name</span>
-                <strong>YOUR ACCOUNT NAME</strong>
+                <strong>{PAYMENT_DETAILS.accountName}</strong>
               </div>
               <div className={styles.paymentRow}>
                 <span>BSB</span>
-                <strong>000-000</strong>
+                <strong>{PAYMENT_DETAILS.bsb}</strong>
               </div>
               <div className={styles.paymentRow}>
                 <span>Account Number</span>
-                <strong>00000000</strong>
+                <strong>{PAYMENT_DETAILS.accountNumber}</strong>
               </div>
               <div className={styles.paymentRow}>
                 <span>PayID</span>
-                <strong>your-payid@example.com</strong>
+                <strong>{PAYMENT_DETAILS.payId}</strong>
               </div>
             </div>
           </section>

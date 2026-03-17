@@ -14,11 +14,11 @@ const supabase = createClient(
 )
 
 const PAYMENT_DETAILS = {
-  bankName: 'YOUR BANK NAME',
-  accountName: 'YOUR ACCOUNT NAME',
-  bsb: '000-000',
-  accountNumber: '00000000',
-  payId: 'your-payid@example.com',
+  bankName: 'GREAT SOUTHERN BANK',
+  accountName: 'BUN UNG',
+  bsb: '814 282',
+  accountNumber: '520 372 19',
+  payId: '0411 369 814',
 }
 
 function formatCurrency(value: number | null | undefined) {
