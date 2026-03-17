@@ -18,9 +18,9 @@ import type {
 import {
   ARCHIVE_COLUMNS,
   BOARD_COLUMNS,
-  getStatusLabel,
   STATUSES,
   formatDateTime,
+  getStatusLabel,
 } from './utils'
 import SummaryCard from './components/SummaryCard'
 import JobCard from './components/JobCard'
@@ -67,7 +67,7 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<RepairRequest[]>([])
   const [hiddenJobs, setHiddenJobs] = useState<RepairRequest[]>([])
   const [showHidden, setShowHidden] = useState(false)
-const [showBackToTop, setShowBackToTop] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
 
   const [invoicesByJobId, setInvoicesByJobId] = useState<Record<string, Invoice>>({})
   const [invoiceItemsByInvoiceId, setInvoiceItemsByInvoiceId] = useState<
@@ -197,6 +197,45 @@ const [showBackToTop, setShowBackToTop] = useState(false)
     }))
   }
 
+  function scrollToTop() {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
+  }
+
+  function normalizeJob(raw: RepairRequest): RepairRequest {
+    return {
+      ...raw,
+      internal_notes: raw.internal_notes ?? '',
+      quoted_price: raw.quoted_price ?? null,
+      serial_imei: raw.serial_imei ?? null,
+      is_hidden: Boolean(raw.is_hidden),
+      fault_photo_url: raw.fault_photo_url ?? null,
+    }
+  }
+
+  function normalizeInvoice(raw: Invoice): Invoice {
+    return {
+      ...raw,
+      tax_rate: Number(raw.tax_rate ?? 0),
+      subtotal_ex_tax: Number(raw.subtotal_ex_tax ?? 0),
+      tax_amount: Number(raw.tax_amount ?? 0),
+      subtotal: Number(raw.subtotal ?? 0),
+      total: Number(raw.total ?? 0),
+    }
+  }
+
+  function normalizeInvoiceItem(raw: InvoiceItem): InvoiceItem {
+    return {
+      ...raw,
+      qty: Number(raw.qty ?? 0),
+      unit_price: Number(raw.unit_price ?? 0),
+      line_total: Number(raw.line_total ?? 0),
+      sort_order: Number(raw.sort_order ?? 0),
+    }
+  }
+
   async function duplicateJob(sourceJob: RepairRequest) {
     setError('')
 
@@ -245,14 +284,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
       return
     }
 
-    const newJob: RepairRequest = {
-      ...(data as RepairRequest),
-      internal_notes: data.internal_notes ?? '',
-      quoted_price: data.quoted_price ?? null,
-      serial_imei: data.serial_imei ?? null,
-      is_hidden: Boolean(data.is_hidden),
-      fault_photo_url: data.fault_photo_url ?? null,
-    }
+    const newJob = normalizeJob(data as RepairRequest)
 
     setJobs((prev) => [newJob, ...prev])
     setExpandedJobs((prev) => ({
@@ -484,14 +516,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
       return
     }
 
-    const newJobs = ((data || []) as RepairRequest[]).map((job) => ({
-      ...job,
-      internal_notes: job.internal_notes ?? '',
-      quoted_price: job.quoted_price ?? null,
-      serial_imei: job.serial_imei ?? null,
-      is_hidden: Boolean(job.is_hidden),
-      fault_photo_url: job.fault_photo_url ?? null,
-    }))
+    const newJobs = ((data || []) as RepairRequest[]).map(normalizeJob)
 
     setJobs((prev) => [...newJobs, ...prev])
     setExpandedJobs((prev) => {
@@ -522,31 +547,91 @@ const [showBackToTop, setShowBackToTop] = useState(false)
     const previousJobs = jobs
     const previousHiddenJobs = hiddenJobs
     const previousHighlightedJobId = highlightedJobId
+    const previousInvoicesByJobId = invoicesByJobId
+    const previousInvoiceItemsByInvoiceId = invoiceItemsByInvoiceId
 
-    setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setSelectedArchiveJobIds([])
+    try {
+      const { data: linkedInvoices, error: linkedInvoicesError } = await supabase
+        .from('invoices')
+        .select('id, repair_request_id')
+        .in('repair_request_id', idsToDelete)
 
-    if (highlightedJobId && selectedSet.has(highlightedJobId)) {
-      setHighlightedJobId(null)
-    }
+      if (linkedInvoicesError) throw linkedInvoicesError
 
-    const { error } = await supabase
-      .from('repair_requests')
-      .delete()
-      .in('id', idsToDelete)
+      const invoiceIds = (linkedInvoices || []).map((invoice) => invoice.id)
 
-    if (error) {
+      if (invoiceIds.length > 0) {
+        const { error: deleteInvoiceItemsError } = await supabase
+          .from('invoice_items')
+          .delete()
+          .in('invoice_id', invoiceIds)
+
+        if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
+
+        const { error: deleteInvoiceLinksError } = await supabase
+          .from('invoice_repair_links')
+          .delete()
+          .in('invoice_id', invoiceIds)
+
+        if (deleteInvoiceLinksError) throw deleteInvoiceLinksError
+
+        const { error: deleteInvoicesError } = await supabase
+          .from('invoices')
+          .delete()
+          .in('id', invoiceIds)
+
+        if (deleteInvoicesError) throw deleteInvoicesError
+      }
+
+      const { error: deletePhotosError } = await supabase
+        .from('repair_request_photos')
+        .delete()
+        .in('repair_request_id', idsToDelete)
+
+      if (deletePhotosError) throw deletePhotosError
+
+      const { error: deleteJobsError } = await supabase
+        .from('repair_requests')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (deleteJobsError) throw deleteJobsError
+
+      setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setSelectedArchiveJobIds([])
+
+      if (highlightedJobId && selectedSet.has(highlightedJobId)) {
+        setHighlightedJobId(null)
+      }
+
+      setInvoicesByJobId((prev) => {
+        const next = { ...prev }
+        for (const jobId of idsToDelete) {
+          delete next[jobId]
+        }
+        return next
+      })
+
+      setInvoiceItemsByInvoiceId((prev) => {
+        if (invoiceIds.length === 0) return prev
+        const next = { ...prev }
+        for (const invoiceId of invoiceIds) {
+          delete next[invoiceId]
+        }
+        return next
+      })
+    } catch (err) {
       setJobs(previousJobs)
       setHiddenJobs(previousHiddenJobs)
-      setSelectedArchiveJobIds(idsToDelete)
       setHighlightedJobId(previousHighlightedJobId)
-      setError(error.message)
+      setInvoicesByJobId(previousInvoicesByJobId)
+      setInvoiceItemsByInvoiceId(previousInvoiceItemsByInvoiceId)
+      setSelectedArchiveJobIds(idsToDelete)
+      setError(err instanceof Error ? err.message : 'Failed to delete selected archive jobs')
+    } finally {
       setBulkBusy(false)
-      return
     }
-
-    setBulkBusy(false)
   }
 
   async function bulkDeleteHiddenJobs() {
@@ -566,31 +651,91 @@ const [showBackToTop, setShowBackToTop] = useState(false)
     const previousJobs = jobs
     const previousHiddenJobs = hiddenJobs
     const previousHighlightedJobId = highlightedJobId
+    const previousInvoicesByJobId = invoicesByJobId
+    const previousInvoiceItemsByInvoiceId = invoiceItemsByInvoiceId
 
-    setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setSelectedHiddenJobIds([])
+    try {
+      const { data: linkedInvoices, error: linkedInvoicesError } = await supabase
+        .from('invoices')
+        .select('id, repair_request_id')
+        .in('repair_request_id', idsToDelete)
 
-    if (highlightedJobId && selectedSet.has(highlightedJobId)) {
-      setHighlightedJobId(null)
-    }
+      if (linkedInvoicesError) throw linkedInvoicesError
 
-    const { error } = await supabase
-      .from('repair_requests')
-      .delete()
-      .in('id', idsToDelete)
+      const invoiceIds = (linkedInvoices || []).map((invoice) => invoice.id)
 
-    if (error) {
+      if (invoiceIds.length > 0) {
+        const { error: deleteInvoiceItemsError } = await supabase
+          .from('invoice_items')
+          .delete()
+          .in('invoice_id', invoiceIds)
+
+        if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
+
+        const { error: deleteInvoiceLinksError } = await supabase
+          .from('invoice_repair_links')
+          .delete()
+          .in('invoice_id', invoiceIds)
+
+        if (deleteInvoiceLinksError) throw deleteInvoiceLinksError
+
+        const { error: deleteInvoicesError } = await supabase
+          .from('invoices')
+          .delete()
+          .in('id', invoiceIds)
+
+        if (deleteInvoicesError) throw deleteInvoicesError
+      }
+
+      const { error: deletePhotosError } = await supabase
+        .from('repair_request_photos')
+        .delete()
+        .in('repair_request_id', idsToDelete)
+
+      if (deletePhotosError) throw deletePhotosError
+
+      const { error: deleteJobsError } = await supabase
+        .from('repair_requests')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (deleteJobsError) throw deleteJobsError
+
+      setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setSelectedHiddenJobIds([])
+
+      if (highlightedJobId && selectedSet.has(highlightedJobId)) {
+        setHighlightedJobId(null)
+      }
+
+      setInvoicesByJobId((prev) => {
+        const next = { ...prev }
+        for (const jobId of idsToDelete) {
+          delete next[jobId]
+        }
+        return next
+      })
+
+      setInvoiceItemsByInvoiceId((prev) => {
+        if (invoiceIds.length === 0) return prev
+        const next = { ...prev }
+        for (const invoiceId of invoiceIds) {
+          delete next[invoiceId]
+        }
+        return next
+      })
+    } catch (err) {
       setJobs(previousJobs)
       setHiddenJobs(previousHiddenJobs)
-      setSelectedHiddenJobIds(idsToDelete)
       setHighlightedJobId(previousHighlightedJobId)
-      setError(error.message)
+      setInvoicesByJobId(previousInvoicesByJobId)
+      setInvoiceItemsByInvoiceId(previousInvoiceItemsByInvoiceId)
+      setSelectedHiddenJobIds(idsToDelete)
+      setError(err instanceof Error ? err.message : 'Failed to delete selected hidden jobs')
+    } finally {
       setBulkBusy(false)
-      return
     }
-
-    setBulkBusy(false)
   }
 
   async function loadJobs() {
@@ -619,14 +764,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
 
     if (error) throw error
 
-    const allJobs = ((data || []) as RepairRequest[]).map((job) => ({
-      ...job,
-      internal_notes: job.internal_notes ?? '',
-      quoted_price: job.quoted_price ?? null,
-      serial_imei: job.serial_imei ?? null,
-      is_hidden: Boolean(job.is_hidden),
-      fault_photo_url: job.fault_photo_url ?? null,
-    }))
+    const allJobs = ((data || []) as RepairRequest[]).map(normalizeJob)
 
     setJobs(allJobs.filter((job) => !job.is_hidden))
     setHiddenJobs(allJobs.filter((job) => job.is_hidden))
@@ -674,14 +812,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
 
     for (const raw of (data || []) as Invoice[]) {
       if (!latestByJob[raw.repair_request_id]) {
-        latestByJob[raw.repair_request_id] = {
-          ...raw,
-          tax_rate: Number(raw.tax_rate ?? 0),
-          subtotal_ex_tax: Number(raw.subtotal_ex_tax ?? 0),
-          tax_amount: Number(raw.tax_amount ?? 0),
-          subtotal: Number(raw.subtotal ?? 0),
-          total: Number(raw.total ?? 0),
-        }
+        latestByJob[raw.repair_request_id] = normalizeInvoice(raw)
       }
     }
 
@@ -711,14 +842,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
     for (const item of (data || []) as InvoiceItem[]) {
       const invoiceId = item.invoice_id
       if (!grouped[invoiceId]) grouped[invoiceId] = []
-
-      grouped[invoiceId].push({
-        ...item,
-        qty: Number(item.qty ?? 0),
-        unit_price: Number(item.unit_price ?? 0),
-        line_total: Number(item.line_total ?? 0),
-        sort_order: Number(item.sort_order ?? 0),
-      })
+      grouped[invoiceId].push(normalizeInvoiceItem(item))
     }
 
     setInvoiceItemsByInvoiceId(grouped)
@@ -757,14 +881,7 @@ const [showBackToTop, setShowBackToTop] = useState(false)
       throw invoiceError || new Error('Failed to refresh invoice')
     }
 
-    const normalizedInvoice: Invoice = {
-      ...(invoiceData as Invoice),
-      tax_rate: Number(invoiceData.tax_rate ?? 0),
-      subtotal_ex_tax: Number(invoiceData.subtotal_ex_tax ?? 0),
-      tax_amount: Number(invoiceData.tax_amount ?? 0),
-      subtotal: Number(invoiceData.subtotal ?? 0),
-      total: Number(invoiceData.total ?? 0),
-    }
+    const normalizedInvoice = normalizeInvoice(invoiceData as Invoice)
 
     const { data: itemsData, error: itemsError } = await supabase
       .from('invoice_items')
@@ -782,17 +899,9 @@ const [showBackToTop, setShowBackToTop] = useState(false)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
 
-    if (itemsError) {
-      throw itemsError
-    }
+    if (itemsError) throw itemsError
 
-    const normalizedItems = ((itemsData || []) as InvoiceItem[]).map((item) => ({
-      ...item,
-      qty: Number(item.qty ?? 0),
-      unit_price: Number(item.unit_price ?? 0),
-      line_total: Number(item.line_total ?? 0),
-      sort_order: Number(item.sort_order ?? 0),
-    }))
+    const normalizedItems = ((itemsData || []) as InvoiceItem[]).map(normalizeInvoiceItem)
 
     setInvoicesByJobId((prev) => ({
       ...prev,
@@ -818,24 +927,20 @@ const [showBackToTop, setShowBackToTop] = useState(false)
       setLoading(false)
     }
   }
-useEffect(() => {
-  function handleScroll() {
-    setShowBackToTop(window.scrollY > 320)
-  }
 
-  window.addEventListener('scroll', handleScroll, { passive: true })
-  handleScroll()
+  useEffect(() => {
+    function handleScroll() {
+      setShowBackToTop(window.scrollY > 320)
+    }
 
-  return () => {
-    window.removeEventListener('scroll', handleScroll)
-  }
-}, [])
-function scrollToTop() {
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth',
-  })
-}
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
   useEffect(() => {
     void loadAllData()
 
@@ -1067,9 +1172,7 @@ function scrollToTop() {
       fault_description: data.fault_description,
     }
 
-    setJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
-    )
+    setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
     )
@@ -1215,24 +1318,13 @@ function scrollToTop() {
       return
     }
 
-    const normalizedUpdatedJob: RepairRequest = {
-      ...(updatedJob as RepairRequest),
-      internal_notes: updatedJob.internal_notes ?? '',
-      quoted_price: updatedJob.quoted_price ?? null,
-      serial_imei: updatedJob.serial_imei ?? null,
-      is_hidden: Boolean(updatedJob.is_hidden),
-      fault_photo_url: updatedJob.fault_photo_url ?? null,
-    }
+    const normalizedUpdatedJob = normalizeJob(updatedJob as RepairRequest)
 
     setJobs((prev) =>
-      prev.map((existingJob) =>
-        existingJob.id === job.id ? normalizedUpdatedJob : existingJob
-      )
+      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
     )
     setHiddenJobs((prev) =>
-      prev.map((existingJob) =>
-        existingJob.id === job.id ? normalizedUpdatedJob : existingJob
-      )
+      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
     )
 
     try {
@@ -1312,14 +1404,7 @@ function scrollToTop() {
 
     setInvoicesByJobId((prev) => ({
       ...prev,
-      [invoice.repair_request_id]: {
-        ...(data as Invoice),
-        tax_rate: Number(data.tax_rate ?? 0),
-        subtotal_ex_tax: Number(data.subtotal_ex_tax ?? 0),
-        tax_amount: Number(data.tax_amount ?? 0),
-        subtotal: Number(data.subtotal ?? 0),
-        total: Number(data.total ?? 0),
-      },
+      [invoice.repair_request_id]: normalizeInvoice(data as Invoice),
     }))
 
     setInvoiceActionState(invoice.repair_request_id, 'idle')
@@ -1376,8 +1461,11 @@ function scrollToTop() {
     updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
   ) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+    if (!invoice) return
 
     setInvoiceItemsActionState(invoiceId, 'saving')
+
+    const previousItems = invoiceItemsByInvoiceId[invoiceId] || []
 
     const safeUpdates = {
       ...(updates.description !== undefined
@@ -1391,36 +1479,65 @@ function scrollToTop() {
         : {}),
     }
 
+    const optimisticItems = previousItems.map((item) => {
+      if (item.id !== itemId) return item
+
+      const nextQty =
+        safeUpdates.qty !== undefined ? Number(safeUpdates.qty) : Number(item.qty)
+
+      const nextUnitPrice =
+        safeUpdates.unit_price !== undefined
+          ? Number(safeUpdates.unit_price)
+          : Number(item.unit_price)
+
+      return {
+        ...item,
+        ...safeUpdates,
+        qty: nextQty,
+        unit_price: nextUnitPrice,
+        line_total: nextQty * nextUnitPrice,
+      }
+    })
+
+    setInvoiceItemsByInvoiceId((prev) => ({
+      ...prev,
+      [invoiceId]: optimisticItems,
+    }))
+
+    const optimisticSubtotal = optimisticItems.reduce(
+      (sum, item) => sum + Number(item.line_total ?? 0),
+      0
+    )
+
+    setInvoicesByJobId((prev) => ({
+      ...prev,
+      [invoice.repair_request_id]: {
+        ...prev[invoice.repair_request_id],
+        subtotal_ex_tax: optimisticSubtotal,
+        subtotal: optimisticSubtotal,
+        total: optimisticSubtotal,
+        tax_amount: 0,
+      },
+    }))
+
     const { error } = await supabase
       .from('invoice_items')
       .update(safeUpdates)
       .eq('id', itemId)
 
     if (error) {
+      setInvoiceItemsByInvoiceId((prev) => ({
+        ...prev,
+        [invoiceId]: previousItems,
+      }))
       setInvoiceItemsActionState(invoiceId, 'error')
       return
     }
 
-    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
-      p_invoice_id: invoiceId,
-    })
-
-    if (recalcError) {
-      setInvoiceItemsActionState(invoiceId, 'error')
-      return
-    }
-
-    try {
-      await refreshInvoiceById(invoiceId)
-      setInvoiceItemsActionState(invoiceId, 'idle')
-      if (invoice) setHighlightedJobId(invoice.repair_request_id)
-    } catch {
-      setInvoiceItemsActionState(invoiceId, 'error')
-    }
-  }
-
+}
   async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
+    if (!invoice) return
 
     setInvoiceItemsActionState(invoiceId, 'saving')
 
@@ -1443,7 +1560,7 @@ function scrollToTop() {
     try {
       await refreshInvoiceById(invoiceId)
       setInvoiceItemsActionState(invoiceId, 'idle')
-      if (invoice) setHighlightedJobId(invoice.repair_request_id)
+      setHighlightedJobId(invoice.repair_request_id)
     } catch {
       setInvoiceItemsActionState(invoiceId, 'error')
     }
@@ -1509,14 +1626,7 @@ function scrollToTop() {
       return
     }
 
-    const normalizedUpdatedJob: RepairRequest = {
-      ...(updatedJob as RepairRequest),
-      internal_notes: updatedJob.internal_notes ?? '',
-      quoted_price: updatedJob.quoted_price ?? null,
-      serial_imei: updatedJob.serial_imei ?? null,
-      is_hidden: Boolean(updatedJob.is_hidden),
-      fault_photo_url: updatedJob.fault_photo_url ?? null,
-    }
+    const normalizedUpdatedJob = normalizeJob(updatedJob as RepairRequest)
 
     setInvoicesByJobId((prev) => {
       const next = { ...prev }
@@ -1531,14 +1641,10 @@ function scrollToTop() {
     })
 
     setJobs((prev) =>
-      prev.map((existingJob) =>
-        existingJob.id === job.id ? normalizedUpdatedJob : existingJob
-      )
+      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
     )
     setHiddenJobs((prev) =>
-      prev.map((existingJob) =>
-        existingJob.id === job.id ? normalizedUpdatedJob : existingJob
-      )
+      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
     )
 
     await loadInvoices()
@@ -1590,8 +1696,7 @@ function scrollToTop() {
   ) {
     event.preventDefault()
 
-    const droppedJobId =
-      draggedJobId || event.dataTransfer.getData('text/plain') || null
+    const droppedJobId = draggedJobId || event.dataTransfer.getData('text/plain') || null
 
     setDragOverStatus(null)
 
@@ -1618,8 +1723,7 @@ function scrollToTop() {
     const term = search.trim().toLowerCase()
 
     return jobs.filter((job) => {
-      const matchesStatus =
-        statusFilter === 'all' ? true : job.status === statusFilter
+      const matchesStatus = statusFilter === 'all' ? true : job.status === statusFilter
 
       const haystack = [
         job.job_number || '',
@@ -1759,9 +1863,7 @@ function scrollToTop() {
                 viewMode === mode ? styles.viewButtonActive : ''
               }`}
             >
-              {mode === 'board'
-                ? 'Job Cards'
-                : mode.charAt(0).toUpperCase() + mode.slice(1)}
+              {mode === 'board' ? 'Job Cards' : mode.charAt(0).toUpperCase() + mode.slice(1)}
             </button>
           ))}
 
@@ -2278,7 +2380,6 @@ function scrollToTop() {
             </div>
           </div>
 
-
           {sortedHiddenJobs.length === 0 ? (
             <p className={styles.message}>No hidden jobs.</p>
           ) : (
@@ -2330,20 +2431,17 @@ function scrollToTop() {
                     onUnhideJob={unhideJob}
                   />
                 )
-{showBackToTop ? (
-  <button
-    type="button"
-    className={styles.backToTopButton}
-    onClick={scrollToTop}
-  >
-    ↑ Top
-  </button>
-) : null}
               })}
             </div>
           )}
         </section>
       )}
+
+      {showBackToTop ? (
+        <button type="button" className={styles.backToTopButton} onClick={scrollToTop}>
+          ↑ Top
+        </button>
+      ) : null}
     </main>
   )
 }
