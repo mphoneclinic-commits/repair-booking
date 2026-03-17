@@ -1,8 +1,10 @@
 .page {
   min-height: 100vh;
-  background: #eef2f7;
+  background: #edf3f8;
   padding: 24px;
   box-sizing: border-box;
+  color: #0f172a;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .shell {
@@ -29,7 +31,7 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: #059669;
+  color: #0f766e;
   font-weight: 800;
   margin-bottom: 8px;
 }
@@ -64,6 +66,11 @@
   cursor: pointer;
 }
 
+.printButton:hover,
+.secondaryButton:hover {
+  background: #f8fafc;
+}
+
 .deleteButton {
   background: #fee2e2;
   border-color: #ef4444;
@@ -72,55 +79,61 @@
 
 .document {
   background: #ffffff;
-  border: 1px solid #dbe3ee;
+  border: 1px solid #d7e1ea;
   border-radius: 18px;
-  padding: 22px;
-  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  padding: 24px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
 }
 
 .header {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
   align-items: flex-start;
-  padding-bottom: 16px;
+  gap: 24px;
+  padding-bottom: 18px;
   border-bottom: 2px solid #e2e8f0;
 }
 
 .businessDetails {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .brand {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 900;
   color: #0f172a;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .brandMeta {
   margin-top: 6px;
   font-size: 14px;
-  color: #64748b;
+  color: #475569;
+  line-height: 1.35;
 }
 
 .invoiceHeaderRight {
+  flex: 0 0 auto;
+  min-width: 220px;
   text-align: right;
+  align-self: flex-start;
 }
 
 .invoiceTitle {
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   color: #2563eb;
   margin-bottom: 8px;
 }
 
 .invoiceNumber {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 900;
-  color: #0f172a;
-  margin-bottom: 8px;
+  color: #111827;
+  margin-bottom: 10px;
+  line-height: 1.1;
 }
 
 .statusPill {
@@ -143,7 +156,7 @@
 .status_issued {
   background: #dbeafe;
   border-color: #3b82f6;
-  color: #1e3a8a;
+  color: #1d4ed8;
 }
 
 .status_paid {
@@ -200,7 +213,7 @@
 .notesSection,
 .summarySection,
 .paymentSection {
-  margin-top: 18px;
+  margin-top: 20px;
 }
 
 .sectionHeading {
@@ -296,6 +309,7 @@
   line-height: 1.55;
   resize: vertical;
   font-size: 14px;
+  font-family: inherit;
 }
 
 .notesPreview {
@@ -338,7 +352,7 @@
 }
 
 .footer {
-  margin-top: 20px;
+  margin-top: 22px;
   padding-top: 12px;
   border-top: 1px solid #e2e8f0;
   font-size: 13px;
@@ -346,18 +360,12 @@
   line-height: 1.5;
 }
 
-.message,
 .messageCard,
 .messageCardError {
   background: #ffffff;
   border-radius: 14px;
   padding: 20px;
   border: 1px solid #e2e8f0;
-}
-
-.message {
-  color: #475569;
-  font-size: 15px;
 }
 
 .messageCardError {
@@ -386,12 +394,13 @@
   .header,
   .topBar,
   .metaGrid {
-    grid-template-columns: 1fr;
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .invoiceHeaderRight {
     text-align: left;
+    min-width: 0;
   }
 
   .itemsTable th,
@@ -412,10 +421,12 @@
 }
 
 @media print {
-  .body {
+   .body {
     background: #ffffff !important;
     margin: 0;
     padding: 0;
+    color: #0f172a;
+    font-family: Arial, Helvetica, sans-serif;
   }
 
   .page {
@@ -453,8 +464,7 @@
   }
 
   .brand {
-    font-size: 24px;
-    line-height: 1.1;
+    font-size: 28px;
   }
 
   .brandMeta {
@@ -466,6 +476,7 @@
 
   .invoiceHeaderRight {
     text-align: right;
+    min-width: 200px;
   }
 
   .invoiceTitle {
@@ -475,8 +486,8 @@
   }
 
   .invoiceNumber {
-    font-size: 18px;
-    margin-bottom: 4px;
+    font-size: 22px;
+    margin-bottom: 6px;
   }
 
   .statusPill {
@@ -486,7 +497,6 @@
   }
 
   .metaGrid {
-    display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-top: 12px;
@@ -624,7 +634,6 @@
     page-break-inside: avoid;
   }
 
-  .message,
   .messageCard,
   .messageCardError,
   .successBanner {

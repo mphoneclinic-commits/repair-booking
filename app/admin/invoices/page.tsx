@@ -438,9 +438,9 @@ async function loadInvoices() {
                   <td>{invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}</td>
                   <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
                   <td>
-                    <Link href={`/admin/invoice?id=${invoice.id}`} className={styles.inlineLink}>
-                      Open Invoice
-                    </Link>
+<Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
+  Open Invoice
+</Link>
                   </td>
                   <td>
                     <button

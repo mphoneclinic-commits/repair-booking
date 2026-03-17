@@ -29,7 +29,7 @@
   font-size: 34px;
   line-height: 1.1;
   margin: 0;
-  color: #0f172a;
+  color: #ecfdf5;
 }
 
 .pageSubtitle {
@@ -51,7 +51,7 @@
 .statusButton {
   border: 1px solid #cbd5e1;
   background: #ffffff;
-  color: #0f172a;
+  color: #377e47;
   cursor: pointer;
   font-weight: 700;
 }
@@ -1508,7 +1508,7 @@ padding: 8px 11px;
 .pageTitle {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #111827;
+  color: #ecfdf5;
 }
 
 .pageSubtitle {
@@ -1533,12 +1533,12 @@ padding: 8px 11px;
 }
 
 .viewButton:hover {
-  background-color: #22c55e;
+  background-color: #377e47;
   color: #ffffff;
 }
 
 .viewButtonActive {
-  background-color: #22c55e;
+  background-color: #377e47;
   color: #ffffff;
 }
 
@@ -1555,7 +1555,7 @@ padding: 8px 11px;
 }
 
 .button:hover {
-  background-color: #22c55e;
+  background-color: #377e47;
   color: #ffffff;
 }
 
@@ -1583,7 +1583,7 @@ padding: 8px 11px;
 .pageTitle {
   font-size: 2.25rem;
   font-weight: 600;
-  color: #183E0B;
+  color: #377e47;
 }
 
 .pageSubtitle {
@@ -1659,4 +1659,143 @@ padding: 8px 11px;
   margin-top: 8px;
   font-size: 14px;
   color: #475569;
+}
+.faultPhotoGallery {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+
+.faultPhotoThumbLink {
+  display: block;
+  text-decoration: none;
+}
+
+
+
+
+.morePhotosBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  height: 92px;
+  padding: 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.faultPhotoUploadArea {
+  margin-top: 12px;
+}
+
+.faultPhotoInput {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.faultPhotoSelectedRow {
+  margin: 8px 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.faultPhotoSelectedName {
+  font-size: 14px;
+  color: #334155;
+}
+
+.uploadingText {
+  color: #b45309;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.noPhotoText {
+  color: #64748b;
+  font-size: 14px;
+  margin: 0;
+}
+
+.helperText {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.successText {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #166534;
+}
+
+.faultPhotoThumbCard {
+  width: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.faultPhotoThumbActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.photoActionButton {
+  width: 100%;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.photoActionButton:hover {
+  background: #f8fafc;
+}
+
+.miniDangerButton {
+  width: 100%;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+
+.faultPhotoThumbnail {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #e2e8f
 }

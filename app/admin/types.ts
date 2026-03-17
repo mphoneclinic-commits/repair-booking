@@ -28,6 +28,15 @@ export type RepairRequest = {
   fault_photo_url?: string | null
 }
 
+export type RepairRequestPhoto = {
+  id: string
+  repair_request_id: string
+  photo_url: string
+  storage_path: string | null
+  sort_order: number
+  created_at: string
+}
+
 export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
 
 export type Invoice = {

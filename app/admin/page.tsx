@@ -430,8 +430,9 @@ export default function AdminPage() {
         preferred_contact,
         internal_notes,
         quoted_price,
-        is_hidden
-      `)
+        is_hidden,
+	fault_photo_url
+`)
       .order('created_at', { ascending: false })
     if (error) throw error
     const allJobs = ((data || []) as RepairRequest[]).map((job) => ({
@@ -1632,7 +1633,7 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
-                  className={styles.miniButton}
+                  className={styles.actionButton}
                   onClick={clearArchiveSelection}
                   disabled={bulkBusy || selectedArchiveJobIds.length === 0}
                 >
