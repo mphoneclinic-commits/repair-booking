@@ -62,7 +62,7 @@ export default function useAdminInvoices({
     }))
   }
 
- async function createInvoiceForJob(job: RepairRequest) {
+async function createInvoiceForJob(job: RepairRequest) {
   setInvoiceActionState(job.id, 'saving')
   setError('')
 
@@ -234,7 +234,8 @@ export default function useAdminInvoices({
     setInvoiceActionState(job.id, 'error')
     setError(err instanceof Error ? err.message : 'Failed to refresh invoice')
   }
-}
+
+
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: insertedInvoice.id,
     })
