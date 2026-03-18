@@ -590,6 +590,13 @@ useEffect(() => {
     setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
   }, [filteredHiddenJobs])
 
+if (!authChecked) {
+  return (
+    <main className={styles.page}>
+      <p className={styles.message}>Checking access...</p>
+    </main>
+  )
+}
 
   return (
     <main className={styles.page}>
