@@ -635,8 +635,6 @@ if (!authChecked) {
           <button type="button" onClick={() => void loadAllData()} className={styles.button}>
             Refresh
           </button>
-        </div>
-      </div>
 <button
   type="button"
   className={styles.viewButton}
@@ -646,6 +644,9 @@ if (!authChecked) {
   }}
 >
   Sign Out
+        </div>
+      </div>
+
 </button>
       <div className={styles.summaryGrid}>
         <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
