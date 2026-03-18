@@ -856,16 +856,10 @@ async function sendInvoiceEmail() {
               Back to Invoices
             </Link>
 
-            {invoice.status !== 'draft' && (
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => void updateInvoiceStatus('draft')}
-                disabled={updatingStatus}
-              >
-                Restore Draft
-              </button>
-            )}
+<Link href="/admin" className={styles.secondaryButton}>
+  Back to Dashboard
+</Link>
+
 
             {invoice.status === 'draft' && (
               <button
