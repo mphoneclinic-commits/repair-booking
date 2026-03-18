@@ -4,9 +4,9 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import jsPDF from 'jspdf'
-import type { Invoice, InvoiceItem } from '../admin/types'
-import { formatDateTime } from '../admin/utils'
-import styles from '../admin/invoice/invoice.module.css'
+import type { Invoice, InvoiceItem } from '../../admin/types'
+import { formatDateTime } from '../../admin/utils'
+import styles from '../../admin/invoice/invoice.module.css'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,12 +43,18 @@ export default function PublicInvoicePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+
     const params = new URLSearchParams(window.location.search)
     setInvoiceId(params.get('id') || '')
   }, [])
 
   useEffect(() => {
-    if (!invoiceId) return
+    if (!invoiceId) {
+      setLoading(false)
+      setError('Missing invoice ID')
+      return
+    }
+
     void loadInvoice(invoiceId)
   }, [invoiceId])
 
