@@ -480,89 +480,90 @@ export default function InvoicePrintPage() {
     setUpdatingStatus(false)
   }
 
-  async function sendInvoiceEmail() {
-    if (!invoice) return
+async function sendInvoiceEmail() {
+  if (!invoice) return
 
-    const targetEmail = sendToEmail.trim()
+  const targetEmail = sendToEmail.trim()
 
-    if (!targetEmail) {
-      setEmailSendError('Please enter an email address to send the invoice to.')
-      setEmailSendSuccess('')
-      return
-    }
-
-    setSendingInvoiceEmail(true)
-    setEmailSendError('')
+  if (!targetEmail) {
+    setEmailSendError('Please enter an email address to send the invoice to.')
     setEmailSendSuccess('')
-    setError('')
-    setSuccessMessage('')
-
-    try {
-      const baseUrl = window.location.origin
-const invoiceUrl = `${baseUrl}/invoice/${invoice.id}`
-
-      const response = await fetch('/.netlify/functions/send-invoice-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: targetEmail,
-          customerName: invoice.customer_name,
-          invoiceNumber: invoice.invoice_number,
-          invoiceUrl,
-          total: formatCurrency(invoice.total),
-        }),
-      })
-
-      const rawText = await response.text()
-
-      let data: any = {}
-      try {
-        data = rawText ? JSON.parse(rawText) : {}
-      } catch {
-        throw new Error(rawText || `Server returned ${response.status} with invalid response`)
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.error || `Failed to send invoice email (${response.status})`)
-      }
-
-      const nowIso = new Date().toISOString()
-
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({
-          sent_at: nowIso,
-          sent_to_email: targetEmail,
-        })
-        .eq('id', invoice.id)
-
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
-
-      setInvoice((prev) =>
-        prev
-          ? {
-              ...prev,
-              sent_at: nowIso,
-              sent_to_email: targetEmail,
-            }
-          : null
-      )
-
-      setEmailSendSuccess(`Invoice emailed to ${targetEmail}.`)
-      setSuccessMessage('Invoice email sent successfully.')
-    } catch (err) {
-      setEmailSendError(
-        err instanceof Error ? err.message : 'Failed to send invoice email'
-      )
-    } finally {
-      setSendingInvoiceEmail(false)
-    }
+    return
   }
 
+  setSendingInvoiceEmail(true)
+  setEmailSendError('')
+  setEmailSendSuccess('')
+  setError('')
+  setSuccessMessage('')
+
+  try {
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || window.location.origin
+
+    const invoiceUrl = `${baseUrl}/invoice/toCustomer?id=${invoice.id}`
+
+    const response = await fetch('/.netlify/functions/send-invoice-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: targetEmail,
+        customerName: invoice.customer_name,
+        invoiceNumber: invoice.invoice_number,
+        invoiceUrl,
+        total: formatCurrency(invoice.total),
+      }),
+    })
+
+    const rawText = await response.text()
+    let data: any = {}
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {}
+    } catch {
+      throw new Error(rawText || 'Server returned an invalid response')
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to send invoice email')
+    }
+
+    const nowIso = new Date().toISOString()
+
+    const { error: updateError } = await supabase
+      .from('invoices')
+      .update({
+        sent_at: nowIso,
+        sent_to_email: targetEmail,
+      })
+      .eq('id', invoice.id)
+
+    if (updateError) {
+      throw new Error(updateError.message)
+    }
+
+    setInvoice((prev) =>
+      prev
+        ? {
+            ...prev,
+            sent_at: nowIso,
+            sent_to_email: targetEmail,
+          }
+        : null
+    )
+
+    setEmailSendSuccess(`Invoice emailed to ${targetEmail}.`)
+    setSuccessMessage('Invoice email sent successfully.')
+  } catch (err) {
+    setEmailSendError(
+      err instanceof Error ? err.message : 'Failed to send invoice email'
+    )
+  } finally {
+    setSendingInvoiceEmail(false)
+  }
+}
   async function deleteInvoice() {
     if (!invoice) return
 
