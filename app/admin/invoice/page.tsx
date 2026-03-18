@@ -501,7 +501,7 @@ export default function InvoicePrintPage() {
       const baseUrl = window.location.origin
       const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
 
-      const response = await fetch('/api/admin/send-invoice-email', {
+      const response = await fetch('/.netlify/functions/send-invoice-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
