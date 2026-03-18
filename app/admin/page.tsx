@@ -590,13 +590,7 @@ useEffect(() => {
     setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
   }, [filteredHiddenJobs])
 
-if (!authChecked) {
-  return (
-    <main className={styles.page}>
-      <p className={styles.message}>Checking access...</p>
-    </main>
-  )
-}
+
   return (
     <main className={styles.page}>
       <div className={styles.topBar}>
@@ -635,7 +629,6 @@ if (!authChecked) {
           <button type="button" onClick={() => void loadAllData()} className={styles.button}>
             Refresh
           </button>
-        </div>
 <button
   type="button"
   className={styles.viewButton}
@@ -645,9 +638,10 @@ if (!authChecked) {
   }}
 >
   Sign Out
+</button>
+        </div>
       </div>
 
-</button>
       <div className={styles.summaryGrid}>
         <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
         <SummaryCard label="Quoted" value={String(summary.quotedCount)} />
