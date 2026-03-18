@@ -346,6 +346,42 @@ const {
     setFieldSaved(id, 'status')
   }
 
+async function updateRepairPerformed(id: string, repairPerformed: string) {
+  setFieldState(id, 'repair_performed', 'saving')
+
+  const { data, error } = await supabase
+    .from('repair_requests')
+    .update({ repair_performed: repairPerformed })
+    .eq('id', id)
+    .select('id, repair_performed')
+    .single()
+
+  if (error) {
+    setFieldState(id, 'repair_performed', 'error')
+    return false
+  }
+
+  const nextValue =
+    typeof data?.repair_performed === 'string'
+      ? data.repair_performed
+      : data?.repair_performed ?? ''
+
+  setJobs((prev) =>
+    prev.map((job) =>
+      job.id === id ? { ...job, repair_performed: nextValue } : job
+    )
+  )
+
+  setHiddenJobs((prev) =>
+    prev.map((job) =>
+      job.id === id ? { ...job, repair_performed: nextValue } : job
+    )
+  )
+
+  setFieldSaved(id, 'repair_performed')
+  return true
+}
+
   async function updateQuote(id: string, price: number | null) {
     setFieldState(id, 'quote', 'saving')
 
@@ -676,6 +712,7 @@ useEffect(() => {
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
                             updateNotes={updateNotes}
+updateRepairPerformed={updateRepairPerformed}
                             updateJobBasics={updateJobBasics}
                             statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                             quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
@@ -858,6 +895,7 @@ useEffect(() => {
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
                               updateNotes={updateNotes}
+updateRepairPerformed={updateRepairPerformed}
                               updateJobBasics={updateJobBasics}
                               statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                               quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
@@ -998,6 +1036,7 @@ useEffect(() => {
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
                 updateNotes={updateNotes}
+updateRepairPerformed={updateRepairPerformed}
                 updateJobBasics={updateJobBasics}
                 statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                 quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
@@ -1104,6 +1143,7 @@ useEffect(() => {
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
                     updateNotes={updateNotes}
+updateRepairPerformed={updateRepairPerformed}
                     updateJobBasics={updateJobBasics}
                     statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                     quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}

@@ -19,19 +19,19 @@ export default function useAdminData() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  function normalizeJob(raw: RepairRequest): RepairRequest {
+  const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
     return {
       ...raw,
       internal_notes: raw.internal_notes ?? '',
-      repair_performed: raw.repair_performed ?? '',
       quoted_price: raw.quoted_price ?? null,
       serial_imei: raw.serial_imei ?? null,
       is_hidden: Boolean(raw.is_hidden),
       fault_photo_url: raw.fault_photo_url ?? null,
+      repair_performed: raw.repair_performed ?? '',
     }
-  }
+  }, [])
 
-  function normalizeInvoice(raw: Invoice): Invoice {
+  const normalizeInvoice = useCallback((raw: Invoice): Invoice => {
     return {
       ...raw,
       tax_rate: Number(raw.tax_rate ?? 0),
@@ -39,10 +39,12 @@ export default function useAdminData() {
       tax_amount: Number(raw.tax_amount ?? 0),
       subtotal: Number(raw.subtotal ?? 0),
       total: Number(raw.total ?? 0),
+      customer_visible_notes: raw.customer_visible_notes ?? null,
+      internal_reference_notes: raw.internal_reference_notes ?? null,
     }
-  }
+  }, [])
 
-  function normalizeInvoiceItem(raw: InvoiceItem): InvoiceItem {
+  const normalizeInvoiceItem = useCallback((raw: InvoiceItem): InvoiceItem => {
     return {
       ...raw,
       qty: Number(raw.qty ?? 0),
@@ -50,7 +52,7 @@ export default function useAdminData() {
       line_total: Number(raw.line_total ?? 0),
       sort_order: Number(raw.sort_order ?? 0),
     }
-  }
+  }, [])
 
   const loadJobs = useCallback(async () => {
     const { data, error } = await supabase
@@ -83,7 +85,7 @@ export default function useAdminData() {
 
     setJobs(allJobs.filter((job) => !job.is_hidden))
     setHiddenJobs(allJobs.filter((job) => job.is_hidden))
-  }, [])
+  }, [normalizeJob])
 
   const loadInvoices = useCallback(async () => {
     const { data, error } = await supabase
@@ -104,6 +106,8 @@ export default function useAdminData() {
         subtotal,
         total,
         notes,
+        customer_visible_notes,
+        internal_reference_notes,
         issued_at,
         paid_at,
         sent_at,
@@ -124,7 +128,7 @@ export default function useAdminData() {
     }
 
     setInvoicesByJobId(latestByJob)
-  }, [])
+  }, [normalizeInvoice])
 
   const loadInvoiceItems = useCallback(async () => {
     const { data, error } = await supabase
@@ -146,79 +150,85 @@ export default function useAdminData() {
 
     const grouped: Record<string, InvoiceItem[]> = {}
 
-    for (const raw of (data || []) as InvoiceItem[]) {
-      const item = normalizeInvoiceItem(raw)
-      if (!grouped[item.invoice_id]) grouped[item.invoice_id] = []
-      grouped[item.invoice_id].push(item)
+    for (const item of (data || []) as InvoiceItem[]) {
+      const invoiceId = item.invoice_id
+      if (!grouped[invoiceId]) grouped[invoiceId] = []
+      grouped[invoiceId].push(normalizeInvoiceItem(item))
     }
 
     setInvoiceItemsByInvoiceId(grouped)
-  }, [])
+  }, [normalizeInvoiceItem])
 
-  const refreshInvoiceById = useCallback(async (invoiceId: string) => {
-    const { data: invoiceData, error: invoiceError } = await supabase
-      .from('invoices')
-      .select(`
-        id,
-        repair_request_id,
-        invoice_number,
-        status,
-        customer_name,
-        customer_phone,
-        customer_email,
-        bill_to_address,
-        tax_mode,
-        tax_rate,
-        subtotal_ex_tax,
-        tax_amount,
-        subtotal,
-        total,
-        notes,
-        issued_at,
-        paid_at,
-        sent_at,
-        sent_to_email,
-        created_at,
-        updated_at
-      `)
-      .eq('id', invoiceId)
-      .single()
+  const refreshInvoiceById = useCallback(
+    async (invoiceId: string) => {
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from('invoices')
+        .select(`
+          id,
+          repair_request_id,
+          invoice_number,
+          status,
+          customer_name,
+          customer_phone,
+          customer_email,
+          bill_to_address,
+          tax_mode,
+          tax_rate,
+          subtotal_ex_tax,
+          tax_amount,
+          subtotal,
+          total,
+          notes,
+          customer_visible_notes,
+          internal_reference_notes,
+          issued_at,
+          paid_at,
+          sent_at,
+          sent_to_email,
+          created_at,
+          updated_at
+        `)
+        .eq('id', invoiceId)
+        .single()
 
-    if (invoiceError || !invoiceData) {
-      throw invoiceError || new Error('Failed to refresh invoice')
-    }
+      if (invoiceError || !invoiceData) {
+        throw invoiceError || new Error('Failed to refresh invoice')
+      }
 
-    const { data: itemsData, error: itemsError } = await supabase
-      .from('invoice_items')
-      .select(`
-        id,
-        invoice_id,
-        description,
-        qty,
-        unit_price,
-        line_total,
-        sort_order,
-        created_at
-      `)
-      .eq('invoice_id', invoiceId)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true })
+      const normalizedInvoice = normalizeInvoice(invoiceData as Invoice)
 
-    if (itemsError) throw itemsError
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('invoice_items')
+        .select(`
+          id,
+          invoice_id,
+          description,
+          qty,
+          unit_price,
+          line_total,
+          sort_order,
+          created_at
+        `)
+        .eq('invoice_id', invoiceId)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
-    const normalizedInvoice = normalizeInvoice(invoiceData as Invoice)
-    const normalizedItems = ((itemsData || []) as InvoiceItem[]).map(normalizeInvoiceItem)
+      if (itemsError) throw itemsError
 
-    setInvoicesByJobId((prev) => ({
-      ...prev,
-      [normalizedInvoice.repair_request_id]: normalizedInvoice,
-    }))
+      const normalizedItems = ((itemsData || []) as InvoiceItem[]).map(normalizeInvoiceItem)
 
-    setInvoiceItemsByInvoiceId((prev) => ({
-      ...prev,
-      [invoiceId]: normalizedItems,
-    }))
-  }, [])
+      setInvoicesByJobId((prev) => ({
+        ...prev,
+        [normalizedInvoice.repair_request_id]: normalizedInvoice,
+      }))
+
+      setInvoiceItemsByInvoiceId((prev) => ({
+        ...prev,
+        [invoiceId]: normalizedItems,
+      }))
+    },
+    [normalizeInvoice, normalizeInvoiceItem]
+  )
 
   const loadAllData = useCallback(async () => {
     setLoading(true)
@@ -244,15 +254,16 @@ export default function useAdminData() {
     invoiceItemsByInvoiceId,
     setInvoiceItemsByInvoiceId,
     loading,
+    setLoading,
     error,
     setError,
-    loadJobs,
-    loadInvoices,
-    loadInvoiceItems,
-    loadAllData,
-    refreshInvoiceById,
     normalizeJob,
     normalizeInvoice,
     normalizeInvoiceItem,
+    loadJobs,
+    loadInvoices,
+    loadInvoiceItems,
+    refreshInvoiceById,
+    loadAllData,
   }
 }
