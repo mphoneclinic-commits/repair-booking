@@ -24,22 +24,20 @@ import {
 } from './utils'
 import SummaryCard from './components/SummaryCard'
 import JobCard from './components/JobCard'
-type InvoiceActionState = 'idle' | 'saving' | 'error'
-type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
+
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 
-
 export default function AdminPage() {
- 
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isAdminSignedIn, setIsAdminSignedIn] = useState(false)
+
   const [showHidden, setShowHidden] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
-
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('board')
   const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({})
-
 
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
 
@@ -65,7 +63,6 @@ export default function AdminPage() {
 
   const {
     saveStates,
-    getFieldKey,
     setFieldState,
     setFieldSaved,
   } = useAdminSaveStates()
@@ -90,96 +87,110 @@ export default function AdminPage() {
     refreshInvoiceById,
     normalizeJob,
     normalizeInvoice,
-    normalizeInvoiceItem,
   } = useAdminData()
 
- const {
-  invoiceActionStates,
-  invoiceItemsActionStates,
-  createInvoiceForJob,
-  updateInvoiceStatusForJob,
-  addInvoiceItemForInvoice,
-  updateInvoiceItemForInvoice,
-  deleteInvoiceItemForInvoice,
-  removeInvoiceForJob,
-} = useAdminInvoices({
-  supabase,
-  invoicesByJobId,
-  setInvoicesByJobId,
-  invoiceItemsByInvoiceId,
-  setInvoiceItemsByInvoiceId,
-  setJobs,
-  setHiddenJobs,
-  setHighlightedJobId,
-  setError,
-  loadInvoices,
-  loadInvoiceItems,
-  refreshInvoiceById,
-  normalizeJob,
-  normalizeInvoice,
-})
-const {
-  hideJob,
-  unhideJob,
-  bulkHideArchiveJobs,
-  bulkUnhideHiddenJobs,
-  bulkUpdateArchiveStatus,
-  bulkDuplicateArchiveJobs,
-  bulkDeleteArchiveJobs,
-  bulkDeleteHiddenJobs,
-} = useAdminArchiveActions({
-  supabase,
-  jobs,
-  hiddenJobs,
-  invoicesByJobId,
-  invoiceItemsByInvoiceId,
-  highlightedJobId,
-  selectedArchiveJobIds,
-  selectedHiddenJobIds,
-  setJobs,
-  setHiddenJobs,
-  setInvoicesByJobId,
-  setInvoiceItemsByInvoiceId,
-  setHighlightedJobId,
-  setSelectedArchiveJobIds,
-  setSelectedHiddenJobIds,
-  setBulkBusy,
-  setError,
-  normalizeJob,
-})
+  const {
+    invoiceActionStates,
+    invoiceItemsActionStates,
+    createInvoiceForJob,
+    updateInvoiceStatusForJob,
+    addInvoiceItemForInvoice,
+    updateInvoiceItemForInvoice,
+    deleteInvoiceItemForInvoice,
+    removeInvoiceForJob,
+  } = useAdminInvoices({
+    supabase,
+    invoicesByJobId,
+    setInvoicesByJobId,
+    invoiceItemsByInvoiceId,
+    setInvoiceItemsByInvoiceId,
+    setJobs,
+    setHiddenJobs,
+    setHighlightedJobId,
+    setError,
+    loadInvoices,
+    loadInvoiceItems,
+    refreshInvoiceById,
+    normalizeJob,
+    normalizeInvoice,
+  })
 
-const {
-  draggedJobId,
-  dragOverStatus,
-  handleDragStart,
-  handleDragEnd,
-  handleColumnDragOver,
-  handleColumnDragLeave,
-  handleColumnDrop,
-} = useAdminDragDrop({
-  jobs,
-  updateStatus,
-  setHighlightedJobId,
-})
+  const {
+    hideJob,
+    unhideJob,
+    bulkHideArchiveJobs,
+    bulkUnhideHiddenJobs,
+    bulkUpdateArchiveStatus,
+    bulkDuplicateArchiveJobs,
+    bulkDeleteArchiveJobs,
+    bulkDeleteHiddenJobs,
+  } = useAdminArchiveActions({
+    supabase,
+    jobs,
+    hiddenJobs,
+    invoicesByJobId,
+    invoiceItemsByInvoiceId,
+    highlightedJobId,
+    selectedArchiveJobIds,
+    selectedHiddenJobIds,
+    setJobs,
+    setHiddenJobs,
+    setInvoicesByJobId,
+    setInvoiceItemsByInvoiceId,
+    setHighlightedJobId,
+    setSelectedArchiveJobIds,
+    setSelectedHiddenJobIds,
+    setBulkBusy,
+    setError,
+    normalizeJob,
+  })
 
-const {
-  filteredJobs,
-  filteredHiddenJobs,
-  jobsByStatus,
-  sortedArchiveJobsByStatus,
-  sortedHiddenJobs,
-  summary,
-  archiveJobs,
-} = useAdminDerivedState({
-  jobs,
-  hiddenJobs,
-  invoicesByJobId,
-  search,
-  statusFilter,
-  archiveSort,
-  hiddenSort,
-})
+  const {
+    filteredJobs,
+    filteredHiddenJobs,
+    jobsByStatus,
+    sortedArchiveJobsByStatus,
+    sortedHiddenJobs,
+    summary,
+    archiveJobs,
+  } = useAdminDerivedState({
+    jobs,
+    hiddenJobs,
+    invoicesByJobId,
+    search,
+    statusFilter,
+    archiveSort,
+    hiddenSort,
+  })
 
+  useEffect(() => {
+    async function checkAuth() {
+      const { data, error } = await supabase.auth.getUser()
+
+      if (error || !data.user) {
+        window.location.href = '/admin/login'
+        return
+      }
+
+      setIsAdminSignedIn(true)
+      setAuthChecked(true)
+    }
+
+    void checkAuth()
+  }, [supabase])
+
+  useEffect(() => {
+    if (!authChecked || !isAdminSignedIn) return
+    void loadAllData()
+  }, [authChecked, isAdminSignedIn, loadAllData])
+
+  if (!authChecked) {
+    return (
+      <main className={styles.page}>
+        <p className={styles.message}>Checking access...</p>
+      </main>
+    )
+  }
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
       ...prev,
@@ -345,7 +356,19 @@ const {
 
     setFieldSaved(id, 'status')
   }
-
+const {
+  draggedJobId,
+  dragOverStatus,
+  handleDragStart,
+  handleDragEnd,
+  handleColumnDragOver,
+  handleColumnDragLeave,
+  handleColumnDrop,
+} = useAdminDragDrop({
+  jobs,
+  updateStatus,
+  setHighlightedJobId,
+})
 async function updateRepairPerformed(id: string, repairPerformed: string) {
   setFieldState(id, 'repair_performed', 'saving')
 
@@ -532,9 +555,7 @@ useEffect(() => {
   }
 }, [])
 
-useEffect(() => {
-  void loadAllData()
-}, [loadAllData])
+
 
 useEffect(() => {
   if (typeof window === 'undefined') return
@@ -615,7 +636,16 @@ useEffect(() => {
           </button>
         </div>
       </div>
-
+<button
+  type="button"
+  className={styles.viewButton}
+  onClick={async () => {
+    await supabase.auth.signOut()
+    window.location.href = '/admin/login'
+  }}
+>
+  Sign Out
+</button>
       <div className={styles.summaryGrid}>
         <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
         <SummaryCard label="Quoted" value={String(summary.quotedCount)} />
