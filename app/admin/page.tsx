@@ -635,6 +635,7 @@ if (!authChecked) {
           <button type="button" onClick={() => void loadAllData()} className={styles.button}>
             Refresh
           </button>
+        </div>
 <button
   type="button"
   className={styles.viewButton}
@@ -644,7 +645,6 @@ if (!authChecked) {
   }}
 >
   Sign Out
-        </div>
       </div>
 
 </button>
