@@ -40,48 +40,7 @@ const ALLOWED_IMAGE_TYPES = [
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 
-export default function JobCard({
-  job,
-  expanded,
-  toggleExpanded,
-  updateStatus,
-  updateQuote,
-  updateNotes,
-  updateRepairPerformed,
-  updateJobBasics,
-  statusSaveState,
-  quoteSaveState,
-  notesSaveState,
-  repairPerformedSaveState,
-  jobNumberSaveState,
-  customerSaveState,
-  deviceSaveState,
-  setFieldState,
-  draggableEnabled = false,
-  isDragging = false,
-  onDragStart,
-  onDragEnd,
-  invoice,
-  invoiceItems,
-  invoiceActionState,
-  invoiceItemsActionState,
-  createInvoiceForJob,
-  updateInvoiceStatusForJob,
-  addInvoiceItemForInvoice,
-  updateInvoiceItemForInvoice,
-  deleteInvoiceItemForInvoice,
-  removeInvoiceForJob,
-  highlighted = false,
-  cardRef,
-  onSelectCard,
-  compact = false,
-  onDuplicateJob,
-  selectable = false,
-  selected = false,
-  onToggleSelected,
-  onHideJob,
-  onUnhideJob,
-}: {
+type Props = {
   job: RepairRequest
   expanded: boolean
   toggleExpanded: (jobId: string) => void
@@ -143,7 +102,50 @@ export default function JobCard({
   onToggleSelected?: (jobId: string) => void
   onHideJob?: (jobId: string) => Promise<void>
   onUnhideJob?: (jobId: string) => Promise<void>
-}) {
+}
+
+export default function JobCard({
+  job,
+  expanded,
+  toggleExpanded,
+  updateStatus,
+  updateQuote,
+  updateNotes,
+  updateRepairPerformed,
+  updateJobBasics,
+  statusSaveState,
+  quoteSaveState,
+  notesSaveState,
+  repairPerformedSaveState,
+  jobNumberSaveState,
+  customerSaveState,
+  deviceSaveState,
+  setFieldState,
+  draggableEnabled = false,
+  isDragging = false,
+  onDragStart,
+  onDragEnd,
+  invoice,
+  invoiceItems,
+  invoiceActionState,
+  invoiceItemsActionState,
+  createInvoiceForJob,
+  updateInvoiceStatusForJob,
+  addInvoiceItemForInvoice,
+  updateInvoiceItemForInvoice,
+  deleteInvoiceItemForInvoice,
+  removeInvoiceForJob,
+  highlighted = false,
+  cardRef,
+  onSelectCard,
+  compact = false,
+  onDuplicateJob,
+  selectable = false,
+  selected = false,
+  onToggleSelected,
+  onHideJob,
+  onUnhideJob,
+}: Props) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
   const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed ?? '')
@@ -161,6 +163,7 @@ export default function JobCard({
     fault_description: job.fault_description,
   })
 
+  const [invoicePanelOpen, setInvoicePanelOpen] = useState(false)
   const [jobPhotos, setJobPhotos] = useState<RepairRequestPhoto[]>([])
   const [loadingPhotos, setLoadingPhotos] = useState(false)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
@@ -182,6 +185,12 @@ export default function JobCard({
   const jobNumberFocusedRef = useRef(false)
   const customerFocusedRef = useRef(false)
   const deviceFocusedRef = useRef(false)
+
+  useEffect(() => {
+    if (invoice) {
+      setInvoicePanelOpen(true)
+    }
+  }, [invoice])
 
   useEffect(() => {
     if (!quoteFocusedRef.current) setLocalQuote(job.quoted_price?.toString() ?? '')
@@ -1150,7 +1159,7 @@ export default function JobCard({
                   </button>
                 ) : null}
 
-                {isArchiveStatus ? (
+                {isArchiveStatus && !job.is_hidden ? (
                   <button
                     type="button"
                     className={styles.actionButton}
@@ -1273,31 +1282,54 @@ export default function JobCard({
               </div>
             </div>
 
-            <div onClick={(e) => e.stopPropagation()}>
-              <InvoicePanel
-                invoice={invoice}
-                items={invoiceItems}
-                actionState={invoiceActionState}
-                itemsActionState={invoiceItemsActionState}
-                onCreateInvoice={() => createInvoiceForJob(job)}
-                onUpdateInvoiceStatus={(status) => {
-                  if (!invoice) return Promise.resolve()
-                  return updateInvoiceStatusForJob(invoice.id, status)
-                }}
-                onAddInvoiceItem={() => {
-                  if (!invoice) return Promise.resolve()
-                  return addInvoiceItemForInvoice(invoice.id)
-                }}
-                onUpdateInvoiceItem={(itemId, updates) => {
-                  if (!invoice) return Promise.resolve()
-                  return updateInvoiceItemForInvoice(invoice.id, itemId, updates)
-                }}
-                onDeleteInvoiceItem={(itemId) => {
-                  if (!invoice) return Promise.resolve()
-                  return deleteInvoiceItemForInvoice(invoice.id, itemId)
-                }}
-                onRemoveInvoice={() => removeInvoiceForJob(job)}
-              />
+            <div className={styles.expandedSectionCard}>
+              <div className={styles.inputTopRow}>
+                <div className={styles.expandedSectionTitle}>Invoice</div>
+
+                <div className={styles.buttonRow}>
+                  <div className={styles.readOnlyValue}>
+                    {invoice
+                      ? `${invoice.invoice_number} • ${invoice.status.toUpperCase()}`
+                      : 'No invoice'}
+                  </div>
+
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setInvoicePanelOpen((prev) => !prev)
+                    }}
+                  >
+                    {invoicePanelOpen ? 'Hide Invoice' : 'Show Invoice'}
+                  </button>
+                </div>
+              </div>
+
+              {invoicePanelOpen ? (
+                <InvoicePanel
+                  invoice={invoice}
+                  items={invoiceItems}
+                  actionState={invoiceActionState}
+                  itemsActionState={invoiceItemsActionState}
+                  onCreateInvoice={() => createInvoiceForJob(job)}
+                  onUpdateInvoiceStatus={(status) =>
+                    invoice ? updateInvoiceStatusForJob(invoice.id, status) : Promise.resolve()
+                  }
+                  onAddInvoiceItem={() =>
+                    invoice ? addInvoiceItemForInvoice(invoice.id) : Promise.resolve()
+                  }
+                  onUpdateInvoiceItem={(itemId, updates) =>
+                    invoice
+                      ? updateInvoiceItemForInvoice(invoice.id, itemId, updates)
+                      : Promise.resolve()
+                  }
+                  onDeleteInvoiceItem={(itemId) =>
+                    invoice ? deleteInvoiceItemForInvoice(invoice.id, itemId) : Promise.resolve()
+                  }
+                  onRemoveInvoice={() => removeInvoiceForJob(job)}
+                />
+              ) : null}
             </div>
           </div>
 

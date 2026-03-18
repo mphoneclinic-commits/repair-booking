@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem, InvoiceStatus, SaveState } from '../types'
+import { formatDateTime } from '../utils'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
@@ -166,10 +167,10 @@ export default function InvoicePanel({
 
     const description = draft.description.trim()
     const qty = Number(draft.qty)
-    const unit_price = Number(draft.unit_price)
+    const unitPrice = Number(draft.unit_price)
 
     const safeQty = Number.isFinite(qty) ? qty : 0
-    const safeUnitPrice = Number.isFinite(unit_price) ? unit_price : 0
+    const safeUnitPrice = Number.isFinite(unitPrice) ? unitPrice : 0
 
     if (
       description === item.description &&
@@ -203,10 +204,10 @@ export default function InvoicePanel({
   }
 
   return (
-    <div className={styles.expandedSectionCard}>
+    <div className={styles.mt12}>
       <div className={styles.inputTopRow}>
-        <div className={styles.expandedSectionTitle}>Invoice</div>
-        <div className={styles.helperText}>
+        <div className={styles.expandedSectionTitle}>Invoice Details</div>
+        <div className={styles.readOnlyValue}>
           {actionState === 'saving'
             ? 'Saving...'
             : actionState === 'error'
@@ -221,7 +222,7 @@ export default function InvoicePanel({
 
       {!invoice ? (
         <>
-          <p className={styles.summaryRow}>No invoice created for this job yet.</p>
+          <p className={styles.summaryRow}>No invoice created yet.</p>
 
           <div className={styles.buttonRow}>
             <button
@@ -249,12 +250,16 @@ export default function InvoicePanel({
 
             <div>
               <label className={styles.smallLabel}>Issued</label>
-              <div className={styles.readOnlyValue}>{invoice.issued_at || '-'}</div>
+              <div className={styles.readOnlyValue}>
+                {invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}
+              </div>
             </div>
 
             <div>
               <label className={styles.smallLabel}>Paid</label>
-              <div className={styles.readOnlyValue}>{invoice.paid_at || '-'}</div>
+              <div className={styles.readOnlyValue}>
+                {invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}
+              </div>
             </div>
 
             <div>
@@ -290,100 +295,79 @@ export default function InvoicePanel({
                   const stateLabel = getItemStateLabel(itemState)
 
                   return (
-                    <div key={item.id} className={styles.expandedSectionCard}>
-                      <div className={styles.inputTopRow}>
-                        <label className={styles.smallLabel}>Description</label>
-                        {stateLabel ? (
-                          <span className={styles.helperText}>{stateLabel}</span>
-                        ) : (
-                          <span className={styles.helperText}> </span>
-                        )}
-                      </div>
+<div key={item.id} className={styles.expandedSectionCard}>
+  <div className={styles.inputTopRow}>
+    <div className={styles.smallLabel}>Item Description</div>
+    {stateLabel ? (
+      <span className={styles.helperText}>{stateLabel}</span>
+    ) : (
+      <span className={styles.helperText}> </span>
+    )}
+  </div>
 
-                      <input
-                        value={draft.description}
-                        className={styles.smallField}
-                        onChange={(e) => {
-                          const nextDraft = {
-                            ...draft,
-                            description: e.target.value,
-                          }
-                          updateDraft(item.id, 'description', e.target.value)
-                          scheduleFlush(item, nextDraft)
-                        }}
-                        onBlur={async () => {
-                          if (saveTimersRef.current[item.id]) {
-                            clearTimeout(saveTimersRef.current[item.id]!)
-                          }
-                          await flushItem(item)
-                        }}
-                      />
+  <input
+    value={draft.description}
+    className={styles.smallField}
+    onChange={(e) => {
+      updateDraft(item.id, 'description', e.target.value)
+    }}
+    onBlur={async () => {
+      await flushItem(item)
+    }}
+    onClick={(e) => e.stopPropagation()}
+  />
 
-                      <div className={styles.twoCol}>
-                        <div>
-                          <label className={styles.smallLabel}>Qty</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={draft.qty}
-                            className={styles.smallField}
-                            onChange={(e) => {
-                              const nextDraft = {
-                                ...draft,
-                                qty: e.target.value,
-                              }
-                              updateDraft(item.id, 'qty', e.target.value)
-                              scheduleFlush(item, nextDraft)
-                            }}
-                            onBlur={async () => {
-                              if (saveTimersRef.current[item.id]) {
-                                clearTimeout(saveTimersRef.current[item.id]!)
-                              }
-                              await flushItem(item)
-                            }}
-                          />
-                        </div>
+  <div className={styles.twoCol}>
+    <div>
+      <label className={styles.smallLabel}>Qty</label>
+      <input
+        type="number"
+        step="0.01"
+        value={draft.qty}
+        className={styles.smallField}
+        onChange={(e) => {
+          updateDraft(item.id, 'qty', e.target.value)
+        }}
+        onBlur={async () => {
+          await flushItem(item)
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
 
-                        <div>
-                          <label className={styles.smallLabel}>Unit Price</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={draft.unit_price}
-                            className={styles.smallField}
-                            onChange={(e) => {
-                              const nextDraft = {
-                                ...draft,
-                                unit_price: e.target.value,
-                              }
-                              updateDraft(item.id, 'unit_price', e.target.value)
-                              scheduleFlush(item, nextDraft)
-                            }}
-                            onBlur={async () => {
-                              if (saveTimersRef.current[item.id]) {
-                                clearTimeout(saveTimersRef.current[item.id]!)
-                              }
-                              await flushItem(item)
-                            }}
-                          />
-                        </div>
-                      </div>
+    <div>
+      <label className={styles.smallLabel}>Unit Price</label>
+      <input
+        type="number"
+        step="0.01"
+        value={draft.unit_price}
+        className={styles.smallField}
+        onChange={(e) => {
+          updateDraft(item.id, 'unit_price', e.target.value)
+        }}
+        onBlur={async () => {
+          await flushItem(item)
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  </div>
 
-                      <p className={styles.summaryRow}>
-                        <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
-                      </p>
+  <p className={styles.summaryRow}>
+    <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
+  </p>
 
-                      <div className={styles.buttonRow}>
-                        <button
-                          type="button"
-                          className={styles.actionButton}
-                          onClick={() => void onDeleteInvoiceItem(item.id)}
-                          disabled={busy}
-                        >
-                          Delete Item
-                        </button>
-                      </div>
-                    </div>
+  <div className={styles.buttonRow}>
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={() => void onDeleteInvoiceItem(item.id)}
+      disabled={busy}
+    >
+      Delete Item
+    </button>
+  </div>
+</div>
                   )
                 })}
               </div>
