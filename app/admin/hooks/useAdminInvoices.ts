@@ -234,71 +234,7 @@ async function createInvoiceForJob(job: RepairRequest) {
     setInvoiceActionState(job.id, 'error')
     setError(err instanceof Error ? err.message : 'Failed to refresh invoice')
   }
-
-
-    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
-      p_invoice_id: insertedInvoice.id,
-    })
-
-    if (recalcError) {
-      await supabase.from('invoice_items').delete().eq('invoice_id', insertedInvoice.id)
-      await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
-      setInvoiceActionState(job.id, 'error')
-      setError(recalcError.message || 'Failed to recalculate invoice totals')
-      return
-    }
-
-    const { data: updatedJob, error: updateJobStatusError } = await supabase
-      .from('repair_requests')
-      .update({ status: 'ready' })
-      .eq('id', job.id)
-      .select(`
-        id,
-        job_number,
-        created_at,
-        full_name,
-        phone,
-        email,
-        brand,
-        model,
-        device_type,
-        serial_imei,
-        fault_description,
-        repair_performed,
-        status,
-        preferred_contact,
-        internal_notes,
-        quoted_price,
-        is_hidden,
-        fault_photo_url
-      `)
-      .single()
-
-    if (updateJobStatusError || !updatedJob) {
-      setInvoiceActionState(job.id, 'error')
-      setError(updateJobStatusError?.message || 'Invoice created but failed to update job status')
-      return
-    }
-
-    const normalizedUpdatedJob = normalizeJob(updatedJob as RepairRequest)
-
-    setJobs((prev) =>
-      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
-    )
-    setHiddenJobs((prev) =>
-      prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
-    )
-
-    try {
-      await refreshInvoiceById(insertedInvoice.id)
-      setInvoiceActionState(job.id, 'idle')
-      setInvoiceItemsActionState(insertedInvoice.id, 'idle')
-      setHighlightedJobId(job.id)
-    } catch (err) {
-      setInvoiceActionState(job.id, 'error')
-      setError(err instanceof Error ? err.message : 'Failed to refresh invoice')
-    }
-  }
+}
 
   async function updateInvoiceStatusForJob(invoiceId: string, status: InvoiceStatus) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
@@ -418,6 +354,8 @@ async function createInvoiceForJob(job: RepairRequest) {
       setInvoiceItemsActionState(invoiceId, 'error')
     }
   }
+
+
 async function updateInvoiceItemForInvoice(
   invoiceId: string,
   itemId: string,
