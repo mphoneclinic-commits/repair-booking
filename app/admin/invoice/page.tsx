@@ -54,6 +54,11 @@ export default function InvoicePrintPage() {
   const [customerNotesState, setCustomerNotesState] = useState<SaveState>('idle')
   const [internalNotesState, setInternalNotesState] = useState<SaveState>('idle')
 
+  const [sendToEmail, setSendToEmail] = useState('')
+  const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false)
+  const [emailSendError, setEmailSendError] = useState('')
+  const [emailSendSuccess, setEmailSendSuccess] = useState('')
+
   const customerNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const internalNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearCustomerSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,10 +72,6 @@ export default function InvoicePrintPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
-
-const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false)
-const [emailSendError, setEmailSendError] = useState('')
-const [emailSendSuccess, setEmailSendSuccess] = useState('')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -97,6 +98,8 @@ const [emailSendSuccess, setEmailSendSuccess] = useState('')
     setLoading(true)
     setError('')
     setSuccessMessage('')
+    setEmailSendError('')
+    setEmailSendSuccess('')
 
     try {
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -251,9 +254,12 @@ const [emailSendSuccess, setEmailSendSuccess] = useState('')
     void loadInvoicePage(invoiceId)
   }, [invoiceId])
 
-  function setSavedState(
-    which: 'customer' | 'internal'
-  ) {
+  useEffect(() => {
+    if (!invoice) return
+    setSendToEmail(invoice.customer_email || '')
+  }, [invoice?.id, invoice?.customer_email])
+
+  function setSavedState(which: 'customer' | 'internal') {
     if (which === 'customer') {
       setCustomerNotesState('saved')
       if (clearCustomerSavedTimerRef.current) clearTimeout(clearCustomerSavedTimerRef.current)
@@ -474,86 +480,88 @@ const [emailSendSuccess, setEmailSendSuccess] = useState('')
     setUpdatingStatus(false)
   }
 
-async function sendInvoiceEmail() {
-  if (!invoice) return
+  async function sendInvoiceEmail() {
+    if (!invoice) return
 
-  if (!invoice.customer_email) {
-    setEmailSendError('Customer email is missing on this invoice.')
+    const targetEmail = sendToEmail.trim()
+
+    if (!targetEmail) {
+      setEmailSendError('Please enter an email address to send the invoice to.')
+      setEmailSendSuccess('')
+      return
+    }
+
+    setSendingInvoiceEmail(true)
+    setEmailSendError('')
     setEmailSendSuccess('')
-    return
-  }
-
-  setSendingInvoiceEmail(true)
-  setEmailSendError('')
-  setEmailSendSuccess('')
-  setError('')
-  setSuccessMessage('')
-
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-    const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
-
-    const response = await fetch('/api/admin/send-invoice-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to: invoice.customer_email,
-        customerName: invoice.customer_name,
-        invoiceNumber: invoice.invoice_number,
-        invoiceUrl,
-        total: formatCurrency(invoice.total),
-      }),
-    })
-
-    const rawText = await response.text()
-    let data: any = {}
+    setError('')
+    setSuccessMessage('')
 
     try {
-      data = rawText ? JSON.parse(rawText) : {}
-    } catch {
-      throw new Error(rawText || 'Server returned invalid response')
-    }
+      const baseUrl = window.location.origin
+      const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
 
-    if (!response.ok) {
-      throw new Error(data?.error || 'Failed to send invoice email')
-    }
-
-    const nowIso = new Date().toISOString()
-
-    const { error: updateError } = await supabase
-      .from('invoices')
-      .update({
-        sent_at: nowIso,
-        sent_to_email: invoice.customer_email,
+      const response = await fetch('/api/admin/send-invoice-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: targetEmail,
+          customerName: invoice.customer_name,
+          invoiceNumber: invoice.invoice_number,
+          invoiceUrl,
+          total: formatCurrency(invoice.total),
+        }),
       })
-      .eq('id', invoice.id)
 
-    if (updateError) {
-      throw new Error(updateError.message)
+      const rawText = await response.text()
+
+      let data: any = {}
+      try {
+        data = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        throw new Error(rawText || `Server returned ${response.status} with invalid response`)
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to send invoice email (${response.status})`)
+      }
+
+      const nowIso = new Date().toISOString()
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({
+          sent_at: nowIso,
+          sent_to_email: targetEmail,
+        })
+        .eq('id', invoice.id)
+
+      if (updateError) {
+        throw new Error(updateError.message)
+      }
+
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              sent_at: nowIso,
+              sent_to_email: targetEmail,
+            }
+          : null
+      )
+
+      setEmailSendSuccess(`Invoice emailed to ${targetEmail}.`)
+      setSuccessMessage('Invoice email sent successfully.')
+    } catch (err) {
+      setEmailSendError(
+        err instanceof Error ? err.message : 'Failed to send invoice email'
+      )
+    } finally {
+      setSendingInvoiceEmail(false)
     }
-
-    setInvoice((prev) =>
-      prev
-        ? {
-            ...prev,
-            sent_at: nowIso,
-            sent_to_email: invoice.customer_email,
-          }
-        : null
-    )
-
-    setEmailSendSuccess(`Invoice emailed to ${invoice.customer_email}.`)
-    setSuccessMessage('Invoice email sent successfully.')
-  } catch (err) {
-    setEmailSendError(
-      err instanceof Error ? err.message : 'Failed to send invoice email'
-    )
-  } finally {
-    setSendingInvoiceEmail(false)
   }
-}
 
   async function deleteInvoice() {
     if (!invoice) return
@@ -912,14 +920,7 @@ async function sendInvoiceEmail() {
                 Restore Issued
               </button>
             )}
-<button
-  type="button"
-  className={styles.secondaryButton}
-  onClick={() => void sendInvoiceEmail()}
-  disabled={sendingInvoiceEmail}
->
-  {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
-</button>
+
             <button
               type="button"
               className={styles.printButton}
@@ -947,17 +948,43 @@ async function sendInvoiceEmail() {
           </div>
         </div>
 
-        {successMessage ? (
-          <div className={styles.successBanner}>{successMessage}</div>
-        ) : null}
-<button
-  type="button"
-  className={styles.secondaryButton}
-  onClick={() => void sendInvoiceEmail()}
-  disabled={sendingInvoiceEmail}
->
-  {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
-</button>
+        <div className={styles.notesSection}>
+          <div className={styles.inputTopRow}>
+            <div className={styles.sectionHeading}>Send Invoice Email</div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              type="email"
+              value={sendToEmail}
+              onChange={(e) => setSendToEmail(e.target.value)}
+              placeholder="Send invoice to another email..."
+              className={styles.notesInput}
+              style={{ minHeight: 44, flex: '1 1 320px' }}
+            />
+
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => void sendInvoiceEmail()}
+              disabled={sendingInvoiceEmail}
+            >
+              {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
+            </button>
+          </div>
+        </div>
+
+        {successMessage ? <div className={styles.successBanner}>{successMessage}</div> : null}
+        {emailSendSuccess ? <div className={styles.successBanner}>{emailSendSuccess}</div> : null}
+        {emailSendError ? <p className={styles.errorText}>{emailSendError}</p> : null}
+
         <article className={styles.document}>
           <header className={styles.header}>
             <div className={styles.businessDetails}>
@@ -996,17 +1023,15 @@ async function sendInvoiceEmail() {
                   ? formatDateTime(invoice.issued_at)
                   : formatDateTime(invoice.created_at)}
               </div>
-{invoice.sent_at ? (
-  <div className={styles.metaValue}>
-    Sent: {formatDateTime(invoice.sent_at)}
-  </div>
-) : null}
 
-{invoice.sent_to_email ? (
-  <div className={styles.metaValue}>
-    Sent to: {invoice.sent_to_email}
-  </div>
-) : null}
+              {invoice.sent_at ? (
+                <div className={styles.metaValue}>Sent: {formatDateTime(invoice.sent_at)}</div>
+              ) : null}
+
+              {invoice.sent_to_email ? (
+                <div className={styles.metaValue}>Sent to: {invoice.sent_to_email}</div>
+              ) : null}
+
               {isGroupedInvoice ? (
                 <div className={styles.metaValue}>{linkedJobs.length} linked jobs</div>
               ) : null}
@@ -1104,9 +1129,7 @@ async function sendInvoiceEmail() {
           {invoice.customer_visible_notes ? (
             <section className={styles.notesSection}>
               <div className={styles.sectionHeading}>Customer Note Preview</div>
-              <div className={styles.notesPreview}>
-                {invoice.customer_visible_notes}
-              </div>
+              <div className={styles.notesPreview}>{invoice.customer_visible_notes}</div>
             </section>
           ) : null}
 
