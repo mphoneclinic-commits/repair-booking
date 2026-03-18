@@ -14,6 +14,7 @@ type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 function sortJobs(list: RepairRequest[], sortMode: SortMode) {
   const copy = [...list]
 
+
   copy.sort((a, b) => {
     if (sortMode === 'newest') {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

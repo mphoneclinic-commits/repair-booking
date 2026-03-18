@@ -62,103 +62,179 @@ export default function useAdminInvoices({
     }))
   }
 
-  async function createInvoiceForJob(job: RepairRequest) {
-    const existing = invoicesByJobId[job.id]
-    if (existing) {
-      setError(`Job ${job.job_number || job.id} already has invoice ${existing.invoice_number}`)
-      return
-    }
+ async function createInvoiceForJob(job: RepairRequest) {
+  setInvoiceActionState(job.id, 'saving')
+  setError('')
 
-    setInvoiceActionState(job.id, 'saving')
-    setError('')
+  const { data: existingInvoice, error: existingInvoiceError } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, repair_request_id')
+    .eq('repair_request_id', job.id)
+    .maybeSingle()
 
-    const { data: invoiceNumberData, error: invoiceNumberError } = await supabase.rpc(
-      'generate_invoice_number'
+  if (existingInvoiceError) {
+    setInvoiceActionState(job.id, 'error')
+    setError(existingInvoiceError.message || 'Failed to check existing invoice')
+    return
+  }
+
+  if (existingInvoice) {
+    setInvoiceActionState(job.id, 'error')
+    setError(
+      `Job ${job.job_number || job.id} already has invoice ${existingInvoice.invoice_number}`
     )
+    return
+  }
 
-    if (invoiceNumberError || !invoiceNumberData) {
-      setInvoiceActionState(job.id, 'error')
-      setError(invoiceNumberError?.message || 'Failed to generate invoice number')
-      return
-    }
+  const { data: invoiceNumberData, error: invoiceNumberError } = await supabase.rpc(
+    'generate_invoice_number'
+  )
 
-    const invoiceNumber = String(invoiceNumberData)
-    const amount = Number(job.quoted_price ?? 0)
-    const defaultDescription =
-      (job.repair_performed || job.internal_notes || `Repair service for ${job.brand} ${job.model}`).trim()
-    const nowIso = new Date().toISOString()
+  if (invoiceNumberError || !invoiceNumberData) {
+    setInvoiceActionState(job.id, 'error')
+    setError(invoiceNumberError?.message || 'Failed to generate invoice number')
+    return
+  }
 
-    const { data: insertedInvoice, error: invoiceInsertError } = await supabase
-      .from('invoices')
-      .insert({
-        repair_request_id: job.id,
-        invoice_number: invoiceNumber,
-        status: 'issued',
-        customer_name: job.full_name,
-        customer_phone: job.phone,
-        customer_email: job.email,
-        tax_mode: 'exclusive',
-        tax_rate: 0.1,
-        subtotal_ex_tax: amount,
-        tax_amount: 0,
-        subtotal: amount,
-        total: amount,
-        notes: job.internal_notes || null,
-        issued_at: nowIso,
-      })
-      .select(`
-        id,
-        repair_request_id,
-        invoice_number,
-        status,
-        customer_name,
-        customer_phone,
-        customer_email,
-        bill_to_address,
-        tax_mode,
-        tax_rate,
-        subtotal_ex_tax,
-        tax_amount,
-        subtotal,
-        total,
-        notes,
-        customer_visible_notes,
-        internal_reference_notes,
-        issued_at,
-        paid_at,
-        sent_at,
-        sent_to_email,
-        created_at,
-        updated_at
-      `)
-      .single()
+  const invoiceNumber = String(invoiceNumberData)
+  const amount = Number(job.quoted_price ?? 0)
+  const defaultDescription = (
+    job.repair_performed ||
+    job.internal_notes ||
+    `Repair service for ${job.brand} ${job.model}`
+  ).trim()
+  const nowIso = new Date().toISOString()
 
-    if (invoiceInsertError || !insertedInvoice) {
-      setInvoiceActionState(job.id, 'error')
-      if (invoiceInsertError?.message?.toLowerCase().includes('duplicate')) {
-        setError('This job already has an invoice and cannot be invoiced again.')
-      } else {
-        setError(invoiceInsertError?.message || 'Failed to create invoice')
-      }
-      return
-    }
-
-    const { error: itemInsertError } = await supabase.from('invoice_items').insert({
-      invoice_id: insertedInvoice.id,
-      description: defaultDescription || 'Repair service',
-      qty: 1,
-      unit_price: amount,
-      line_total: amount,
-      sort_order: 0,
+  const { data: insertedInvoice, error: invoiceInsertError } = await supabase
+    .from('invoices')
+    .insert({
+      repair_request_id: job.id,
+      invoice_number: invoiceNumber,
+      status: 'issued',
+      customer_name: job.full_name,
+      customer_phone: job.phone,
+      customer_email: job.email,
+      tax_mode: 'exclusive',
+      tax_rate: 0.1,
+      subtotal_ex_tax: amount,
+      tax_amount: 0,
+      subtotal: amount,
+      total: amount,
+      notes: job.internal_notes || null,
+      issued_at: nowIso,
     })
+    .select(`
+      id,
+      repair_request_id,
+      invoice_number,
+      status,
+      customer_name,
+      customer_phone,
+      customer_email,
+      bill_to_address,
+      tax_mode,
+      tax_rate,
+      subtotal_ex_tax,
+      tax_amount,
+      subtotal,
+      total,
+      notes,
+      customer_visible_notes,
+      internal_reference_notes,
+      issued_at,
+      paid_at,
+      sent_at,
+      sent_to_email,
+      created_at,
+      updated_at
+    `)
+    .single()
 
-    if (itemInsertError) {
-      await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
-      setInvoiceActionState(job.id, 'error')
-      setError(itemInsertError.message || 'Failed to create invoice item')
-      return
-    }
+  if (invoiceInsertError || !insertedInvoice) {
+    setInvoiceActionState(job.id, 'error')
+    setError(invoiceInsertError?.message || 'Failed to create invoice')
+    return
+  }
 
+  const { error: itemInsertError } = await supabase.from('invoice_items').insert({
+    invoice_id: insertedInvoice.id,
+    description: defaultDescription || 'Repair service',
+    qty: 1,
+    unit_price: amount,
+    line_total: amount,
+    sort_order: 0,
+  })
+
+  if (itemInsertError) {
+    await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
+    setInvoiceActionState(job.id, 'error')
+    setError(itemInsertError.message || 'Failed to create invoice item')
+    return
+  }
+
+  const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
+    p_invoice_id: insertedInvoice.id,
+  })
+
+  if (recalcError) {
+    await supabase.from('invoice_items').delete().eq('invoice_id', insertedInvoice.id)
+    await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
+    setInvoiceActionState(job.id, 'error')
+    setError(recalcError.message || 'Failed to recalculate invoice totals')
+    return
+  }
+
+  const { data: updatedJob, error: updateJobStatusError } = await supabase
+    .from('repair_requests')
+    .update({ status: 'ready' })
+    .eq('id', job.id)
+    .select(`
+      id,
+      job_number,
+      created_at,
+      full_name,
+      phone,
+      email,
+      brand,
+      model,
+      device_type,
+      serial_imei,
+      fault_description,
+      repair_performed,
+      status,
+      preferred_contact,
+      internal_notes,
+      quoted_price,
+      is_hidden,
+      fault_photo_url
+    `)
+    .single()
+
+  if (updateJobStatusError || !updatedJob) {
+    setInvoiceActionState(job.id, 'error')
+    setError(updateJobStatusError?.message || 'Invoice created but failed to update job status')
+    return
+  }
+
+  const normalizedUpdatedJob = normalizeJob(updatedJob as RepairRequest)
+
+  setJobs((prev) =>
+    prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
+  )
+  setHiddenJobs((prev) =>
+    prev.map((existingJob) => (existingJob.id === job.id ? normalizedUpdatedJob : existingJob))
+  )
+
+  try {
+    await refreshInvoiceById(insertedInvoice.id)
+    setInvoiceActionState(job.id, 'idle')
+    setInvoiceItemsActionState(insertedInvoice.id, 'idle')
+    setHighlightedJobId(job.id)
+  } catch (err) {
+    setInvoiceActionState(job.id, 'error')
+    setError(err instanceof Error ? err.message : 'Failed to refresh invoice')
+  }
+}
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: insertedInvoice.id,
     })
