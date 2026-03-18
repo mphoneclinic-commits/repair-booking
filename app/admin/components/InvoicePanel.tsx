@@ -43,7 +43,7 @@ export default function InvoicePanel({
   onDeleteInvoiceItem: (itemId: string) => Promise<void>
   onRemoveInvoice: () => Promise<void>
 }) {
-  const busy = actionState === 'saving'
+  const busy = actionState === 'saving' || itemsActionState === 'saving'
 
   const [drafts, setDrafts] = useState<ItemDraftMap>({})
   const [itemSaveStates, setItemSaveStates] = useState<Record<string, SaveState>>({})
@@ -58,16 +58,18 @@ export default function InvoicePanel({
       const next: ItemDraftMap = {}
 
       for (const item of items) {
-        const currentState = itemSaveStates[item.id] || 'idle'
-        const keepLocal = currentState === 'dirty' || currentState === 'saving'
+        const itemState = itemSaveStates[item.id] || 'idle'
+        const shouldPreserveLocal = itemState === 'dirty' || itemState === 'saving'
 
-        next[item.id] = keepLocal && prev[item.id]
-          ? prev[item.id]
-          : {
-              description: item.description ?? '',
-              qty: String(item.qty ?? 1),
-              unit_price: String(item.unit_price ?? 0),
-            }
+        if (shouldPreserveLocal && prev[item.id]) {
+          next[item.id] = prev[item.id]
+        } else {
+          next[item.id] = {
+            description: item.description,
+            qty: String(item.qty),
+            unit_price: String(item.unit_price),
+          }
+        }
       }
 
       return next
@@ -121,9 +123,9 @@ export default function InvoicePanel({
   function getDraft(item: InvoiceItem) {
     return (
       drafts[item.id] || {
-        description: item.description ?? '',
-        qty: String(item.qty ?? 1),
-        unit_price: String(item.unit_price ?? 0),
+        description: item.description,
+        qty: String(item.qty),
+        unit_price: String(item.unit_price),
       }
     )
   }
@@ -162,12 +164,12 @@ export default function InvoicePanel({
     const draft = explicitDraft || drafts[item.id]
     if (!draft) return
 
-    const description = draft.description
+    const description = draft.description.trim()
     const qty = Number(draft.qty)
-    const unitPrice = Number(draft.unit_price)
+    const unit_price = Number(draft.unit_price)
 
     const safeQty = Number.isFinite(qty) ? qty : 0
-    const safeUnitPrice = Number.isFinite(unitPrice) ? unitPrice : 0
+    const safeUnitPrice = Number.isFinite(unit_price) ? unit_price : 0
 
     if (
       description === item.description &&
@@ -204,7 +206,7 @@ export default function InvoicePanel({
     <div className={styles.expandedSectionCard}>
       <div className={styles.inputTopRow}>
         <div className={styles.expandedSectionTitle}>Invoice</div>
-        <div className={styles.readOnlyValue}>
+        <div className={styles.helperText}>
           {actionState === 'saving'
             ? 'Saving...'
             : actionState === 'error'
@@ -270,6 +272,135 @@ export default function InvoicePanel({
             </div>
           </div>
 
+          <div className={styles.mt12}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Invoice Items</div>
+              <div className={styles.helperText}>
+                {items.length} item{items.length === 1 ? '' : 's'}
+              </div>
+            </div>
+
+            {items.length === 0 ? (
+              <p className={styles.summaryRow}>No invoice items yet.</p>
+            ) : (
+              <div className={styles.formGrid}>
+                {items.map((item) => {
+                  const draft = getDraft(item)
+                  const itemState = itemSaveStates[item.id] || 'idle'
+                  const stateLabel = getItemStateLabel(itemState)
+
+                  return (
+                    <div key={item.id} className={styles.expandedSectionCard}>
+                      <div className={styles.inputTopRow}>
+                        <label className={styles.smallLabel}>Description</label>
+                        {stateLabel ? (
+                          <span className={styles.helperText}>{stateLabel}</span>
+                        ) : (
+                          <span className={styles.helperText}> </span>
+                        )}
+                      </div>
+
+                      <input
+                        value={draft.description}
+                        className={styles.smallField}
+                        onChange={(e) => {
+                          const nextDraft = {
+                            ...draft,
+                            description: e.target.value,
+                          }
+                          updateDraft(item.id, 'description', e.target.value)
+                          scheduleFlush(item, nextDraft)
+                        }}
+                        onBlur={async () => {
+                          if (saveTimersRef.current[item.id]) {
+                            clearTimeout(saveTimersRef.current[item.id]!)
+                          }
+                          await flushItem(item)
+                        }}
+                      />
+
+                      <div className={styles.twoCol}>
+                        <div>
+                          <label className={styles.smallLabel}>Qty</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={draft.qty}
+                            className={styles.smallField}
+                            onChange={(e) => {
+                              const nextDraft = {
+                                ...draft,
+                                qty: e.target.value,
+                              }
+                              updateDraft(item.id, 'qty', e.target.value)
+                              scheduleFlush(item, nextDraft)
+                            }}
+                            onBlur={async () => {
+                              if (saveTimersRef.current[item.id]) {
+                                clearTimeout(saveTimersRef.current[item.id]!)
+                              }
+                              await flushItem(item)
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className={styles.smallLabel}>Unit Price</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={draft.unit_price}
+                            className={styles.smallField}
+                            onChange={(e) => {
+                              const nextDraft = {
+                                ...draft,
+                                unit_price: e.target.value,
+                              }
+                              updateDraft(item.id, 'unit_price', e.target.value)
+                              scheduleFlush(item, nextDraft)
+                            }}
+                            onBlur={async () => {
+                              if (saveTimersRef.current[item.id]) {
+                                clearTimeout(saveTimersRef.current[item.id]!)
+                              }
+                              await flushItem(item)
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <p className={styles.summaryRow}>
+                        <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
+                      </p>
+
+                      <div className={styles.buttonRow}>
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void onDeleteInvoiceItem(item.id)}
+                          disabled={busy}
+                        >
+                          Delete Item
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void onAddInvoiceItem()}
+                disabled={busy}
+              >
+                Add Item
+              </button>
+            </div>
+          </div>
+
           <div className={styles.buttonRow}>
             <Link
               href={`/admin/invoice?id=${invoice.id}&jobId=${invoice.repair_request_id}`}
@@ -330,137 +461,6 @@ export default function InvoicePanel({
             >
               Remove Invoice
             </button>
-          </div>
-
-          <div className={styles.mt12}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Invoice Items</div>
-              <div className={styles.readOnlyValue}>
-                {items.length} item{items.length === 1 ? '' : 's'}
-              </div>
-            </div>
-
-            {items.length === 0 ? (
-              <p className={styles.summaryRow}>No invoice items yet.</p>
-            ) : (
-              <div className={styles.formGrid}>
-                {items.map((item) => {
-                  const draft = getDraft(item)
-                  const itemState = itemSaveStates[item.id] || 'idle'
-                  const stateLabel = getItemStateLabel(itemState)
-
-                  const liveQty = Number(draft.qty)
-                  const liveUnitPrice = Number(draft.unit_price)
-                  const liveLineTotal =
-                    (Number.isFinite(liveQty) ? liveQty : 0) *
-                    (Number.isFinite(liveUnitPrice) ? liveUnitPrice : 0)
-
-                  return (
-                    <div key={item.id} className={styles.expandedSectionCard}>
-                      <div className={styles.inputTopRow}>
-                        <label className={styles.smallLabel}>Description</label>
-                        <div className={styles.readOnlyValue}>{stateLabel}</div>
-                      </div>
-
-                      <input
-                        value={draft.description}
-                        className={styles.smallField}
-                        onChange={(e) => {
-                          const nextDraft = {
-                            ...draft,
-                            description: e.target.value,
-                          }
-                          updateDraft(item.id, 'description', e.target.value)
-                          scheduleFlush(item, nextDraft)
-                        }}
-                        onBlur={async () => {
-                          if (saveTimersRef.current[item.id]) {
-                            clearTimeout(saveTimersRef.current[item.id]!)
-                          }
-                          await flushItem(item, getDraft(item))
-                        }}
-                      />
-
-                      <div className={styles.twoCol}>
-                        <div>
-                          <label className={styles.smallLabel}>Qty</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={draft.qty}
-                            className={styles.smallField}
-                            onChange={(e) => {
-                              const nextDraft = {
-                                ...draft,
-                                qty: e.target.value,
-                              }
-                              updateDraft(item.id, 'qty', e.target.value)
-                              scheduleFlush(item, nextDraft)
-                            }}
-                            onBlur={async () => {
-                              if (saveTimersRef.current[item.id]) {
-                                clearTimeout(saveTimersRef.current[item.id]!)
-                              }
-                              await flushItem(item, getDraft(item))
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label className={styles.smallLabel}>Unit Price</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={draft.unit_price}
-                            className={styles.smallField}
-                            onChange={(e) => {
-                              const nextDraft = {
-                                ...draft,
-                                unit_price: e.target.value,
-                              }
-                              updateDraft(item.id, 'unit_price', e.target.value)
-                              scheduleFlush(item, nextDraft)
-                            }}
-                            onBlur={async () => {
-                              if (saveTimersRef.current[item.id]) {
-                                clearTimeout(saveTimersRef.current[item.id]!)
-                              }
-                              await flushItem(item, getDraft(item))
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <p className={styles.summaryRow}>
-                        <strong>Line Total:</strong> ${Number(liveLineTotal).toFixed(2)}
-                      </p>
-
-                      <div className={styles.buttonRow}>
-                        <button
-                          type="button"
-                          className={styles.actionButton}
-                          onClick={() => void onDeleteInvoiceItem(item.id)}
-                          disabled={busy}
-                        >
-                          Delete Item
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <div className={styles.buttonRow}>
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={() => void onAddInvoiceItem()}
-                disabled={busy || itemsActionState === 'saving'}
-              >
-                {itemsActionState === 'saving' ? 'Adding...' : 'Add Item'}
-              </button>
-            </div>
           </div>
         </>
       )}
