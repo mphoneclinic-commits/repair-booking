@@ -451,7 +451,7 @@ export default function InvoicePrintPage() {
       if (openJobIds.length > 0) {
         const { error: closeError } = await supabase
           .from('repair_requests')
-          .update({ status: 'closed' })
+          .update({ status: 'ready' })
           .in('id', openJobIds)
 
         if (!closeError) {
@@ -499,7 +499,7 @@ export default function InvoicePrintPage() {
 
     try {
       const baseUrl = window.location.origin
-      const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
+const invoiceUrl = `${baseUrl}/invoice/${invoice.id}`
 
       const response = await fetch('/.netlify/functions/send-invoice-email', {
         method: 'POST',

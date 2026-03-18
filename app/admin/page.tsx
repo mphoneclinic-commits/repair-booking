@@ -1287,10 +1287,10 @@ export default function AdminPage() {
       return
     }
 
-    const { data: updatedJob, error: closeJobError } = await supabase
-      .from('repair_requests')
-      .update({ status: 'closed' })
-      .eq('id', job.id)
+const { data: updatedJob, error: updateJobStatusError } = await supabase
+  .from('repair_requests')
+  .update({ status: 'ready' })
+  .eq('id', job.id)
       .select(`
         id,
         job_number,
@@ -1312,11 +1312,11 @@ export default function AdminPage() {
       `)
       .single()
 
-    if (closeJobError || !updatedJob) {
-      setInvoiceActionState(job.id, 'error')
-      setError(closeJobError?.message || 'Invoice created but failed to close job')
-      return
-    }
+if (updateJobStatusError || !updatedJob) {
+  setInvoiceActionState(job.id, 'error')
+  setError(updateJobStatusError?.message || 'Invoice created but failed to update job status')
+  return
+}
 
     const normalizedUpdatedJob = normalizeJob(updatedJob as RepairRequest)
 
