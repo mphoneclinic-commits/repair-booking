@@ -92,6 +92,7 @@ export type StatusFilter = 'all' | RepairStatus
 export type SaveField =
   | 'status'
   | 'quote'
+| 'repair_performed'
   | 'notes'
   | 'job_number'
   | 'customer'

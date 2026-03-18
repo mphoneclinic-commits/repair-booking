@@ -4,24 +4,18 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem, InvoiceStatus, SaveState } from '../types'
-import SaveIndicator from './SaveIndicator'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
 
-type ItemDraft = {
-  description: string
-  qty: string
-  unit_price: string
-}
-
-type ItemDraftMap = Record<string, ItemDraft>
-type ItemFocusState = {
-  description: boolean
-  qty: boolean
-  unit_price: boolean
-}
-type ItemFocusMap = Record<string, ItemFocusState>
+type ItemDraftMap = Record<
+  string,
+  {
+    description: string
+    qty: string
+    unit_price: string
+  }
+>
 
 export default function InvoicePanel({
   invoice,
@@ -49,11 +43,10 @@ export default function InvoicePanel({
   onDeleteInvoiceItem: (itemId: string) => Promise<void>
   onRemoveInvoice: () => Promise<void>
 }) {
-  const busy = actionState === 'saving' || itemsActionState === 'saving'
+  const busy = actionState === 'saving'
 
   const [drafts, setDrafts] = useState<ItemDraftMap>({})
   const [itemSaveStates, setItemSaveStates] = useState<Record<string, SaveState>>({})
-  const [itemFocus, setItemFocus] = useState<ItemFocusMap>({})
 
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({})
   const clearSavedTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({})
@@ -65,29 +58,16 @@ export default function InvoicePanel({
       const next: ItemDraftMap = {}
 
       for (const item of items) {
-        const currentDraft = prev[item.id]
         const currentState = itemSaveStates[item.id] || 'idle'
-        const focusState = itemFocus[item.id] || {
-          description: false,
-          qty: false,
-          unit_price: false,
-        }
+        const keepLocal = currentState === 'dirty' || currentState === 'saving'
 
-        const preserveLocal =
-          currentState === 'dirty' ||
-          currentState === 'saving' ||
-          focusState.description ||
-          focusState.qty ||
-          focusState.unit_price
-
-        next[item.id] =
-          preserveLocal && currentDraft
-            ? currentDraft
-            : {
-                description: item.description ?? '',
-                qty: String(item.qty ?? 1),
-                unit_price: String(item.unit_price ?? 0),
-              }
+        next[item.id] = keepLocal && prev[item.id]
+          ? prev[item.id]
+          : {
+              description: item.description ?? '',
+              qty: String(item.qty ?? 1),
+              unit_price: String(item.unit_price ?? 0),
+            }
       }
 
       return next
@@ -100,19 +80,7 @@ export default function InvoicePanel({
       }
       return next
     })
-
-    setItemFocus((prev) => {
-      const next: ItemFocusMap = {}
-      for (const item of items) {
-        next[item.id] = prev[item.id] || {
-          description: false,
-          qty: false,
-          unit_price: false,
-        }
-      }
-      return next
-    })
-  }, [itemIdsSignature]) // critical fix: do NOT depend on itemSaveStates or itemFocus
+  }, [itemIdsSignature, items])
 
   useEffect(() => {
     return () => {
@@ -150,25 +118,7 @@ export default function InvoicePanel({
     }, 1300)
   }
 
-  function setFocus(
-    itemId: string,
-    key: keyof ItemFocusState,
-    value: boolean
-  ) {
-    setItemFocus((prev) => ({
-      ...prev,
-      [itemId]: {
-        ...(prev[itemId] || {
-          description: false,
-          qty: false,
-          unit_price: false,
-        }),
-        [key]: value,
-      },
-    }))
-  }
-
-  function getDraft(item: InvoiceItem): ItemDraft {
+  function getDraft(item: InvoiceItem) {
     return (
       drafts[item.id] || {
         description: item.description ?? '',
@@ -178,7 +128,11 @@ export default function InvoicePanel({
     )
   }
 
-  function updateDraft(itemId: string, key: keyof ItemDraft, value: string) {
+  function updateDraft(
+    itemId: string,
+    key: 'description' | 'qty' | 'unit_price',
+    value: string
+  ) {
     setDrafts((prev) => ({
       ...prev,
       [itemId]: {
@@ -190,24 +144,25 @@ export default function InvoicePanel({
         [key]: value,
       },
     }))
+
     setItemState(itemId, 'dirty')
   }
 
-  function scheduleFlush(item: InvoiceItem, explicitDraft?: ItemDraft) {
+  function scheduleFlush(item: InvoiceItem, nextDraft?: ItemDraftMap[string]) {
     if (saveTimersRef.current[item.id]) {
       clearTimeout(saveTimersRef.current[item.id]!)
     }
 
     saveTimersRef.current[item.id] = setTimeout(() => {
-      void flushItem(item, explicitDraft)
+      void flushItem(item, nextDraft)
     }, 700)
   }
 
-  async function flushItem(item: InvoiceItem, explicitDraft?: ItemDraft) {
+  async function flushItem(item: InvoiceItem, explicitDraft?: ItemDraftMap[string]) {
     const draft = explicitDraft || drafts[item.id]
     if (!draft) return
 
-    const description = draft.description.trim() || 'Item'
+    const description = draft.description
     const qty = Number(draft.qty)
     const unitPrice = Number(draft.unit_price)
 
@@ -215,9 +170,9 @@ export default function InvoicePanel({
     const safeUnitPrice = Number.isFinite(unitPrice) ? unitPrice : 0
 
     if (
-      description === (item.description ?? '') &&
-      safeQty === Number(item.qty ?? 0) &&
-      safeUnitPrice === Number(item.unit_price ?? 0)
+      description === item.description &&
+      safeQty === Number(item.qty) &&
+      safeUnitPrice === Number(item.unit_price)
     ) {
       setItemState(item.id, 'idle')
       return
@@ -231,33 +186,18 @@ export default function InvoicePanel({
         qty: safeQty,
         unit_price: safeUnitPrice,
       })
-
-      setDrafts((prev) => ({
-        ...prev,
-        [item.id]: {
-          description,
-          qty: String(safeQty),
-          unit_price: String(safeUnitPrice),
-        },
-      }))
-
       setItemSaved(item.id)
     } catch {
       setItemState(item.id, 'error')
     }
   }
 
-  async function handleBlur(
-    item: InvoiceItem,
-    key: keyof ItemFocusState
-  ) {
-    setFocus(item.id, key, false)
-
-    if (saveTimersRef.current[item.id]) {
-      clearTimeout(saveTimersRef.current[item.id]!)
-    }
-
-    await flushItem(item)
+  function getItemStateLabel(state: SaveState) {
+    if (state === 'dirty') return 'Typing...'
+    if (state === 'saving') return 'Saving...'
+    if (state === 'saved') return 'Saved'
+    if (state === 'error') return 'Error'
+    return ''
   }
 
   return (
@@ -280,6 +220,7 @@ export default function InvoicePanel({
       {!invoice ? (
         <>
           <p className={styles.summaryRow}>No invoice created for this job yet.</p>
+
           <div className={styles.buttonRow}>
             <button
               type="button"
@@ -406,24 +347,38 @@ export default function InvoicePanel({
                 {items.map((item) => {
                   const draft = getDraft(item)
                   const itemState = itemSaveStates[item.id] || 'idle'
+                  const stateLabel = getItemStateLabel(itemState)
+
+                  const liveQty = Number(draft.qty)
+                  const liveUnitPrice = Number(draft.unit_price)
+                  const liveLineTotal =
+                    (Number.isFinite(liveQty) ? liveQty : 0) *
+                    (Number.isFinite(liveUnitPrice) ? liveUnitPrice : 0)
 
                   return (
                     <div key={item.id} className={styles.expandedSectionCard}>
                       <div className={styles.inputTopRow}>
                         <label className={styles.smallLabel}>Description</label>
-                        <SaveIndicator state={itemState} compact />
+                        <div className={styles.readOnlyValue}>{stateLabel}</div>
                       </div>
 
                       <input
                         value={draft.description}
                         className={styles.smallField}
-                        onFocus={() => setFocus(item.id, 'description', true)}
                         onChange={(e) => {
-                          const nextDraft = { ...draft, description: e.target.value }
+                          const nextDraft = {
+                            ...draft,
+                            description: e.target.value,
+                          }
                           updateDraft(item.id, 'description', e.target.value)
                           scheduleFlush(item, nextDraft)
                         }}
-                        onBlur={() => void handleBlur(item, 'description')}
+                        onBlur={async () => {
+                          if (saveTimersRef.current[item.id]) {
+                            clearTimeout(saveTimersRef.current[item.id]!)
+                          }
+                          await flushItem(item, getDraft(item))
+                        }}
                       />
 
                       <div className={styles.twoCol}>
@@ -434,13 +389,20 @@ export default function InvoicePanel({
                             step="0.01"
                             value={draft.qty}
                             className={styles.smallField}
-                            onFocus={() => setFocus(item.id, 'qty', true)}
                             onChange={(e) => {
-                              const nextDraft = { ...draft, qty: e.target.value }
+                              const nextDraft = {
+                                ...draft,
+                                qty: e.target.value,
+                              }
                               updateDraft(item.id, 'qty', e.target.value)
                               scheduleFlush(item, nextDraft)
                             }}
-                            onBlur={() => void handleBlur(item, 'qty')}
+                            onBlur={async () => {
+                              if (saveTimersRef.current[item.id]) {
+                                clearTimeout(saveTimersRef.current[item.id]!)
+                              }
+                              await flushItem(item, getDraft(item))
+                            }}
                           />
                         </div>
 
@@ -451,19 +413,26 @@ export default function InvoicePanel({
                             step="0.01"
                             value={draft.unit_price}
                             className={styles.smallField}
-                            onFocus={() => setFocus(item.id, 'unit_price', true)}
                             onChange={(e) => {
-                              const nextDraft = { ...draft, unit_price: e.target.value }
+                              const nextDraft = {
+                                ...draft,
+                                unit_price: e.target.value,
+                              }
                               updateDraft(item.id, 'unit_price', e.target.value)
                               scheduleFlush(item, nextDraft)
                             }}
-                            onBlur={() => void handleBlur(item, 'unit_price')}
+                            onBlur={async () => {
+                              if (saveTimersRef.current[item.id]) {
+                                clearTimeout(saveTimersRef.current[item.id]!)
+                              }
+                              await flushItem(item, getDraft(item))
+                            }}
                           />
                         </div>
                       </div>
 
                       <p className={styles.summaryRow}>
-                        <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
+                        <strong>Line Total:</strong> ${Number(liveLineTotal).toFixed(2)}
                       </p>
 
                       <div className={styles.buttonRow}>
@@ -487,9 +456,9 @@ export default function InvoicePanel({
                 type="button"
                 className={styles.actionButton}
                 onClick={() => void onAddInvoiceItem()}
-                disabled={busy}
+                disabled={busy || itemsActionState === 'saving'}
               >
-                Add Item
+                {itemsActionState === 'saving' ? 'Adding...' : 'Add Item'}
               </button>
             </div>
           </div>

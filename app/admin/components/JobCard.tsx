@@ -21,8 +21,6 @@ import {
 } from '../utils'
 import SaveIndicator from './SaveIndicator'
 import InvoicePanel from './InvoicePanel'
-import useAutosaveField from '../hooks/useAutosaveField'
-import useAutosaveObject from '../hooks/useAutosaveObject'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,10 +47,12 @@ export default function JobCard({
   updateStatus,
   updateQuote,
   updateNotes,
+  updateRepairPerformed,
   updateJobBasics,
   statusSaveState,
   quoteSaveState,
   notesSaveState,
+  repairPerformedSaveState,
   jobNumberSaveState,
   customerSaveState,
   deviceSaveState,
@@ -88,6 +88,7 @@ export default function JobCard({
   updateStatus: (id: string, newStatus: RepairStatus) => Promise<void>
   updateQuote: (id: string, price: number | null) => Promise<boolean>
   updateNotes: (id: string, notes: string) => Promise<boolean>
+  updateRepairPerformed: (id: string, value: string) => Promise<boolean>
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -109,6 +110,7 @@ export default function JobCard({
   statusSaveState: SaveState
   quoteSaveState: SaveState
   notesSaveState: SaveState
+  repairPerformedSaveState: SaveState
   jobNumberSaveState: SaveState
   customerSaveState: SaveState
   deviceSaveState: SaveState
@@ -144,6 +146,7 @@ export default function JobCard({
 }) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
+  const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed ?? '')
   const [localJobNumber, setLocalJobNumber] = useState(job.job_number ?? '')
   const [customerDraft, setCustomerDraft] = useState({
     full_name: job.full_name,
@@ -168,32 +171,34 @@ export default function JobCard({
 
   const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const repairPerformedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const jobNumberTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const customerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const deviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const quoteFocusedRef = useRef(false)
   const notesFocusedRef = useRef(false)
+  const repairPerformedFocusedRef = useRef(false)
   const jobNumberFocusedRef = useRef(false)
   const customerFocusedRef = useRef(false)
   const deviceFocusedRef = useRef(false)
 
   useEffect(() => {
-    if (!quoteFocusedRef.current) {
-      setLocalQuote(job.quoted_price?.toString() ?? '')
-    }
+    if (!quoteFocusedRef.current) setLocalQuote(job.quoted_price?.toString() ?? '')
   }, [job.quoted_price])
 
   useEffect(() => {
-    if (!notesFocusedRef.current) {
-      setLocalNotes(job.internal_notes ?? '')
-    }
+    if (!notesFocusedRef.current) setLocalNotes(job.internal_notes ?? '')
   }, [job.internal_notes])
 
   useEffect(() => {
-    if (!jobNumberFocusedRef.current) {
-      setLocalJobNumber(job.job_number ?? '')
+    if (!repairPerformedFocusedRef.current) {
+      setLocalRepairPerformed(job.repair_performed ?? '')
     }
+  }, [job.repair_performed])
+
+  useEffect(() => {
+    if (!jobNumberFocusedRef.current) setLocalJobNumber(job.job_number ?? '')
   }, [job.job_number])
 
   useEffect(() => {
@@ -222,6 +227,7 @@ export default function JobCard({
     return () => {
       if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
       if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
+      if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
       if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
       if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
       if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
@@ -326,15 +332,11 @@ export default function JobCard({
       return
     }
 
-    const { data: urlData } = supabase.storage
-      .from('fault-photos')
-      .getPublicUrl(filePath)
+    const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
 
     const publicUrl = urlData.publicUrl
     const nextSortOrder =
-      jobPhotos.length > 0
-        ? Math.max(...jobPhotos.map((photo) => photo.sort_order)) + 1
-        : 0
+      jobPhotos.length > 0 ? Math.max(...jobPhotos.map((photo) => photo.sort_order)) + 1 : 0
 
     const { data: insertedPhoto, error: insertError } = await supabase
       .from('repair_request_photos')
@@ -444,6 +446,24 @@ export default function JobCard({
     } else {
       setFieldState(job.id, 'notes', 'saved')
       setTimeout(() => setFieldState(job.id, 'notes', 'idle'), 1300)
+    }
+  }
+
+  async function flushRepairPerformed(value: string) {
+    const currentDbValue = job.repair_performed ?? ''
+    if (value === currentDbValue) {
+      setFieldState(job.id, 'repair_performed', 'idle')
+      return
+    }
+
+    setFieldState(job.id, 'repair_performed', 'saving')
+    const success = await updateRepairPerformed(job.id, value)
+
+    if (!success) {
+      setFieldState(job.id, 'repair_performed', 'error')
+    } else {
+      setFieldState(job.id, 'repair_performed', 'saved')
+      setTimeout(() => setFieldState(job.id, 'repair_performed', 'idle'), 1300)
     }
   }
 
@@ -574,6 +594,14 @@ export default function JobCard({
     notesTimerRef.current = setTimeout(() => void flushNotes(value), 900)
   }
 
+  function handleRepairPerformedChange(value: string) {
+    setLocalRepairPerformed(value)
+    setFieldState(job.id, 'repair_performed', 'dirty')
+
+    if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
+    repairPerformedTimerRef.current = setTimeout(() => void flushRepairPerformed(value), 900)
+  }
+
   function handleJobNumberChange(value: string) {
     setLocalJobNumber(value)
     setFieldState(job.id, 'job_number', 'dirty')
@@ -582,10 +610,7 @@ export default function JobCard({
     jobNumberTimerRef.current = setTimeout(() => void flushJobNumber(value), 700)
   }
 
-  function handleCustomerDraftChange(
-    key: 'full_name' | 'phone' | 'email',
-    value: string
-  ) {
+  function handleCustomerDraftChange(key: 'full_name' | 'phone' | 'email', value: string) {
     const next = {
       ...customerDraft,
       [key]: key === 'phone' ? normalizePhone(value) : value,
@@ -624,6 +649,12 @@ export default function JobCard({
     notesFocusedRef.current = false
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
     await flushNotes(localNotes)
+  }
+
+  async function handleRepairPerformedBlur() {
+    repairPerformedFocusedRef.current = false
+    if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
+    await flushRepairPerformed(localRepairPerformed)
   }
 
   async function handleJobNumberBlur() {
@@ -713,9 +744,7 @@ export default function JobCard({
         </div>
         <div>
           <div className={styles.sectionLabel}>Quote</div>
-          <p className={styles.metaText}>
-            {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-          </p>
+          <p className={styles.metaText}>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</p>
         </div>
       </div>
 
@@ -743,9 +772,7 @@ export default function JobCard({
         draggableEnabled ? styles.jobCardDraggable : ''
       } ${isDragging ? styles.jobCardDragging : ''} ${
         highlighted ? styles.jobCardHighlighted : ''
-      } ${compact ? styles.jobCardCompact : ''} ${
-        selected ? styles.jobCardSelected : ''
-      }`}
+      } ${compact ? styles.jobCardCompact : ''} ${selected ? styles.jobCardSelected : ''}`}
       draggable={draggableEnabled}
       onDragStart={handleCardDragStart}
       onDragEnd={handleCardDragEnd}
@@ -806,9 +833,7 @@ export default function JobCard({
 
             <div>
               <div className={styles.sectionLabel}>Quote</div>
-              <p className={styles.metaText}>
-                {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-              </p>
+              <p className={styles.metaText}>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</p>
             </div>
           </div>
         )
@@ -1017,13 +1042,31 @@ export default function JobCard({
                       onSelectCard?.(job.id)
                     }}
                     onBlur={() => void handleDeviceBlur()}
-                    onChange={(e) =>
-                      handleDeviceDraftChange('fault_description', e.target.value)
-                    }
+                    onChange={(e) => handleDeviceDraftChange('fault_description', e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
               </div>
+            </div>
+
+            <div className={styles.expandedSectionCard}>
+              <div className={styles.inputTopRow}>
+                <label className={styles.expandedSectionTitle}>Repair Performed</label>
+                <SaveIndicator state={repairPerformedSaveState} />
+              </div>
+
+              <textarea
+                value={localRepairPerformed}
+                placeholder="Screen replacement, battery replacement, charging port repair, housing swap..."
+                className={styles.notesField}
+                onFocus={() => {
+                  repairPerformedFocusedRef.current = true
+                  onSelectCard?.(job.id)
+                }}
+                onBlur={() => void handleRepairPerformedBlur()}
+                onChange={(e) => handleRepairPerformedChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
 
             <div className={styles.expandedSectionCard}>
@@ -1069,7 +1112,7 @@ export default function JobCard({
 
               <textarea
                 value={localNotes}
-                placeholder="Diagnostics, parts ordered, quote sent, approval received, reminders..."
+                placeholder="Diagnostics, parts ordered, supplier info, reminders, private workshop notes..."
                 className={styles.notesField}
                 onFocus={() => {
                   notesFocusedRef.current = true
@@ -1142,9 +1185,7 @@ export default function JobCard({
                 <div className={styles.expandedSectionTitle}>
                   Fault Photos ({jobPhotos.length}/{MAX_PHOTOS})
                 </div>
-                {loadingPhotos ? (
-                  <span className={styles.uploadingText}>Loading...</span>
-                ) : null}
+                {loadingPhotos ? <span className={styles.uploadingText}>Loading...</span> : null}
               </div>
 
               {jobPhotos.length > 0 ? (
@@ -1165,36 +1206,34 @@ export default function JobCard({
                         />
                       </a>
 
-<div className={styles.faultPhotoThumbActions}>
-  <a
-    href={photo.photo_url}
-    target="_blank"
-    rel="noreferrer"
-    className={styles.photoActionButton}
-    onClick={(e) => e.stopPropagation()}
-  >
-    Open
-  </a>
+                      <div className={styles.faultPhotoThumbActions}>
+                        <a
+                          href={photo.photo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={styles.photoActionButton}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Open
+                        </a>
 
-  <button
-    type="button"
-    className={styles.miniDangerButton}
-    disabled={deletingPhotoId === photo.id}
-    onClick={(e) => {
-      e.stopPropagation()
-      void handleDeletePhoto(photo)
-    }}
-  >
-    {deletingPhotoId === photo.id ? 'Deleting...' : 'Delete'}
-  </button>
-</div>
+                        <button
+                          type="button"
+                          className={styles.miniDangerButton}
+                          disabled={deletingPhotoId === photo.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleDeletePhoto(photo)
+                          }}
+                        >
+                          {deletingPhotoId === photo.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
                     </div>
                   ))}
 
                   {jobPhotos.length > 4 ? (
-                    <div className={styles.morePhotosBadge}>
-                      +{jobPhotos.length - 4} more
-                    </div>
+                    <div className={styles.morePhotosBadge}>+{jobPhotos.length - 4} more</div>
                   ) : null}
                 </div>
               ) : (
@@ -1212,9 +1251,7 @@ export default function JobCard({
 
                 {photoFile ? (
                   <div className={styles.faultPhotoSelectedRow}>
-                    <span className={styles.faultPhotoSelectedName}>
-                      Selected: {photoFile.name}
-                    </span>
+                    <span className={styles.faultPhotoSelectedName}>Selected: {photoFile.name}</span>
                     <button
                       type="button"
                       onClick={() => void handlePhotoUpload()}
