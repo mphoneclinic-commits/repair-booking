@@ -184,13 +184,7 @@ export default function AdminPage() {
     void loadAllData()
   }, [authChecked, isAdminSignedIn, loadAllData])
 
-  if (!authChecked) {
-    return (
-      <main className={styles.page}>
-        <p className={styles.message}>Checking access...</p>
-      </main>
-    )
-  }
+
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
       ...prev,
@@ -596,6 +590,13 @@ useEffect(() => {
     setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
   }, [filteredHiddenJobs])
 
+if (!authChecked) {
+  return (
+    <main className={styles.page}>
+      <p className={styles.message}>Checking access...</p>
+    </main>
+  )
+}
   return (
     <main className={styles.page}>
       <div className={styles.topBar}>

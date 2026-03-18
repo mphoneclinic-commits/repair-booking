@@ -17,11 +17,12 @@ export default function AdminLoginPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
+async function handleLogin(e: React.FormEvent) {
+  e.preventDefault()
+  setBusy(true)
+  setError('')
 
+  try {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -35,7 +36,11 @@ export default function AdminLoginPage() {
 
     router.push('/admin')
     router.refresh()
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Login failed')
+    setBusy(false)
   }
+}
 
   return (
     <main className={styles.page}>
