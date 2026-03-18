@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     if (!to || !invoiceNumber || !invoiceUrl) {
       return NextResponse.json(
-        { success: false, error: 'Missing required email fields' },
+        { error: 'Missing required email fields' },
         { status: 400 }
       )
     }
@@ -35,10 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (!host || !user || !pass || !from) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'SMTP env vars are missing on the deployed function',
-        },
+        { error: 'SMTP env vars are missing on server' },
         { status: 500 }
       )
     }
@@ -47,14 +44,12 @@ export async function POST(request: NextRequest) {
       host,
       port,
       secure,
-      auth: {
-        user,
-        pass,
-      },
+      auth: { user, pass },
     })
 
     const safeName = customerName?.trim() || 'Customer'
     const safeTotal = total || ''
+
     const subject = `Invoice ${invoiceNumber} - The Mobile Phone Clinic`
 
     const text = [
@@ -101,9 +96,10 @@ export async function POST(request: NextRequest) {
       messageId: info.messageId,
     })
   } catch (error) {
+    console.error('send-invoice-email route error:', error)
+
     return NextResponse.json(
       {
-        success: false,
         error: error instanceof Error ? error.message : 'Unexpected email error',
       },
       { status: 500 }

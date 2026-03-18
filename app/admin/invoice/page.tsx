@@ -68,9 +68,9 @@ export default function InvoicePrintPage() {
   const [deleting, setDeleting] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
-  const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false)
-  const [emailSendError, setEmailSendError] = useState('')
-  const [emailSendSuccess, setEmailSendSuccess] = useState('')
+const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false)
+const [emailSendError, setEmailSendError] = useState('')
+const [emailSendSuccess, setEmailSendSuccess] = useState('')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -97,8 +97,6 @@ export default function InvoicePrintPage() {
     setLoading(true)
     setError('')
     setSuccessMessage('')
-    setEmailSendError('')
-    setEmailSendSuccess('')
 
     try {
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -253,7 +251,9 @@ export default function InvoicePrintPage() {
     void loadInvoicePage(invoiceId)
   }, [invoiceId])
 
-  function setSavedState(which: 'customer' | 'internal') {
+  function setSavedState(
+    which: 'customer' | 'internal'
+  ) {
     if (which === 'customer') {
       setCustomerNotesState('saved')
       if (clearCustomerSavedTimerRef.current) clearTimeout(clearCustomerSavedTimerRef.current)
@@ -474,79 +474,86 @@ export default function InvoicePrintPage() {
     setUpdatingStatus(false)
   }
 
-  async function sendInvoiceEmail() {
-    if (!invoice) return
+async function sendInvoiceEmail() {
+  if (!invoice) return
 
-    if (!invoice.customer_email) {
-      setEmailSendError('Customer email is missing on this invoice.')
-      setEmailSendSuccess('')
-      return
-    }
-
-    setSendingInvoiceEmail(true)
-    setEmailSendError('')
+  if (!invoice.customer_email) {
+    setEmailSendError('Customer email is missing on this invoice.')
     setEmailSendSuccess('')
-    setError('')
-    setSuccessMessage('')
+    return
+  }
+
+  setSendingInvoiceEmail(true)
+  setEmailSendError('')
+  setEmailSendSuccess('')
+  setError('')
+  setSuccessMessage('')
+
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+    const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
+
+    const response = await fetch('/api/admin/send-invoice-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: invoice.customer_email,
+        customerName: invoice.customer_name,
+        invoiceNumber: invoice.invoice_number,
+        invoiceUrl,
+        total: formatCurrency(invoice.total),
+      }),
+    })
+
+    const rawText = await response.text()
+    let data: any = {}
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-      const invoiceUrl = `${baseUrl}/admin/invoice?id=${invoice.id}`
-
-      const response = await fetch('/api/admin/send-invoice-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: invoice.customer_email,
-          customerName: invoice.customer_name,
-          invoiceNumber: invoice.invoice_number,
-          invoiceUrl,
-          total: formatCurrency(invoice.total),
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to send invoice email')
-      }
-
-      const nowIso = new Date().toISOString()
-
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({
-          sent_at: nowIso,
-          sent_to_email: invoice.customer_email,
-        })
-        .eq('id', invoice.id)
-
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
-
-      setInvoice((prev) =>
-        prev
-          ? {
-              ...prev,
-              sent_at: nowIso,
-              sent_to_email: invoice.customer_email,
-            }
-          : null
-      )
-
-      setEmailSendSuccess(`Invoice emailed to ${invoice.customer_email}.`)
-      setSuccessMessage('Invoice email sent successfully.')
-    } catch (err) {
-      setEmailSendError(
-        err instanceof Error ? err.message : 'Failed to send invoice email'
-      )
-    } finally {
-      setSendingInvoiceEmail(false)
+      data = rawText ? JSON.parse(rawText) : {}
+    } catch {
+      throw new Error(rawText || 'Server returned invalid response')
     }
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to send invoice email')
+    }
+
+    const nowIso = new Date().toISOString()
+
+    const { error: updateError } = await supabase
+      .from('invoices')
+      .update({
+        sent_at: nowIso,
+        sent_to_email: invoice.customer_email,
+      })
+      .eq('id', invoice.id)
+
+    if (updateError) {
+      throw new Error(updateError.message)
+    }
+
+    setInvoice((prev) =>
+      prev
+        ? {
+            ...prev,
+            sent_at: nowIso,
+            sent_to_email: invoice.customer_email,
+          }
+        : null
+    )
+
+    setEmailSendSuccess(`Invoice emailed to ${invoice.customer_email}.`)
+    setSuccessMessage('Invoice email sent successfully.')
+  } catch (err) {
+    setEmailSendError(
+      err instanceof Error ? err.message : 'Failed to send invoice email'
+    )
+  } finally {
+    setSendingInvoiceEmail(false)
   }
+}
 
   async function deleteInvoice() {
     if (!invoice) return
@@ -905,16 +912,14 @@ export default function InvoicePrintPage() {
                 Restore Issued
               </button>
             )}
-
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              onClick={() => void sendInvoiceEmail()}
-              disabled={sendingInvoiceEmail}
-            >
-              {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
-            </button>
-
+<button
+  type="button"
+  className={styles.secondaryButton}
+  onClick={() => void sendInvoiceEmail()}
+  disabled={sendingInvoiceEmail}
+>
+  {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
+</button>
             <button
               type="button"
               className={styles.printButton}
@@ -945,15 +950,14 @@ export default function InvoicePrintPage() {
         {successMessage ? (
           <div className={styles.successBanner}>{successMessage}</div>
         ) : null}
-
-        {emailSendSuccess ? (
-          <div className={styles.successBanner}>{emailSendSuccess}</div>
-        ) : null}
-
-        {emailSendError ? (
-          <p className={styles.errorText}>{emailSendError}</p>
-        ) : null}
-
+<button
+  type="button"
+  className={styles.secondaryButton}
+  onClick={() => void sendInvoiceEmail()}
+  disabled={sendingInvoiceEmail}
+>
+  {sendingInvoiceEmail ? 'Sending Email...' : 'Send Invoice Email'}
+</button>
         <article className={styles.document}>
           <header className={styles.header}>
             <div className={styles.businessDetails}>
@@ -992,19 +996,17 @@ export default function InvoicePrintPage() {
                   ? formatDateTime(invoice.issued_at)
                   : formatDateTime(invoice.created_at)}
               </div>
+{invoice.sent_at ? (
+  <div className={styles.metaValue}>
+    Sent: {formatDateTime(invoice.sent_at)}
+  </div>
+) : null}
 
-              {invoice.sent_at ? (
-                <div className={styles.metaValue}>
-                  Sent: {formatDateTime(invoice.sent_at)}
-                </div>
-              ) : null}
-
-              {invoice.sent_to_email ? (
-                <div className={styles.metaValue}>
-                  Sent to: {invoice.sent_to_email}
-                </div>
-              ) : null}
-
+{invoice.sent_to_email ? (
+  <div className={styles.metaValue}>
+    Sent to: {invoice.sent_to_email}
+  </div>
+) : null}
               {isGroupedInvoice ? (
                 <div className={styles.metaValue}>{linkedJobs.length} linked jobs</div>
               ) : null}
