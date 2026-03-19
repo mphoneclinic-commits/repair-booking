@@ -697,12 +697,12 @@ export default function JobCard({
   function buildQuoteSms() {
     const customerName = job.full_name.split(' ')[0] || job.full_name
     const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-    return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please reply to approve or contact The Mobile Phone Clinic for details.`
+    return `<NO REPLY> Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}+GST. Please contact us back on 03 9547 9991 to approve. Thanks, The Mobile Phone Clinic`
   }
 
   function buildReadySms() {
     const customerName = job.full_name.split(' ')[0] || job.full_name
-    return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us to arrange collection.`
+    return `<NO REPLY> Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup. Please contact us on 03 9547 9991 to arrange collection. Thanks, The Mobile Phone Clinic`
   }
 
   async function sendSms(messageOverride?: string) {
