@@ -8,7 +8,8 @@ export default async (req: Request) => {
 
   try {
     const body = await req.json()
-    const to = String(body?.to || '').trim()
+
+    const to = String(body?.to || '').replace(/\D/g, '').trim()
     const message = String(body?.message || '').trim()
 
     if (!to || !message) {

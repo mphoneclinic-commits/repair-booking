@@ -146,6 +146,12 @@ export default function JobCard({
   onHideJob,
   onUnhideJob,
 }: Props) {
+
+const [smsTargetPhone, setSmsTargetPhone] = useState(normalizePhone(job.phone))
+const [smsMessage, setSmsMessage] = useState('')
+const [sendingSms, setSendingSms] = useState(false)
+const [smsError, setSmsError] = useState('')
+const [smsSuccess, setSmsSuccess] = useState('')
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
   const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed ?? '')
@@ -184,7 +190,11 @@ export default function JobCard({
   const repairPerformedFocusedRef = useRef(false)
   const jobNumberFocusedRef = useRef(false)
   const customerFocusedRef = useRef(false)
+
   const deviceFocusedRef = useRef(false)
+useEffect(() => {
+  setSmsTargetPhone(normalizePhone(job.phone))
+}, [job.phone])
 
   useEffect(() => {
     if (invoice) {
@@ -684,22 +694,70 @@ export default function JobCard({
     await flushDevice(deviceDraft)
   }
 
-  function buildQuoteSms() {
-    const customerName = job.full_name.split(' ')[0] || job.full_name
-    const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-    return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please reply to approve or contact The Mobile Phone Clinic for details.`
+function buildQuoteSms() {
+  const customerName = job.full_name.split(' ')[0] || job.full_name
+  const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
+  return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please reply to approve or contact The Mobile Phone Clinic for details.`
+}
+
+function buildReadySms() {
+  const customerName = job.full_name.split(' ')[0] || job.full_name
+  return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us to arrange collection.`
+}
+
+async function sendSms(messageOverride?: string) {
+  const to = normalizePhone(smsTargetPhone)
+  const message = (messageOverride ?? smsMessage).trim()
+
+  if (!to || to.length < 8) {
+    setSmsError('Valid phone number required.')
+    setSmsSuccess('')
+    return
   }
 
-  function buildReadySms() {
-    const customerName = job.full_name.split(' ')[0] || job.full_name
-    return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us to arrange collection.`
+  if (!message) {
+    setSmsError('SMS message is empty.')
+    setSmsSuccess('')
+    return
   }
 
-  function openSms(message: string) {
-    const encoded = encodeURIComponent(message)
-    const digits = normalizePhone(job.phone)
-    window.open(`sms:${digits}?body=${encoded}`, '_self')
+  setSendingSms(true)
+  setSmsError('')
+  setSmsSuccess('')
+
+  try {
+    const response = await fetch('/.netlify/functions/send-sms', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to,
+        message,
+      }),
+    })
+
+    const rawText = await response.text()
+    let data: any = {}
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {}
+    } catch {
+      throw new Error(rawText || 'Server returned invalid response')
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to send SMS')
+    }
+
+    setSmsSuccess(`SMS sent to ${to}.`)
+  } catch (err) {
+    setSmsError(err instanceof Error ? err.message : 'Failed to send SMS')
+    setSmsSuccess('')
+  } finally {
+    setSendingSms(false)
   }
+}
 
   function handleCardDragStart(event: React.DragEvent<HTMLDivElement>) {
     if (!draggableEnabled) return
@@ -1098,19 +1156,7 @@ export default function JobCard({
                 onClick={(e) => e.stopPropagation()}
               />
 
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelectCard?.(job.id)
-                    openSms(buildQuoteSms())
-                  }}
-                >
-                  Send Quote SMS
-                </button>
-              </div>
+       
             </div>
 
             <div className={styles.expandedSectionCard}>
@@ -1132,63 +1178,132 @@ export default function JobCard({
                 onClick={(e) => e.stopPropagation()}
               />
 
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelectCard?.(job.id)
-                    openSms(buildReadySms())
-                  }}
-                >
-                  Ready for Pickup SMS
-                </button>
+<div className={styles.buttonRow}>
+  {onDuplicateJob ? (
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelectCard?.(job.id)
+        void onDuplicateJob(job)
+      }}
+    >
+      Duplicate Job
+    </button>
+  ) : null}
 
-                {onDuplicateJob ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onDuplicateJob(job)
-                    }}
-                  >
-                    Duplicate Job
-                  </button>
-                ) : null}
+  {isArchiveStatus && !job.is_hidden ? (
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelectCard?.(job.id)
+        void onHideJob?.(job.id)
+      }}
+    >
+      Hide Job
+    </button>
+  ) : null}
 
-                {isArchiveStatus && !job.is_hidden ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onHideJob?.(job.id)
-                    }}
-                  >
-                    Hide Job
-                  </button>
-                ) : null}
-
-                {job.is_hidden ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onUnhideJob?.(job.id)
-                    }}
-                  >
-                    Unhide Job
-                  </button>
-                ) : null}
-              </div>
+  {job.is_hidden ? (
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelectCard?.(job.id)
+        void onUnhideJob?.(job.id)
+      }}
+    >
+      Unhide Job
+    </button>
+  ) : null}
+</div>
             </div>
+<div className={styles.expandedSectionCard}>
+  <div className={styles.inputTopRow}>
+    <div className={styles.expandedSectionTitle}>SMS</div>
+    <div className={styles.readOnlyValue}>
+      {sendingSms ? 'Sending...' : smsSuccess ? 'Sent' : smsError ? 'Error' : 'Ready'}
+    </div>
+  </div>
 
+  <div className={styles.formGrid}>
+    <div>
+      <label className={styles.smallLabel}>Send To</label>
+      <input
+        value={smsTargetPhone}
+        inputMode="numeric"
+        maxLength={15}
+        className={styles.smallField}
+        onChange={(e) => setSmsTargetPhone(normalizePhone(e.target.value))}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  </div>
+
+  <div className={styles.buttonRow}>
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        setSmsMessage(buildQuoteSms())
+        setSmsError('')
+        setSmsSuccess('')
+      }}
+    >
+      Load Quote Template
+    </button>
+
+    <button
+      type="button"
+      className={styles.actionButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        setSmsMessage(buildReadySms())
+        setSmsError('')
+        setSmsSuccess('')
+      }}
+    >
+      Load Ready Template
+    </button>
+  </div>
+
+  <div className={styles.mt12}>
+    <label className={styles.smallLabel}>Message</label>
+    <textarea
+      value={smsMessage}
+      className={styles.notesField}
+      placeholder="Type SMS message here..."
+      onChange={(e) => {
+        setSmsMessage(e.target.value)
+        setSmsError('')
+        setSmsSuccess('')
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+  </div>
+
+  <div className={styles.buttonRow}>
+    <button
+      type="button"
+      className={styles.actionButton}
+      disabled={sendingSms}
+      onClick={(e) => {
+        e.stopPropagation()
+        void sendSms()
+      }}
+    >
+      {sendingSms ? 'Sending SMS...' : 'Send SMS'}
+    </button>
+  </div>
+
+  {smsSuccess ? <p className={styles.successText}>{smsSuccess}</p> : null}
+  {smsError ? <p className={styles.errorText}>{smsError}</p> : null}
+</div>
             <div className={styles.expandedSectionCard}>
               <div className={styles.inputTopRow}>
                 <div className={styles.expandedSectionTitle}>
