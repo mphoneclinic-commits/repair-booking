@@ -70,6 +70,7 @@ export default function AdminPage() {
   const {
     supabase,
     jobs,
+hiddenjobs,
     setJobs,
     hiddenJobs,
     setHiddenJobs,
@@ -100,6 +101,8 @@ export default function AdminPage() {
     removeInvoiceForJob,
   } = useAdminInvoices({
     supabase,
+	jobs,
+	hiddenjobs,
     invoicesByJobId,
     setInvoicesByJobId,
     invoiceItemsByInvoiceId,

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem, InvoiceStatus, SaveState } from '../types'
 import { formatDateTime } from '../utils'
@@ -49,8 +49,7 @@ export default function InvoicePanel({
   const [drafts, setDrafts] = useState<ItemDraftMap>({})
   const [itemSaveStates, setItemSaveStates] = useState<Record<string, SaveState>>({})
 
-  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({})
-  const clearSavedTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({})
+  const clearSavedTimersRef = useState<Record<string, ReturnType<typeof setTimeout> | null>>({})[0]
 
   const itemIdsSignature = useMemo(() => items.map((item) => item.id).join('|'), [items])
 
@@ -87,14 +86,11 @@ export default function InvoicePanel({
 
   useEffect(() => {
     return () => {
-      Object.values(saveTimersRef.current).forEach((timer) => {
-        if (timer) clearTimeout(timer)
-      })
-      Object.values(clearSavedTimersRef.current).forEach((timer) => {
+      Object.values(clearSavedTimersRef).forEach((timer) => {
         if (timer) clearTimeout(timer)
       })
     }
-  }, [])
+  }, [clearSavedTimersRef])
 
   function setItemState(itemId: string, state: SaveState) {
     setItemSaveStates((prev) => ({
@@ -106,11 +102,11 @@ export default function InvoicePanel({
   function setItemSaved(itemId: string) {
     setItemState(itemId, 'saved')
 
-    if (clearSavedTimersRef.current[itemId]) {
-      clearTimeout(clearSavedTimersRef.current[itemId]!)
+    if (clearSavedTimersRef[itemId]) {
+      clearTimeout(clearSavedTimersRef[itemId]!)
     }
 
-    clearSavedTimersRef.current[itemId] = setTimeout(() => {
+    clearSavedTimersRef[itemId] = setTimeout(() => {
       setItemSaveStates((prev) => {
         if (prev[itemId] !== 'saved') return prev
         return {
@@ -151,16 +147,6 @@ export default function InvoicePanel({
     setItemState(itemId, 'dirty')
   }
 
-  function scheduleFlush(item: InvoiceItem, nextDraft?: ItemDraftMap[string]) {
-    if (saveTimersRef.current[item.id]) {
-      clearTimeout(saveTimersRef.current[item.id]!)
-    }
-
-    saveTimersRef.current[item.id] = setTimeout(() => {
-      void flushItem(item, nextDraft)
-    }, 700)
-  }
-
   async function flushItem(item: InvoiceItem, explicitDraft?: ItemDraftMap[string]) {
     const draft = explicitDraft || drafts[item.id]
     if (!draft) return
@@ -196,7 +182,7 @@ export default function InvoicePanel({
   }
 
   function getItemStateLabel(state: SaveState) {
-    if (state === 'dirty') return 'Typing...'
+    if (state === 'dirty') return 'Unsaved'
     if (state === 'saving') return 'Saving...'
     if (state === 'saved') return 'Saved'
     if (state === 'error') return 'Error'
@@ -295,79 +281,79 @@ export default function InvoicePanel({
                   const stateLabel = getItemStateLabel(itemState)
 
                   return (
-<div key={item.id} className={styles.expandedSectionCard}>
-  <div className={styles.inputTopRow}>
-    <div className={styles.smallLabel}>Item Description</div>
-    {stateLabel ? (
-      <span className={styles.helperText}>{stateLabel}</span>
-    ) : (
-      <span className={styles.helperText}> </span>
-    )}
-  </div>
+                    <div key={item.id} className={styles.expandedSectionCard}>
+                      <div className={styles.inputTopRow}>
+                        <div className={styles.smallLabel}>Item Description</div>
+                        {stateLabel ? (
+                          <span className={styles.helperText}>{stateLabel}</span>
+                        ) : (
+                          <span className={styles.helperText}> </span>
+                        )}
+                      </div>
 
-  <input
-    value={draft.description}
-    className={styles.smallField}
-    onChange={(e) => {
-      updateDraft(item.id, 'description', e.target.value)
-    }}
-    onBlur={async () => {
-      await flushItem(item)
-    }}
-    onClick={(e) => e.stopPropagation()}
-  />
+                      <input
+                        value={draft.description}
+                        className={styles.smallField}
+                        onChange={(e) => {
+                          updateDraft(item.id, 'description', e.target.value)
+                        }}
+                        onBlur={async () => {
+                          await flushItem(item)
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
 
-  <div className={styles.twoCol}>
-    <div>
-      <label className={styles.smallLabel}>Qty</label>
-      <input
-        type="number"
-        step="0.01"
-        value={draft.qty}
-        className={styles.smallField}
-        onChange={(e) => {
-          updateDraft(item.id, 'qty', e.target.value)
-        }}
-        onBlur={async () => {
-          await flushItem(item)
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
+                      <div className={styles.twoCol}>
+                        <div>
+                          <label className={styles.smallLabel}>Qty</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={draft.qty}
+                            className={styles.smallField}
+                            onChange={(e) => {
+                              updateDraft(item.id, 'qty', e.target.value)
+                            }}
+                            onBlur={async () => {
+                              await flushItem(item)
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
 
-    <div>
-      <label className={styles.smallLabel}>Unit Price</label>
-      <input
-        type="number"
-        step="0.01"
-        value={draft.unit_price}
-        className={styles.smallField}
-        onChange={(e) => {
-          updateDraft(item.id, 'unit_price', e.target.value)
-        }}
-        onBlur={async () => {
-          await flushItem(item)
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  </div>
+                        <div>
+                          <label className={styles.smallLabel}>Unit Price</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={draft.unit_price}
+                            className={styles.smallField}
+                            onChange={(e) => {
+                              updateDraft(item.id, 'unit_price', e.target.value)
+                            }}
+                            onBlur={async () => {
+                              await flushItem(item)
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      </div>
 
-  <p className={styles.summaryRow}>
-    <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
-  </p>
+                      <p className={styles.summaryRow}>
+                        <strong>Line Total:</strong> ${Number(item.line_total ?? 0).toFixed(2)}
+                      </p>
 
-  <div className={styles.buttonRow}>
-    <button
-      type="button"
-      className={styles.actionButton}
-      onClick={() => void onDeleteInvoiceItem(item.id)}
-      disabled={busy}
-    >
-      Delete Item
-    </button>
-  </div>
-</div>
+                      <div className={styles.buttonRow}>
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void onDeleteInvoiceItem(item.id)}
+                          disabled={busy}
+                        >
+                          Delete Item
+                        </button>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
