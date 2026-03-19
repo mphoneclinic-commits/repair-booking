@@ -44,6 +44,9 @@ export type RepairRequest = {
   quoted_price: number | null
   is_hidden: boolean | null
   fault_photo_url?: string | null
+  last_sms_sent_at?: string | null
+  last_sms_to?: string | null
+  last_sms_message?: string | null
 }
 
 export type RepairRequestPhoto = {
@@ -77,6 +80,9 @@ export type Invoice = {
   paid_at: string | null
   sent_at: string | null
   sent_to_email: string | null
+  last_sms_sent_at?: string | null
+  last_sms_to?: string | null
+  last_sms_message?: string | null
   created_at: string
   updated_at: string
 }

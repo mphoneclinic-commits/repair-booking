@@ -158,6 +158,9 @@ export default function useAdminInvoices({
         paid_at,
         sent_at,
         sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
         created_at,
         updated_at
       `)
@@ -219,7 +222,10 @@ export default function useAdminInvoices({
         internal_notes,
         quoted_price,
         is_hidden,
-        fault_photo_url
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
       `)
       .single()
 
@@ -304,6 +310,9 @@ export default function useAdminInvoices({
         paid_at,
         sent_at,
         sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
         created_at,
         updated_at
       `)
@@ -336,10 +345,10 @@ export default function useAdminInvoices({
         ? Math.max(...currentItems.map((item) => item.sort_order)) + 1
         : 0
 
-const relatedJob =
-  (jobs || []).find((job) => job.id === invoice.repair_request_id) ||
-  (hiddenJobs || []).find((job) => job.id === invoice.repair_request_id) ||
-  null
+    const relatedJob =
+      (jobs || []).find((job) => job.id === invoice.repair_request_id) ||
+      (hiddenJobs || []).find((job) => job.id === invoice.repair_request_id) ||
+      null
 
     let description = ''
 
@@ -585,7 +594,10 @@ const relatedJob =
         internal_notes,
         quoted_price,
         is_hidden,
-        fault_photo_url
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
       `)
       .single()
 

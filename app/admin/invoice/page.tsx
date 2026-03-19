@@ -59,6 +59,12 @@ export default function InvoicePrintPage() {
   const [emailSendError, setEmailSendError] = useState('')
   const [emailSendSuccess, setEmailSendSuccess] = useState('')
 
+  const [sendToPhone, setSendToPhone] = useState('')
+  const [smsMessage, setSmsMessage] = useState('')
+  const [sendingSms, setSendingSms] = useState(false)
+  const [smsSendError, setSmsSendError] = useState('')
+  const [smsSendSuccess, setSmsSendSuccess] = useState('')
+
   const customerNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const internalNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearCustomerSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -100,6 +106,8 @@ export default function InvoicePrintPage() {
     setSuccessMessage('')
     setEmailSendError('')
     setEmailSendSuccess('')
+    setSmsSendError('')
+    setSmsSendSuccess('')
 
     try {
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -126,6 +134,9 @@ export default function InvoicePrintPage() {
           paid_at,
           sent_at,
           sent_to_email,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message,
           created_at,
           updated_at
         `)
@@ -145,6 +156,9 @@ export default function InvoicePrintPage() {
         total: Number(invoiceData.total ?? 0),
         customer_visible_notes: invoiceData.customer_visible_notes ?? null,
         internal_reference_notes: invoiceData.internal_reference_notes ?? null,
+        last_sms_sent_at: invoiceData.last_sms_sent_at ?? null,
+        last_sms_to: invoiceData.last_sms_to ?? null,
+        last_sms_message: invoiceData.last_sms_message ?? null,
       }
 
       if (!customerNotesFocusedRef.current) {
@@ -218,7 +232,11 @@ export default function InvoicePrintPage() {
           internal_notes,
           quoted_price,
           is_hidden,
-          fault_photo_url
+          fault_photo_url,
+          repair_performed,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message
         `)
         .in('id', linkedJobIds)
 
@@ -231,6 +249,10 @@ export default function InvoicePrintPage() {
         serial_imei: job.serial_imei ?? null,
         is_hidden: Boolean(job.is_hidden),
         fault_photo_url: job.fault_photo_url ?? null,
+        repair_performed: job.repair_performed ?? '',
+        last_sms_sent_at: job.last_sms_sent_at ?? null,
+        last_sms_to: job.last_sms_to ?? null,
+        last_sms_message: job.last_sms_message ?? null,
       }))
 
       normalizedJobs.sort((a, b) => {
@@ -258,6 +280,11 @@ export default function InvoicePrintPage() {
     if (!invoice) return
     setSendToEmail(invoice.customer_email || '')
   }, [invoice?.id, invoice?.customer_email])
+
+  useEffect(() => {
+    if (!invoice) return
+    setSendToPhone((invoice.customer_phone || '').replace(/\D/g, ''))
+  }, [invoice?.id, invoice?.customer_phone])
 
   function setSavedState(which: 'customer' | 'internal') {
     if (which === 'customer') {
@@ -302,9 +329,7 @@ export default function InvoicePrintPage() {
       return
     }
 
-    setInvoice((prev) =>
-      prev ? { ...prev, customer_visible_notes: value || null } : null
-    )
+    setInvoice((prev) => (prev ? { ...prev, customer_visible_notes: value || null } : null))
     setSavedState('customer')
   }
 
@@ -334,9 +359,7 @@ export default function InvoicePrintPage() {
       return
     }
 
-    setInvoice((prev) =>
-      prev ? { ...prev, internal_reference_notes: value || null } : null
-    )
+    setInvoice((prev) => (prev ? { ...prev, internal_reference_notes: value || null } : null))
     setSavedState('internal')
   }
 
@@ -432,6 +455,9 @@ export default function InvoicePrintPage() {
         paid_at,
         sent_at,
         sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
         created_at,
         updated_at
       `)
@@ -473,6 +499,9 @@ export default function InvoicePrintPage() {
       total: Number(data.total ?? 0),
       customer_visible_notes: data.customer_visible_notes ?? null,
       internal_reference_notes: data.internal_reference_notes ?? null,
+      last_sms_sent_at: data.last_sms_sent_at ?? null,
+      last_sms_to: data.last_sms_to ?? null,
+      last_sms_message: data.last_sms_message ?? null,
     }
 
     setInvoice(normalizedInvoice)
@@ -480,90 +509,190 @@ export default function InvoicePrintPage() {
     setUpdatingStatus(false)
   }
 
-async function sendInvoiceEmail() {
-  if (!invoice) return
+  async function sendInvoiceEmail() {
+    if (!invoice) return
 
-  const targetEmail = sendToEmail.trim()
+    const targetEmail = sendToEmail.trim()
 
-  if (!targetEmail) {
-    setEmailSendError('Please enter an email address to send the invoice to.')
+    if (!targetEmail) {
+      setEmailSendError('Please enter an email address to send the invoice to.')
+      setEmailSendSuccess('')
+      return
+    }
+
+    setSendingInvoiceEmail(true)
+    setEmailSendError('')
     setEmailSendSuccess('')
-    return
-  }
-
-  setSendingInvoiceEmail(true)
-  setEmailSendError('')
-  setEmailSendSuccess('')
-  setError('')
-  setSuccessMessage('')
-
-  try {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || window.location.origin
-
-    const invoiceUrl = `${baseUrl}/invoice/toCustomer?id=${invoice.id}`
-
-    const response = await fetch('/.netlify/functions/send-invoice-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to: targetEmail,
-        customerName: invoice.customer_name,
-        invoiceNumber: invoice.invoice_number,
-        invoiceUrl,
-        total: formatCurrency(invoice.total),
-      }),
-    })
-
-    const rawText = await response.text()
-    let data: any = {}
+    setError('')
+    setSuccessMessage('')
 
     try {
-      data = rawText ? JSON.parse(rawText) : {}
-    } catch {
-      throw new Error(rawText || 'Server returned an invalid response')
-    }
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || window.location.origin
 
-    if (!response.ok) {
-      throw new Error(data?.error || 'Failed to send invoice email')
-    }
+      const invoiceUrl = `${baseUrl}/invoice/toCustomer?id=${invoice.id}`
 
-    const nowIso = new Date().toISOString()
-
-    const { error: updateError } = await supabase
-      .from('invoices')
-      .update({
-        sent_at: nowIso,
-        sent_to_email: targetEmail,
+      const response = await fetch('/.netlify/functions/send-invoice-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: targetEmail,
+          customerName: invoice.customer_name,
+          invoiceNumber: invoice.invoice_number,
+          invoiceUrl,
+          total: formatCurrency(invoice.total),
+        }),
       })
-      .eq('id', invoice.id)
 
-    if (updateError) {
-      throw new Error(updateError.message)
+      const rawText = await response.text()
+      let data: any = {}
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        throw new Error(rawText || 'Server returned an invalid response')
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to send invoice email')
+      }
+
+      const nowIso = new Date().toISOString()
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({
+          sent_at: nowIso,
+          sent_to_email: targetEmail,
+        })
+        .eq('id', invoice.id)
+
+      if (updateError) {
+        throw new Error(updateError.message)
+      }
+
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              sent_at: nowIso,
+              sent_to_email: targetEmail,
+            }
+          : null
+      )
+
+      setEmailSendSuccess(`Invoice emailed to ${targetEmail}.`)
+      setSuccessMessage('Invoice email sent successfully.')
+    } catch (err) {
+      setEmailSendError(err instanceof Error ? err.message : 'Failed to send invoice email')
+    } finally {
+      setSendingInvoiceEmail(false)
+    }
+  }
+
+  function buildInvoiceSms() {
+    if (!invoice) return ''
+
+    const customerName = invoice.customer_name.split(' ')[0] || invoice.customer_name
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || window.location.origin
+    const publicInvoiceUrl = `${baseUrl}/invoice/toCustomer?id=${invoice.id}`
+
+    return `Hi ${customerName}, your invoice ${invoice.invoice_number} for ${formatCurrency(
+      invoice.total
+    )} is ready. View it here: ${publicInvoiceUrl}`
+  }
+
+  function buildPaidReminderSms() {
+    if (!invoice) return ''
+
+    const customerName = invoice.customer_name.split(' ')[0] || invoice.customer_name
+    return `Hi ${customerName}, this is a reminder that invoice ${invoice.invoice_number} for ${formatCurrency(
+      invoice.total
+    )} is outstanding. Please contact The Mobile Phone Clinic if you have any questions.`
+  }
+
+  async function sendInvoiceSms(messageOverride?: string) {
+    if (!invoice) return
+
+    const to = String(sendToPhone || '').replace(/\D/g, '').trim()
+    const message = (messageOverride ?? smsMessage).trim()
+
+    if (!to) {
+      setSmsSendError('Please enter a phone number to send the SMS to.')
+      setSmsSendSuccess('')
+      return
     }
 
-    setInvoice((prev) =>
-      prev
-        ? {
-            ...prev,
-            sent_at: nowIso,
-            sent_to_email: targetEmail,
-          }
-        : null
-    )
+    if (!message) {
+      setSmsSendError('Please enter an SMS message.')
+      setSmsSendSuccess('')
+      return
+    }
 
-    setEmailSendSuccess(`Invoice emailed to ${targetEmail}.`)
-    setSuccessMessage('Invoice email sent successfully.')
-  } catch (err) {
-    setEmailSendError(
-      err instanceof Error ? err.message : 'Failed to send invoice email'
-    )
-  } finally {
-    setSendingInvoiceEmail(false)
+    setSendingSms(true)
+    setSmsSendError('')
+    setSmsSendSuccess('')
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/.netlify/functions/send-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, message }),
+      })
+
+      const rawText = await response.text()
+      let data: any = {}
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        throw new Error(rawText || 'Server returned invalid response')
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to send invoice SMS')
+      }
+
+      const nowIso = new Date().toISOString()
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({
+          last_sms_sent_at: nowIso,
+          last_sms_to: to,
+          last_sms_message: message,
+        })
+        .eq('id', invoice.id)
+
+      if (updateError) {
+        throw new Error(updateError.message)
+      }
+
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              last_sms_sent_at: nowIso,
+              last_sms_to: to,
+              last_sms_message: message,
+            }
+          : null
+      )
+
+      setSmsSendSuccess(`SMS sent to ${to}.`)
+      setSuccessMessage('Invoice SMS sent successfully.')
+    } catch (err) {
+      setSmsSendError(err instanceof Error ? err.message : 'Failed to send invoice SMS')
+    } finally {
+      setSendingSms(false)
+    }
   }
-}
+
   async function deleteInvoice() {
     if (!invoice) return
 
@@ -856,10 +985,9 @@ async function sendInvoiceEmail() {
               Back to Invoices
             </Link>
 
-<Link href="/admin" className={styles.secondaryButton}>
-  Back to Dashboard
-</Link>
-
+            <Link href="/admin" className={styles.secondaryButton}>
+              Back to Dashboard
+            </Link>
 
             {invoice.status === 'draft' && (
               <button
@@ -976,9 +1104,91 @@ async function sendInvoiceEmail() {
           </div>
         </div>
 
+        <div className={styles.notesSection}>
+          <div className={styles.inputTopRow}>
+            <div className={styles.sectionHeading}>Send Invoice SMS</div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              type="text"
+              value={sendToPhone}
+              onChange={(e) => setSendToPhone(e.target.value.replace(/\D/g, ''))}
+              placeholder="Send invoice SMS to phone..."
+              className={styles.notesInput}
+              style={{ minHeight: 44, flex: '1 1 320px' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => {
+                setSmsMessage(buildInvoiceSms())
+                setSmsSendError('')
+                setSmsSendSuccess('')
+              }}
+            >
+              Load Invoice Template
+            </button>
+
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => {
+                setSmsMessage(buildPaidReminderSms())
+                setSmsSendError('')
+                setSmsSendSuccess('')
+              }}
+            >
+              Load Reminder Template
+            </button>
+          </div>
+
+          <textarea
+            value={smsMessage}
+            onChange={(e) => {
+              setSmsMessage(e.target.value)
+              setSmsSendError('')
+              setSmsSendSuccess('')
+            }}
+            className={styles.notesInput}
+            placeholder="Type SMS here..."
+            style={{ marginTop: 10 }}
+          />
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => void sendInvoiceSms()}
+              disabled={sendingSms}
+            >
+              {sendingSms ? 'Sending SMS...' : 'Send Invoice SMS'}
+            </button>
+          </div>
+
+          {invoice.last_sms_sent_at ? (
+            <div className={styles.metaValue} style={{ marginTop: 10 }}>
+              Last SMS: {formatDateTime(invoice.last_sms_sent_at)}
+              {invoice.last_sms_to ? ` • ${invoice.last_sms_to}` : ''}
+            </div>
+          ) : null}
+        </div>
+
         {successMessage ? <div className={styles.successBanner}>{successMessage}</div> : null}
         {emailSendSuccess ? <div className={styles.successBanner}>{emailSendSuccess}</div> : null}
         {emailSendError ? <p className={styles.errorText}>{emailSendError}</p> : null}
+        {smsSendSuccess ? <div className={styles.successBanner}>{smsSendSuccess}</div> : null}
+        {smsSendError ? <p className={styles.errorText}>{smsSendError}</p> : null}
 
         <article className={styles.document}>
           <header className={styles.header}>
@@ -1025,6 +1235,16 @@ async function sendInvoiceEmail() {
 
               {invoice.sent_to_email ? (
                 <div className={styles.metaValue}>Sent to: {invoice.sent_to_email}</div>
+              ) : null}
+
+              {invoice.last_sms_sent_at ? (
+                <div className={styles.metaValue}>
+                  Last SMS: {formatDateTime(invoice.last_sms_sent_at)}
+                </div>
+              ) : null}
+
+              {invoice.last_sms_to ? (
+                <div className={styles.metaValue}>SMS to: {invoice.last_sms_to}</div>
               ) : null}
 
               {isGroupedInvoice ? (

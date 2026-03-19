@@ -28,6 +28,9 @@ export default function useAdminData() {
       is_hidden: Boolean(raw.is_hidden),
       fault_photo_url: raw.fault_photo_url ?? null,
       repair_performed: raw.repair_performed ?? '',
+      last_sms_sent_at: raw.last_sms_sent_at ?? null,
+      last_sms_to: raw.last_sms_to ?? null,
+      last_sms_message: raw.last_sms_message ?? null,
     }
   }, [])
 
@@ -41,6 +44,9 @@ export default function useAdminData() {
       total: Number(raw.total ?? 0),
       customer_visible_notes: raw.customer_visible_notes ?? null,
       internal_reference_notes: raw.internal_reference_notes ?? null,
+      last_sms_sent_at: raw.last_sms_sent_at ?? null,
+      last_sms_to: raw.last_sms_to ?? null,
+      last_sms_message: raw.last_sms_message ?? null,
     }
   }, [])
 
@@ -75,7 +81,10 @@ export default function useAdminData() {
         internal_notes,
         quoted_price,
         is_hidden,
-        fault_photo_url
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
       `)
       .order('created_at', { ascending: false })
 
@@ -112,6 +121,9 @@ export default function useAdminData() {
         paid_at,
         sent_at,
         sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
         created_at,
         updated_at
       `)
@@ -185,6 +197,9 @@ export default function useAdminData() {
           paid_at,
           sent_at,
           sent_to_email,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message,
           created_at,
           updated_at
         `)
