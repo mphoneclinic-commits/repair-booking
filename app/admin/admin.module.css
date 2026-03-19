@@ -67,6 +67,7 @@
   background: #dbeafe;
 }
 
+
 .summaryGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -81,7 +82,12 @@
   padding: 16px;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
-
+.quickActionBar {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .summaryLabel {
   font-size: 12px;
   text-transform: uppercase;
@@ -113,6 +119,7 @@
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #0f172a;
+display: flex;
 }
 
 .field {
@@ -1829,3 +1836,4 @@ padding: 8px 11px;
     font-size: 13px;
   }
 }
+

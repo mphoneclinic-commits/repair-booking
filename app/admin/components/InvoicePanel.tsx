@@ -281,7 +281,7 @@ export default function InvoicePanel({
                   const stateLabel = getItemStateLabel(itemState)
 
                   return (
-                    <div key={item.id} className={styles.expandedSectionCard}>
+                    <div key={item.id} className={styles.																expandedSectionCard}>
                       <div className={styles.inputTopRow}>
                         <div className={styles.smallLabel}>Item Description</div>
                         {stateLabel ? (

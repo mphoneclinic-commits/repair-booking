@@ -352,7 +352,6 @@ export default function JobCard({
     }
 
     const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
-
     const publicUrl = urlData.publicUrl
     const nextSortOrder =
       jobPhotos.length > 0 ? Math.max(...jobPhotos.map((photo) => photo.sort_order)) + 1 : 0
@@ -882,6 +881,43 @@ export default function JobCard({
         </div>
       </div>
 
+      <div className={styles.quickActionBar}>
+        <div className={styles.inputTopRow}>
+          <label className={styles.smallLabel}>Status</label>
+          <SaveIndicator state={statusSaveState} />
+        </div>
+
+        <div className={styles.statusButtonsWrap}>
+          {(
+            [
+              ['new', 'New'],
+              ['quoted', 'Quoted'],
+              ['approved', 'Approved'],
+              ['in_progress', 'In Progress'],
+              ['ready', 'Ready'],
+              ['closed', 'Closed'],
+              ['rejected', 'Reject'],
+              ['cancelled', 'Cancel'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelectCard?.(job.id)
+                void updateStatus(job.id, value)
+              }}
+              className={`${styles.statusButton} ${
+                job.status === value ? styles.statusButtonActive : ''
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {!expanded ? (
         compact ? (
           compactSummary
@@ -941,43 +977,6 @@ export default function JobCard({
                   onChange={(e) => handleJobNumberChange(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
                 />
-              </div>
-
-              <div className={styles.mt12}>
-                <div className={styles.inputTopRow}>
-                  <label className={styles.smallLabel}>Status</label>
-                  <SaveIndicator state={statusSaveState} />
-                </div>
-
-                <div className={styles.statusButtonsWrap}>
-                  {(
-                    [
-                      ['new', 'New'],
-                      ['quoted', 'Quoted'],
-                      ['approved', 'Approved'],
-                      ['in_progress', 'In Progress'],
-                      ['ready', 'Ready'],
-                      ['closed', 'Closed'],
-                      ['rejected', 'Reject'],
-                      ['cancelled', 'Cancel'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelectCard?.(job.id)
-                        void updateStatus(job.id, value)
-                      }}
-                      className={`${styles.statusButton} ${
-                        job.status === value ? styles.statusButtonActive : ''
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
 
@@ -1314,10 +1313,10 @@ export default function JobCard({
                 </button>
               </div>
 
-              {job.last_sms_sent_at ? (
+              {'last_sms_sent_at' in job && (job as any).last_sms_sent_at ? (
                 <p className={styles.summaryRow}>
-                  <strong>Last SMS:</strong> {formatDateTime(job.last_sms_sent_at)}
-                  {job.last_sms_to ? ` • ${job.last_sms_to}` : ''}
+                  <strong>Last SMS:</strong> {formatDateTime((job as any).last_sms_sent_at)}
+                  {(job as any).last_sms_to ? ` • ${(job as any).last_sms_to}` : ''}
                 </p>
               ) : null}
 
@@ -1467,12 +1466,12 @@ export default function JobCard({
                 />
               ) : null}
             </div>
-          </div>
 
-          <div className={styles.mt12}>
-            <p className={styles.summaryRow}>
-              <strong>Booked in:</strong> {formatDateTime(job.created_at)}
-            </p>
+            <div className={styles.mt12}>
+              <p className={styles.summaryRow}>
+                <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+              </p>
+            </div>
           </div>
         </>
       )}

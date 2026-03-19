@@ -13,78 +13,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
-const [bulkDeleting, setBulkDeleting] = useState(false)
-
-const visibleInvoiceIds = filteredInvoices.map((invoice) => invoice.id)
-const allVisibleSelected =
-  visibleInvoiceIds.length > 0 &&
-  visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id))
-
-function toggleSelectedInvoice(invoiceId: string) {
-  setSelectedInvoiceIds((prev) =>
-    prev.includes(invoiceId)
-      ? prev.filter((id) => id !== invoiceId)
-      : [...prev, invoiceId]
-  )
-}
-
-function clearSelectedInvoices() {
-  setSelectedInvoiceIds([])
-}
-
-function selectAllVisibleInvoices(visibleInvoiceIds: string[]) {
-  setSelectedInvoiceIds(visibleInvoiceIds)
-}
-
-async function deleteSelectedInvoices() {
-  if (selectedInvoiceIds.length === 0) return
-
-  const confirmed = window.confirm(
-    `Delete ${selectedInvoiceIds.length} selected invoice(s)? This cannot be undone.`
-  )
-
-  if (!confirmed) return
-
-  setBulkDeleting(true)
-  setError('')
-  setSuccessMessage('')
-
-  const idsToDelete = [...selectedInvoiceIds]
-  const selectedSet = new Set(idsToDelete)
-
-  try {
-    const { error: deleteItemsError } = await supabase
-      .from('invoice_items')
-      .delete()
-      .in('invoice_id', idsToDelete)
-
-    if (deleteItemsError) throw deleteItemsError
-
-    const { error: deleteLinksError } = await supabase
-      .from('invoice_repair_links')
-      .delete()
-      .in('invoice_id', idsToDelete)
-
-    if (deleteLinksError) throw deleteLinksError
-
-    const { error: deleteInvoicesError } = await supabase
-      .from('invoices')
-      .delete()
-      .in('id', idsToDelete)
-
-    if (deleteInvoicesError) throw deleteInvoicesError
-
-    setInvoices((prev) => prev.filter((invoice) => !selectedSet.has(invoice.id)))
-    setSelectedInvoiceIds([])
-    setSuccessMessage(`${idsToDelete.length} invoice(s) deleted successfully.`)
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to delete selected invoices')
-  } finally {
-    setBulkDeleting(false)
-  }
-}
-
 const PAYMENT_DETAILS = {
   bankName: 'GREAT SOUTHERN BANK',
   accountName: 'BUN UNG',
@@ -96,44 +24,6 @@ const PAYMENT_DETAILS = {
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
 }
-<div className={styles.bulkBar}>
-  <div className={styles.bulkBarText}>
-    Selected invoices: <strong>{selectedInvoiceIds.length}</strong>
-  </div>
-
-  <div className={styles.bulkBarActions}>
-    <button
-      type="button"
-      className={styles.actionButton}
-      onClick={() =>
-        allVisibleSelected
-          ? clearSelectedInvoices()
-          : selectAllVisibleInvoices(visibleInvoiceIds)
-      }
-      disabled={bulkDeleting || visibleInvoiceIds.length === 0}
-    >
-      {allVisibleSelected ? 'Clear Visible' : 'Select Visible'}
-    </button>
-
-    <button
-      type="button"
-      className={styles.actionButton}
-      onClick={clearSelectedInvoices}
-      disabled={bulkDeleting || selectedInvoiceIds.length === 0}
-    >
-      Clear Selection
-    </button>
-
-    <button
-      type="button"
-      className={styles.deleteButton}
-      onClick={() => void deleteSelectedInvoices()}
-      disabled={bulkDeleting || selectedInvoiceIds.length === 0}
-    >
-      {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
-    </button>
-  </div>
-</div>
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -142,56 +32,60 @@ export default function InvoicesPage() {
   >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [search, setSearch] = useState('')
 
-async function loadInvoices() {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select(`
-      id,
-      repair_request_id,
-      invoice_number,
-      status,
-      customer_name,
-      customer_phone,
-      customer_email,
-      bill_to_address,
-      tax_mode,
-      tax_rate,
-      subtotal_ex_tax,
-      tax_amount,
-      subtotal,
-      total,
-      notes,
-      customer_visible_notes,
-      internal_reference_notes,
-      issued_at,
-      paid_at,
-      sent_at,
-      sent_to_email,
-      created_at,
-      updated_at
-    `)
-    .order('created_at', { ascending: false })
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
-  if (error) {
-    console.error('loadInvoices error:', error)
-    throw new Error(error.message)
+  async function loadInvoices() {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
+        subtotal,
+        total,
+        notes,
+        customer_visible_notes,
+        internal_reference_notes,
+        issued_at,
+        paid_at,
+        sent_at,
+        sent_to_email,
+        created_at,
+        updated_at
+      `)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('loadInvoices error:', error)
+      throw new Error(error.message)
+    }
+
+    const normalizedInvoices = ((data || []) as Invoice[]).map((invoice) => ({
+      ...invoice,
+      tax_rate: Number(invoice.tax_rate ?? 0),
+      subtotal_ex_tax: Number(invoice.subtotal_ex_tax ?? 0),
+      tax_amount: Number(invoice.tax_amount ?? 0),
+      subtotal: Number(invoice.subtotal ?? 0),
+      total: Number(invoice.total ?? 0),
+      customer_visible_notes: invoice.customer_visible_notes ?? null,
+      internal_reference_notes: invoice.internal_reference_notes ?? null,
+    }))
+
+    setInvoices(normalizedInvoices)
   }
-
-  const normalizedInvoices = ((data || []) as Invoice[]).map((invoice) => ({
-    ...invoice,
-    tax_rate: Number(invoice.tax_rate ?? 0),
-    subtotal_ex_tax: Number(invoice.subtotal_ex_tax ?? 0),
-    tax_amount: Number(invoice.tax_amount ?? 0),
-    subtotal: Number(invoice.subtotal ?? 0),
-    total: Number(invoice.total ?? 0),
-    customer_visible_notes: invoice.customer_visible_notes ?? null,
-    internal_reference_notes: invoice.internal_reference_notes ?? null,
-  }))
-
-  setInvoices(normalizedInvoices)
-}
 
   async function loadInvoiceItems() {
     const { data, error } = await supabase
@@ -232,6 +126,7 @@ async function loadInvoices() {
   async function loadAllData() {
     setLoading(true)
     setError('')
+    setSuccessMessage('')
 
     try {
       await Promise.all([loadInvoices(), loadInvoiceItems()])
@@ -264,6 +159,83 @@ async function loadInvoices() {
       return term ? haystack.includes(term) : true
     })
   }, [invoices, search])
+
+  const visibleInvoiceIds = filteredInvoices.map((invoice) => invoice.id)
+  const allVisibleSelected =
+    visibleInvoiceIds.length > 0 &&
+    visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id))
+
+  function toggleSelectedInvoice(invoiceId: string) {
+    setSelectedInvoiceIds((prev) =>
+      prev.includes(invoiceId)
+        ? prev.filter((id) => id !== invoiceId)
+        : [...prev, invoiceId]
+    )
+  }
+
+  function clearSelectedInvoices() {
+    setSelectedInvoiceIds([])
+  }
+
+  function selectAllVisibleInvoices(ids: string[]) {
+    setSelectedInvoiceIds(ids)
+  }
+
+  async function deleteSelectedInvoices() {
+    if (selectedInvoiceIds.length === 0) return
+
+    const confirmed = window.confirm(
+      `Delete ${selectedInvoiceIds.length} selected invoice(s)? This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setBulkDeleting(true)
+    setError('')
+    setSuccessMessage('')
+
+    const idsToDelete = [...selectedInvoiceIds]
+    const selectedSet = new Set(idsToDelete)
+
+    try {
+      const { error: deleteItemsError } = await supabase
+        .from('invoice_items')
+        .delete()
+        .in('invoice_id', idsToDelete)
+
+      if (deleteItemsError) throw deleteItemsError
+
+      const { error: deleteLinksError } = await supabase
+        .from('invoice_repair_links')
+        .delete()
+        .in('invoice_id', idsToDelete)
+
+      if (deleteLinksError) throw deleteLinksError
+
+      const { error: deleteInvoicesError } = await supabase
+        .from('invoices')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (deleteInvoicesError) throw deleteInvoicesError
+
+      setInvoices((prev) => prev.filter((invoice) => !selectedSet.has(invoice.id)))
+
+      setInvoiceItemsByInvoiceId((prev) => {
+        const next = { ...prev }
+        for (const invoiceId of idsToDelete) {
+          delete next[invoiceId]
+        }
+        return next
+      })
+
+      setSelectedInvoiceIds([])
+      setSuccessMessage(`${idsToDelete.length} invoice(s) deleted successfully.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete selected invoices')
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
 
   function generatePDF(invoice: Invoice) {
     const doc = new jsPDF({
@@ -417,7 +389,10 @@ async function loadInvoices() {
     doc.text('Summary', 120, y)
     y += 6
 
-    drawLabelValueRow('Total Item Qty', Number(items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)).toFixed(2))
+    drawLabelValueRow(
+      'Total Item Qty',
+      Number(items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)).toFixed(2)
+    )
     drawLabelValueRow('Subtotal', formatCurrency(invoice.subtotal))
     drawLabelValueRow('GST', formatCurrency(invoice.tax_amount))
 
@@ -499,6 +474,8 @@ async function loadInvoices() {
         </div>
       </div>
 
+      {successMessage ? <p className={styles.successText}>{successMessage}</p> : null}
+
       <div className={styles.filtersWrap}>
         <input
           value={search}
@@ -508,30 +485,63 @@ async function loadInvoices() {
         />
       </div>
 
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkBarText}>
+          Selected invoices: <strong>{selectedInvoiceIds.length}</strong>
+        </div>
+
+        <div className={styles.bulkBarActions}>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() =>
+              allVisibleSelected
+                ? clearSelectedInvoices()
+                : selectAllVisibleInvoices(visibleInvoiceIds)
+            }
+            disabled={bulkDeleting || visibleInvoiceIds.length === 0}
+          >
+            {allVisibleSelected ? 'Clear Visible' : 'Select Visible'}
+          </button>
+
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={clearSelectedInvoices}
+            disabled={bulkDeleting || selectedInvoiceIds.length === 0}
+          >
+            Clear Selection
+          </button>
+
+          <button
+            type="button"
+            className={styles.deleteButton}
+            onClick={() => void deleteSelectedInvoices()}
+            disabled={bulkDeleting || selectedInvoiceIds.length === 0}
+          >
+            {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
+          </button>
+        </div>
+      </div>
+
       {filteredInvoices.length === 0 ? (
         <p className={styles.message}>No invoices yet.</p>
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><th>
-  <input
-    type="checkbox"
-    checked={allVisibleSelected}
-    onChange={() =>
-      allVisibleSelected
-        ? clearSelectedInvoices()
-        : selectAllVisibleInvoices(visibleInvoiceIds)
-    }
-  />
-</th>
+            <thead>
               <tr>
-<td>
-  <input
-    type="checkbox"
-    checked={selectedInvoiceIds.includes(invoice.id)}
-    onChange={() => toggleSelectedInvoice(invoice.id)}
-  />
-</td>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={() =>
+                      allVisibleSelected
+                        ? clearSelectedInvoices()
+                        : selectAllVisibleInvoices(visibleInvoiceIds)
+                    }
+                  />
+                </th>
                 <th>Invoice Number</th>
                 <th>Customer</th>
                 <th>Status</th>
@@ -543,18 +553,19 @@ async function loadInvoices() {
                 <th>Print</th>
               </tr>
             </thead>
+
             <tbody>
               {filteredInvoices.map((invoice) => (
                 <tr key={invoice.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedInvoiceIds.includes(invoice.id)}
+                      onChange={() => toggleSelectedInvoice(invoice.id)}
+                    />
+                  </td>
                   <td>{invoice.invoice_number}</td>
                   <td>{invoice.customer_name}</td>
-<td>
-  <input
-    type="checkbox"
-    checked={selectedInvoiceIds.includes(invoice.id)}
-    onChange={() => toggleSelectedInvoice(invoice.id)}
-  />
-</td>
                   <td>
                     <span
                       className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
@@ -572,9 +583,9 @@ async function loadInvoices() {
                   <td>{invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}</td>
                   <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
                   <td>
-<Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
-  Open Invoice
-</Link>
+                    <Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
+                      Open Invoice
+                    </Link>
                   </td>
                   <td>
                     <button

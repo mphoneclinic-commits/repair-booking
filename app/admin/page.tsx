@@ -365,8 +365,12 @@ const {
   updateStatus,
   setHighlightedJobId,
 })
+
 async function updateRepairPerformed(id: string, repairPerformed: string) {
   setFieldState(id, 'repair_performed', 'saving')
+
+  const existingJob =
+    jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
 
   const { data, error } = await supabase
     .from('repair_requests')
@@ -397,10 +401,47 @@ async function updateRepairPerformed(id: string, repairPerformed: string) {
     )
   )
 
+  const relatedInvoice = invoicesByJobId[id]
+
+  if (relatedInvoice && existingJob) {
+    const updatedJob = {
+      ...existingJob,
+      repair_performed: nextValue,
+    }
+
+    const newDescription = [
+      updatedJob.job_number ? `(${updatedJob.job_number.trim()})` : '',
+      [updatedJob.brand, updatedJob.model].filter(Boolean).join(' ').trim(),
+      nextValue.trim() || 'Repair service',
+    ]
+      .filter(Boolean)
+      .join(' - ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const firstItem = (invoiceItemsByInvoiceId[relatedInvoice.id] || []).sort(
+      (a, b) => a.sort_order - b.sort_order
+    )[0]
+
+    if (firstItem) {
+      const { error: itemError } = await supabase
+        .from('invoice_items')
+        .update({ description: newDescription })
+        .eq('id', firstItem.id)
+
+      if (!itemError) {
+        await supabase.rpc('recalculate_invoice_totals', {
+          p_invoice_id: relatedInvoice.id,
+        })
+
+        await refreshInvoiceById(relatedInvoice.id)
+      }
+    }
+  }
+
   setFieldSaved(id, 'repair_performed')
   return true
 }
-
   async function updateQuote(id: string, price: number | null) {
     setFieldState(id, 'quote', 'saving')
 
@@ -582,7 +623,7 @@ useEffect(() => {
   window.history.replaceState({}, '', nextUrl.toString())
 }, [loading])
  
-   useEffect(() => {
+/*   useEffect(() => {
     const archiveIds = new Set(archiveJobs.map((job) => job.id))
     setSelectedArchiveJobIds((prev) => prev.filter((id) => archiveIds.has(id)))
   }, [archiveJobs])
@@ -591,6 +632,7 @@ useEffect(() => {
     const hiddenIds = new Set(filteredHiddenJobs.map((job) => job.id))
     setSelectedHiddenJobIds((prev) => prev.filter((id) => hiddenIds.has(id)))
   }, [filteredHiddenJobs])
+*/
 
 if (!authChecked) {
   return (
@@ -862,14 +904,17 @@ repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
                   {bulkBusy ? 'Working...' : 'Hide Selected'}
                 </button>
 
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={() => void bulkDeleteArchiveJobs()}
-                  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
-                >
-                  {bulkBusy ? 'Deleting...' : 'Delete Selected'}
-                </button>
+              <button
+  type="button"
+  className={styles.actionButton}
+  onClick={() => {
+    console.log('bulkDeleteArchiveJobs clicked', selectedArchiveJobIds)
+    void bulkDeleteArchiveJobs()
+  }}
+  disabled={bulkBusy || selectedArchiveJobIds.length === 0}
+>
+  {bulkBusy ? 'Deleting...' : 'Delete Selected'}
+</button>
 
                 <button
                   type="button"
@@ -1144,14 +1189,17 @@ repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
                 {bulkBusy ? 'Working...' : 'Unhide Selected'}
               </button>
 
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={() => void bulkDeleteHiddenJobs()}
-                disabled={bulkBusy || selectedHiddenJobIds.length === 0}
-              >
-                {bulkBusy ? 'Deleting...' : 'Delete Selected'}
-              </button>
+<button
+  type="button"
+  className={styles.actionButton}
+  onClick={() => {
+    console.log('bulkDeleteHiddenJobs clicked', selectedHiddenJobIds)
+    void bulkDeleteHiddenJobs()
+  }}
+  disabled={bulkBusy || selectedHiddenJobIds.length === 0}
+>
+  {bulkBusy ? 'Deleting...' : 'Delete Selected'}
+</button>
 
               <button
                 type="button"

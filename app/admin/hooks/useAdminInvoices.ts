@@ -66,18 +66,22 @@ export default function useAdminInvoices({
     }))
   }
 
-  function buildDefaultInvoiceDescription(job: RepairRequest) {
-    const jobNumberPart = (job.job_number || 'NO-JOB').trim()
-    const brandPart = (job.brand || '').trim()
-    const modelPart = (job.model || '').trim()
-    const repairPerformedPart = (job.repair_performed || '').trim()
-    const internalNotesPart = (job.internal_notes || '').trim()
+function buildDefaultInvoiceDescription(job: RepairRequest) {
+  const jobNumberPart = (job.job_number || '').trim()
+  const brandPart = (job.brand || '').trim()
+  const modelPart = (job.model || '').trim()
+  const repairPerformedPart = (job.repair_performed || '').trim()
 
-    const devicePart = [brandPart, modelPart].filter(Boolean).join(' ').trim()
-    const workPart = repairPerformedPart || internalNotesPart || 'Repair service'
+  const formattedJobNumber = jobNumberPart ? `(${jobNumberPart})` : ''
+  const devicePart = [brandPart, modelPart].filter(Boolean).join(' ').trim()
+  const workPart = repairPerformedPart || 'Repair service'
 
-    return [jobNumberPart, devicePart, workPart].filter(Boolean).join(' - ')
-  }
+  return [formattedJobNumber, devicePart, workPart]
+    .filter(Boolean)
+    .join(' - ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
   async function createInvoiceForJob(job: RepairRequest) {
     setInvoiceActionState(job.id, 'saving')

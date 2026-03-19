@@ -220,7 +220,7 @@ export default function useAdminArchiveActions({
       device_type: job.device_type,
       serial_imei: job.serial_imei,
       fault_description: job.fault_description,
-      repair_performed: job.repair_performed ?? '',
+      repair_performed: job.repair_performed ?? null,
       status: 'new' as RepairStatus,
       preferred_contact: job.preferred_contact,
       internal_notes: job.internal_notes,
@@ -263,22 +263,51 @@ export default function useAdminArchiveActions({
 
     setJobs((prev) => [...newJobs, ...prev])
     setSelectedArchiveJobIds([])
-    if (newJobs[0]) setHighlightedJobId(newJobs[0].id)
+
+    if (newJobs[0]) {
+      setHighlightedJobId(newJobs[0].id)
+    }
+
     setBulkBusy(false)
   }
 
-  async function bulkDeleteArchiveJobs() {
-    if (selectedArchiveJobIds.length === 0) return
+  async function safeDeleteInvoiceRepairLinks(invoiceIds: string[]) {
+    if (invoiceIds.length === 0) return
+
+    const { error } = await supabase
+      .from('invoice_repair_links')
+      .delete()
+      .in('invoice_id', invoiceIds)
+
+    if (!error) return
+
+    const msg = String(error.message || '').toLowerCase()
+
+    if (
+      msg.includes('relation') ||
+      msg.includes('does not exist') ||
+      msg.includes('schema cache')
+    ) {
+      return
+    }
+
+    throw error
+  }
+
+  async function deleteJobsByIds(
+    idsToDelete: string[],
+    source: 'archive' | 'hidden'
+  ) {
+    if (idsToDelete.length === 0) return
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedArchiveJobIds.length} selected jobs? This cannot be undone.`
+      `Are you sure you want to delete ${idsToDelete.length} selected jobs? This cannot be undone.`
     )
     if (!confirmed) return
 
     setBulkBusy(true)
     setError('')
 
-    const idsToDelete = [...selectedArchiveJobIds]
     const selectedSet = new Set(idsToDelete)
 
     const previousJobs = jobs
@@ -302,18 +331,16 @@ export default function useAdminArchiveActions({
           .from('invoice_items')
           .delete()
           .in('invoice_id', invoiceIds)
+
         if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
 
-        const { error: deleteInvoiceLinksError } = await supabase
-          .from('invoice_repair_links')
-          .delete()
-          .in('invoice_id', invoiceIds)
-        if (deleteInvoiceLinksError) throw deleteInvoiceLinksError
+        await safeDeleteInvoiceRepairLinks(invoiceIds)
 
         const { error: deleteInvoicesError } = await supabase
           .from('invoices')
           .delete()
           .in('id', invoiceIds)
+
         if (deleteInvoicesError) throw deleteInvoicesError
       }
 
@@ -321,17 +348,24 @@ export default function useAdminArchiveActions({
         .from('repair_request_photos')
         .delete()
         .in('repair_request_id', idsToDelete)
+
       if (deletePhotosError) throw deletePhotosError
 
       const { error: deleteJobsError } = await supabase
         .from('repair_requests')
         .delete()
         .in('id', idsToDelete)
+
       if (deleteJobsError) throw deleteJobsError
 
       setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
       setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-      setSelectedArchiveJobIds([])
+
+      if (source === 'archive') {
+        setSelectedArchiveJobIds([])
+      } else {
+        setSelectedHiddenJobIds([])
+      }
 
       if (highlightedJobId && selectedSet.has(highlightedJobId)) {
         setHighlightedJobId(null)
@@ -339,14 +373,19 @@ export default function useAdminArchiveActions({
 
       setInvoicesByJobId((prev) => {
         const next = { ...prev }
-        for (const jobId of idsToDelete) delete next[jobId]
+        for (const [jobId, invoice] of Object.entries(prev)) {
+          if (selectedSet.has(jobId) || invoiceIds.includes(invoice.id)) {
+            delete next[jobId]
+          }
+        }
         return next
       })
 
       setInvoiceItemsByInvoiceId((prev) => {
-        if (invoiceIds.length === 0) return prev
         const next = { ...prev }
-        for (const invoiceId of invoiceIds) delete next[invoiceId]
+        for (const invoiceId of invoiceIds) {
+          delete next[invoiceId]
+        }
         return next
       })
     } catch (err) {
@@ -355,106 +394,25 @@ export default function useAdminArchiveActions({
       setHighlightedJobId(previousHighlightedJobId)
       setInvoicesByJobId(previousInvoicesByJobId)
       setInvoiceItemsByInvoiceId(previousInvoiceItemsByInvoiceId)
-      setSelectedArchiveJobIds(idsToDelete)
-      setError(err instanceof Error ? err.message : 'Failed to delete selected archive jobs')
+
+      if (source === 'archive') {
+        setSelectedArchiveJobIds(idsToDelete)
+      } else {
+        setSelectedHiddenJobIds(idsToDelete)
+      }
+
+      setError(err instanceof Error ? err.message : 'Failed to delete selected jobs')
     } finally {
       setBulkBusy(false)
     }
   }
 
+  async function bulkDeleteArchiveJobs() {
+    await deleteJobsByIds([...selectedArchiveJobIds], 'archive')
+  }
+
   async function bulkDeleteHiddenJobs() {
-    if (selectedHiddenJobIds.length === 0) return
-
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedHiddenJobIds.length} selected jobs? This cannot be undone.`
-    )
-    if (!confirmed) return
-
-    setBulkBusy(true)
-    setError('')
-
-    const idsToDelete = [...selectedHiddenJobIds]
-    const selectedSet = new Set(idsToDelete)
-
-    const previousJobs = jobs
-    const previousHiddenJobs = hiddenJobs
-    const previousHighlightedJobId = highlightedJobId
-    const previousInvoicesByJobId = invoicesByJobId
-    const previousInvoiceItemsByInvoiceId = invoiceItemsByInvoiceId
-
-    try {
-      const { data: linkedInvoices, error: linkedInvoicesError } = await supabase
-        .from('invoices')
-        .select('id, repair_request_id')
-        .in('repair_request_id', idsToDelete)
-
-      if (linkedInvoicesError) throw linkedInvoicesError
-
-      const invoiceIds = (linkedInvoices || []).map((invoice: { id: string }) => invoice.id)
-
-      if (invoiceIds.length > 0) {
-        const { error: deleteInvoiceItemsError } = await supabase
-          .from('invoice_items')
-          .delete()
-          .in('invoice_id', invoiceIds)
-        if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
-
-        const { error: deleteInvoiceLinksError } = await supabase
-          .from('invoice_repair_links')
-          .delete()
-          .in('invoice_id', invoiceIds)
-        if (deleteInvoiceLinksError) throw deleteInvoiceLinksError
-
-        const { error: deleteInvoicesError } = await supabase
-          .from('invoices')
-          .delete()
-          .in('id', invoiceIds)
-        if (deleteInvoicesError) throw deleteInvoicesError
-      }
-
-      const { error: deletePhotosError } = await supabase
-        .from('repair_request_photos')
-        .delete()
-        .in('repair_request_id', idsToDelete)
-      if (deletePhotosError) throw deletePhotosError
-
-      const { error: deleteJobsError } = await supabase
-        .from('repair_requests')
-        .delete()
-        .in('id', idsToDelete)
-      if (deleteJobsError) throw deleteJobsError
-
-      setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-      setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-      setSelectedHiddenJobIds([])
-
-      if (highlightedJobId && selectedSet.has(highlightedJobId)) {
-        setHighlightedJobId(null)
-      }
-
-      setInvoicesByJobId((prev) => {
-        const next = { ...prev }
-        for (const jobId of idsToDelete) delete next[jobId]
-        return next
-      })
-
-      setInvoiceItemsByInvoiceId((prev) => {
-        if (invoiceIds.length === 0) return prev
-        const next = { ...prev }
-        for (const invoiceId of invoiceIds) delete next[invoiceId]
-        return next
-      })
-    } catch (err) {
-      setJobs(previousJobs)
-      setHiddenJobs(previousHiddenJobs)
-      setHighlightedJobId(previousHighlightedJobId)
-      setInvoicesByJobId(previousInvoicesByJobId)
-      setInvoiceItemsByInvoiceId(previousInvoiceItemsByInvoiceId)
-      setSelectedHiddenJobIds(idsToDelete)
-      setError(err instanceof Error ? err.message : 'Failed to delete selected hidden jobs')
-    } finally {
-      setBulkBusy(false)
-    }
+    await deleteJobsByIds([...selectedHiddenJobIds], 'hidden')
   }
 
   return {
