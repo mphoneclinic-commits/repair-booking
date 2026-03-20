@@ -32,6 +32,9 @@
 .businessDetails {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .brand {
@@ -42,10 +45,10 @@
 }
 
 .brandMeta {
-  margin-top: 6px;
+  margin-top: 0px;
   font-size: 14px;
   color: #475569;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .invoiceHeaderRight {
