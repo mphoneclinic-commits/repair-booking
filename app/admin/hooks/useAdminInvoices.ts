@@ -72,7 +72,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
   const modelPart = (job.model || '').trim()
   const repairPerformedPart = (job.repair_performed || '').trim()
 
-  const formattedJobNumber = jobNumberPart ? `(${jobNumberPart})` : ''
+  const formattedJobNumber = jobNumberPart ? `${jobNumberPart}` : ''
   const devicePart = [brandPart, modelPart].filter(Boolean).join(' ').trim()
   const workPart = repairPerformedPart || 'Repair service'
 

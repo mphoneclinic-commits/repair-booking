@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import jsPDF from 'jspdf'
 import styles from './invoice.module.css'
+import ui from '../sharedAdminUi.module.css'
 import type {
   Invoice,
   InvoiceItem,
@@ -958,8 +959,8 @@ export default function InvoicePrintPage() {
           <div className={styles.messageCardError}>
             {error || 'Invoice could not be loaded.'}
           </div>
-          <div className={styles.topBar}>
-            <Link href="/admin" className={styles.secondaryButton}>
+          <div className={ui.topBar}>
+            <Link href="/admin" className={ui.secondaryButton}>
               Back to Admin
             </Link>
           </div>
@@ -971,28 +972,28 @@ export default function InvoicePrintPage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <div className={styles.topBar}>
+        <div className={ui.topBar}>
           <div>
-            <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
-            <h1 className={styles.pageTitle}>Invoice {invoice.invoice_number}</h1>
-            <p className={styles.pageSubtitle}>
+            <div className={ui.eyebrow}>The Mobile Phone Clinic</div>
+            <h1 className={ui.pageTitle}>Invoice {invoice.invoice_number}</h1>
+            <p className={ui.pageSubtitle}>
               {isGroupedInvoice ? `${linkedJobs.length} linked jobs` : 'Single job invoice'}
             </p>
           </div>
 
-          <div className={styles.topActionsRight}>
-            <Link href="/admin/invoices" className={styles.secondaryButton}>
+          <div className={ui.topActionsRight}>
+            <Link href="/admin/invoices" className={ui.secondaryButton}>
               Back to Invoices
             </Link>
 
-            <Link href="/admin" className={styles.secondaryButton}>
+            <Link href="/admin" className={ui.secondaryButton}>
               Back to Dashboard
             </Link>
 
             {invoice.status === 'draft' && (
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={ui.secondaryButton}
                 onClick={() => void updateInvoiceStatus('issued')}
                 disabled={updatingStatus}
               >
@@ -1003,7 +1004,7 @@ export default function InvoicePrintPage() {
             {(invoice.status === 'draft' || invoice.status === 'issued') && (
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={ui.secondaryButton}
                 onClick={() => void updateInvoiceStatus('paid')}
                 disabled={updatingStatus}
               >
@@ -1014,7 +1015,7 @@ export default function InvoicePrintPage() {
             {invoice.status === 'paid' && (
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={ui.secondaryButton}
                 onClick={() => void updateInvoiceStatus('issued')}
                 disabled={updatingStatus}
               >
@@ -1025,7 +1026,7 @@ export default function InvoicePrintPage() {
             {invoice.status !== 'void' && (
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={ui.secondaryButton}
                 onClick={() => void updateInvoiceStatus('void')}
                 disabled={updatingStatus}
               >
@@ -1036,7 +1037,7 @@ export default function InvoicePrintPage() {
             {invoice.status === 'void' && (
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={ui.secondaryButton}
                 onClick={() => void updateInvoiceStatus('issued')}
                 disabled={updatingStatus}
               >
@@ -1046,7 +1047,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.printButton}
+              className={ui.printButton}
               onClick={() => window.print()}
             >
               Print Invoice
@@ -1054,7 +1055,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.printButton}
+              className={ui.printButton}
               onClick={generatePDF}
             >
               Download PDF
@@ -1062,7 +1063,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.deleteButton}
+              className={ui.deleteButton}
               onClick={() => void deleteInvoice()}
               disabled={deleting}
             >
@@ -1072,7 +1073,7 @@ export default function InvoicePrintPage() {
         </div>
 
         <div className={styles.notesSection}>
-          <div className={styles.inputTopRow}>
+          <div className={ui.inputTopRow}>
             <div className={styles.sectionHeading}>Send Invoice Email</div>
           </div>
 
@@ -1095,7 +1096,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.secondaryButton}
+              className={ui.secondaryButton}
               onClick={() => void sendInvoiceEmail()}
               disabled={sendingInvoiceEmail}
             >
@@ -1105,7 +1106,7 @@ export default function InvoicePrintPage() {
         </div>
 
         <div className={styles.notesSection}>
-          <div className={styles.inputTopRow}>
+          <div className={ui.inputTopRow}>
             <div className={styles.sectionHeading}>Send Invoice SMS</div>
           </div>
 
@@ -1130,7 +1131,7 @@ export default function InvoicePrintPage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
             <button
               type="button"
-              className={styles.secondaryButton}
+              className={ui.secondaryButton}
               onClick={() => {
                 setSmsMessage(buildInvoiceSms())
                 setSmsSendError('')
@@ -1142,7 +1143,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.secondaryButton}
+              className={ui.secondaryButton}
               onClick={() => {
                 setSmsMessage(buildPaidReminderSms())
                 setSmsSendError('')
@@ -1168,7 +1169,7 @@ export default function InvoicePrintPage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
             <button
               type="button"
-              className={styles.secondaryButton}
+              className={ui.secondaryButton}
               onClick={() => void sendInvoiceSms()}
               disabled={sendingSms}
             >
@@ -1184,11 +1185,11 @@ export default function InvoicePrintPage() {
           ) : null}
         </div>
 
-        {successMessage ? <div className={styles.successBanner}>{successMessage}</div> : null}
-        {emailSendSuccess ? <div className={styles.successBanner}>{emailSendSuccess}</div> : null}
-        {emailSendError ? <p className={styles.errorText}>{emailSendError}</p> : null}
-        {smsSendSuccess ? <div className={styles.successBanner}>{smsSendSuccess}</div> : null}
-        {smsSendError ? <p className={styles.errorText}>{smsSendError}</p> : null}
+        {successMessage ? <div className={ui.successBanner}>{successMessage}</div> : null}
+        {emailSendSuccess ? <div className={ui.successBanner}>{emailSendSuccess}</div> : null}
+        {emailSendError ? <p className={ui.errorText}>{emailSendError}</p> : null}
+        {smsSendSuccess ? <div className={ui.successBanner}>{smsSendSuccess}</div> : null}
+        {smsSendError ? <p className={ui.errorText}>{smsSendError}</p> : null}
 
         <article className={styles.document}>
           <header className={styles.header}>
@@ -1308,7 +1309,7 @@ export default function InvoicePrintPage() {
           </section>
 
           <section className={styles.notesSection}>
-            <div className={styles.inputTopRow}>
+            <div className={ui.inputTopRow}>
               <div className={styles.sectionHeading}>Customer Visible Notes</div>
               <SaveIndicator state={customerNotesState} compact />
             </div>
@@ -1325,7 +1326,7 @@ export default function InvoicePrintPage() {
           </section>
 
           <section className={styles.notesSection}>
-            <div className={styles.inputTopRow}>
+            <div className={ui.inputTopRow}>
               <div className={styles.sectionHeading}>Internal Reference Notes</div>
               <SaveIndicator state={internalNotesState} compact />
             </div>

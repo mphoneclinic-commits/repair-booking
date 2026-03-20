@@ -38,6 +38,11 @@ export default function InvoicesPage() {
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
+  const [editableCustomerNotes, setEditableCustomerNotes] = useState<
+    Record<string, string>
+  >({})
+  const [savingCustomerNotesIds, setSavingCustomerNotesIds] = useState<string[]>([])
+
   async function loadInvoices() {
     const { data, error } = await supabase
       .from('invoices')
@@ -85,6 +90,12 @@ export default function InvoicesPage() {
     }))
 
     setInvoices(normalizedInvoices)
+
+    const notesMap: Record<string, string> = {}
+    for (const invoice of normalizedInvoices) {
+      notesMap[invoice.id] = invoice.customer_visible_notes ?? ''
+    }
+    setEditableCustomerNotes(notesMap)
   }
 
   async function loadInvoiceItems() {
@@ -228,12 +239,77 @@ export default function InvoicesPage() {
         return next
       })
 
+      setEditableCustomerNotes((prev) => {
+        const next = { ...prev }
+        for (const invoiceId of idsToDelete) {
+          delete next[invoiceId]
+        }
+        return next
+      })
+
       setSelectedInvoiceIds([])
       setSuccessMessage(`${idsToDelete.length} invoice(s) deleted successfully.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete selected invoices')
     } finally {
       setBulkDeleting(false)
+    }
+  }
+
+  async function saveCustomerVisibleNotes(invoiceId: string) {
+    const currentValue = editableCustomerNotes[invoiceId] ?? ''
+    const existingInvoice = invoices.find((invoice) => invoice.id === invoiceId)
+
+    if (!existingInvoice) return
+
+    const normalizedCurrentValue = currentValue.trim()
+    const normalizedExistingValue = (existingInvoice.customer_visible_notes ?? '').trim()
+
+    if (normalizedCurrentValue === normalizedExistingValue) return
+
+    setSavingCustomerNotesIds((prev) =>
+      prev.includes(invoiceId) ? prev : [...prev, invoiceId]
+    )
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      const timestamp = new Date().toISOString()
+
+      const { error } = await supabase
+        .from('invoices')
+        .update({
+          customer_visible_notes: normalizedCurrentValue || null,
+          updated_at: timestamp,
+        })
+        .eq('id', invoiceId)
+
+      if (error) throw error
+
+      setInvoices((prev) =>
+        prev.map((invoice) =>
+          invoice.id === invoiceId
+            ? {
+                ...invoice,
+                customer_visible_notes: normalizedCurrentValue || null,
+                updated_at: timestamp,
+              }
+            : invoice
+        )
+      )
+
+      setEditableCustomerNotes((prev) => ({
+        ...prev,
+        [invoiceId]: normalizedCurrentValue,
+      }))
+
+      setSuccessMessage('Customer notes updated.')
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to update customer notes'
+      )
+    } finally {
+      setSavingCustomerNotesIds((prev) => prev.filter((id) => id !== invoiceId))
     }
   }
 
@@ -306,12 +382,18 @@ export default function InvoicesPage() {
     doc.setFont('helvetica', 'normal')
     doc.text(`Invoice: ${invoice.invoice_number}`, right, 23, { align: 'right' })
     doc.text(
-      `Date: ${invoice.issued_at ? formatDateTime(invoice.issued_at) : formatDateTime(invoice.created_at)}`,
+      `Date: ${
+        invoice.issued_at
+          ? formatDateTime(invoice.issued_at)
+          : formatDateTime(invoice.created_at)
+      }`,
       right,
       29,
       { align: 'right' }
     )
-    doc.text(`Status: ${invoice.status.toUpperCase()}`, right, 35, { align: 'right' })
+    doc.text(`Status: ${invoice.status.toUpperCase()}`, right, 35, {
+      align: 'right',
+    })
 
     y = 42
     drawHorizontalLine()
@@ -528,10 +610,10 @@ export default function InvoicesPage() {
         <p className={styles.message}>No invoices yet.</p>
       ) : (
         <div className={styles.tableWrap}>
-          <table className={styles.table}>
+          <table className={`${styles.table} ${styles.tableAligned}`}>
             <thead>
               <tr>
-                <th>
+                <th className={styles.tableCellCenter}>
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -546,58 +628,72 @@ export default function InvoicesPage() {
                 <th>Customer</th>
                 <th>Status</th>
                 <th>Total</th>
-                <th>Notes</th>
+                <th>Notes to Customer</th>
                 <th>Issued</th>
                 <th>Paid</th>
-                <th>Open</th>
-                <th>Print</th>
+                <th className={styles.tableCellCenter}>Open</th>
+                <th className={styles.tableCellCenter}>Print</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredInvoices.map((invoice) => (
-                <tr key={invoice.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedInvoiceIds.includes(invoice.id)}
-                      onChange={() => toggleSelectedInvoice(invoice.id)}
-                    />
-                  </td>
-                  <td>{invoice.invoice_number}</td>
-                  <td>{invoice.customer_name}</td>
-                  <td>
-                    <span
-                      className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
-                    >
-                      {invoice.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td>{formatCurrency(invoice.total)}</td>
-                  <td>
-                    {invoice.customer_visible_notes
-                      ? invoice.customer_visible_notes.substring(0, 50) +
-                        (invoice.customer_visible_notes.length > 50 ? '...' : '')
-                      : '-'}
-                  </td>
-                  <td>{invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}</td>
-                  <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
-                  <td>
-                    <Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
-                      Open Invoice
-                    </Link>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => generatePDF(invoice)}
-                      className={styles.button}
-                    >
-                      Print to PDF
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filteredInvoices.map((invoice) => {
+                const isSavingNotes = savingCustomerNotesIds.includes(invoice.id)
+
+                return (
+                  <tr key={invoice.id}>
+                    <td className={styles.tableCellCenter}>
+                      <input
+                        type="checkbox"
+                        checked={selectedInvoiceIds.includes(invoice.id)}
+                        onChange={() => toggleSelectedInvoice(invoice.id)}
+                      />
+                    </td>
+                    <td>{invoice.invoice_number}</td>
+                    <td>{invoice.customer_name}</td>
+                    <td>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
+                      >
+                        {invoice.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>{formatCurrency(invoice.total)}</td>
+                    <td className={`${styles.tableCellWrap} ${styles.invoiceNotesCell}`}>
+                      <textarea
+                        value={editableCustomerNotes[invoice.id] ?? ''}
+                        onChange={(e) =>
+                          setEditableCustomerNotes((prev) => ({
+                            ...prev,
+                            [invoice.id]: e.target.value,
+                          }))
+                        }
+                        onBlur={() => void saveCustomerVisibleNotes(invoice.id)}
+                        placeholder="Add customer note..."
+                        className={styles.invoiceNotesInput}
+                        rows={3}
+                        disabled={isSavingNotes}
+                      />
+                    </td>
+                    <td>{invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}</td>
+                    <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
+                    <td className={styles.tableButtonCell}>
+                      <Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
+                        Open Invoice
+                      </Link>
+                    </td>
+                    <td className={styles.tableButtonCell}>
+                      <button
+                        type="button"
+                        className={`${styles.button} ${styles.printButton}`}
+                        onClick={() => generatePDF(invoice)}
+                      >
+                        Download PDF
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
