@@ -3,32 +3,18 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import jsPDF from 'jspdf'
+import { generateInvoicePdf } from '../../admin/lib/invoicePdf'
+import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../../admin/lib/invoicePdfConfig'
 import type { Invoice, InvoiceItem } from '../../admin/types'
 import { formatDateTime } from '../../admin/utils'
 import styles from '../../admin/invoice/invoice.module.css'
+import ui from '../../admin/sharedAdminUi.module.css'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const BUSINESS_DETAILS = {
-  name: 'The Mobile Phone Clinic',
-  address: 'Melbourne, Victoria, Australia',
-  landline: '(03) 9547 9991',
-  mobile: '0411 369 814',
-  email: 'admin@themobilephoneclinic.com.au',
-  abn: '59696 1787 82',
-}
-
-const PAYMENT_DETAILS = {
-  bankName: 'GREAT SOUTHERN BANK',
-  accountName: 'BUN UNG',
-  bsb: '814 282',
-  accountNumber: '520 372 19',
-  payId: '0411 369 814',
-}
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -140,14 +126,21 @@ export default function PublicInvoicePage() {
     }
   }
 
-  function generatePDF() {
-    if (!invoice) return
+ function generatePDF() {
+  if (!invoice) return
 
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    })
+  generateInvoicePdf({
+    invoice,
+    items,
+    businessDetails: BUSINESS_DETAILS,
+    paymentDetails: PAYMENT_DETAILS,
+    includeInternalReferenceNotes: false,
+  })
+}
+
+    const COLOR_DARK: [number, number, number] = [15, 23, 42]
+    const COLOR_GREEN: [number, number, number] = [55, 126, 71]
+    const COLOR_BLUE: [number, number, number] = [37, 99, 235]
 
     const pageWidth = doc.internal.pageSize.getWidth()
     const pageHeight = doc.internal.pageSize.getHeight()
@@ -167,6 +160,7 @@ export default function PublicInvoicePage() {
 
     const drawLabelValueRow = (label: string, value: string) => {
       addPageIfNeeded(7)
+      doc.setTextColor(...COLOR_DARK)
       doc.setFont('helvetica', 'bold')
       doc.text(label, left, y)
       doc.setFont('helvetica', 'normal')
@@ -183,6 +177,7 @@ export default function PublicInvoicePage() {
     const drawWrappedBlock = (title: string, value: string) => {
       const lines = doc.splitTextToSize(value || '-', contentWidth)
       addPageIfNeeded(8 + lines.length * 5)
+      doc.setTextColor(...COLOR_DARK)
       doc.setFont('helvetica', 'bold')
       doc.text(title, left, y)
       y += 5
@@ -193,9 +188,11 @@ export default function PublicInvoicePage() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(18)
+    doc.setTextColor(...COLOR_GREEN)
     doc.text(BUSINESS_DETAILS.name, left, y)
     y += 7
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text(BUSINESS_DETAILS.address, left, y)
@@ -210,8 +207,10 @@ export default function PublicInvoicePage() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
+    doc.setTextColor(...COLOR_BLUE)
     doc.text('TAX INVOICE', right, 16, { align: 'right' })
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text(`Invoice: ${invoice.invoice_number}`, right, 23, { align: 'right' })
@@ -226,6 +225,7 @@ export default function PublicInvoicePage() {
     y = 46
     drawHorizontalLine()
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Bill To', left, y)
@@ -243,6 +243,7 @@ export default function PublicInvoicePage() {
 
     for (const line of billToLines) {
       addPageIfNeeded(5)
+      doc.setTextColor(...COLOR_DARK)
       doc.text(line, left, y)
       y += 5
     }
@@ -251,6 +252,7 @@ export default function PublicInvoicePage() {
     drawHorizontalLine()
 
     addPageIfNeeded(10)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Invoice Items', left, y)
@@ -267,6 +269,7 @@ export default function PublicInvoicePage() {
     doc.line(left, y, right, y)
     y += 5
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
 
@@ -281,6 +284,7 @@ export default function PublicInvoicePage() {
 
         addPageIfNeeded(rowHeight + 2)
 
+        doc.setTextColor(...COLOR_DARK)
         doc.text(descriptionLines, left, y)
         doc.text(Number(item.qty).toFixed(2), 120, y, { align: 'right' })
         doc.text(formatCurrency(item.unit_price), 155, y, { align: 'right' })
@@ -294,6 +298,7 @@ export default function PublicInvoicePage() {
     drawHorizontalLine()
 
     addPageIfNeeded(24)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
     doc.text('Summary', 120, y)
@@ -307,6 +312,7 @@ export default function PublicInvoicePage() {
     drawLabelValueRow('GST', formatCurrency(invoice.tax_amount))
 
     addPageIfNeeded(7)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.text('Total', left, y)
     doc.text(formatCurrency(invoice.total), right, y, { align: 'right' })
@@ -322,6 +328,7 @@ export default function PublicInvoicePage() {
     drawHorizontalLine()
 
     addPageIfNeeded(28)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Payment Details', left, y)
@@ -338,6 +345,7 @@ export default function PublicInvoicePage() {
 
     y += 4
     addPageIfNeeded(8)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(9)
     doc.text('Thank you for choosing The Mobile Phone Clinic.', left, y)
 
@@ -365,8 +373,8 @@ export default function PublicInvoicePage() {
           <div className={styles.messageCardError}>
             {error || 'Invoice could not be loaded.'}
           </div>
-          <div className={styles.topBar}>
-            <Link href="/" className={styles.secondaryButton}>
+          <div className={ui.topBar}>
+            <Link href="/" className={ui.secondaryButton}>
               Back
             </Link>
           </div>
@@ -378,17 +386,17 @@ export default function PublicInvoicePage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <div className={styles.topBar}>
+        <div className={ui.topBar}>
           <div>
-            <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
-            <h1 className={styles.pageTitle}>Invoice {invoice.invoice_number}</h1>
-            <p className={styles.pageSubtitle}>Customer copy</p>
+            <div className={ui.eyebrow}>The Mobile Phone Clinic</div>
+            <h1 className={ui.pageTitle}>Invoice {invoice.invoice_number}</h1>
+            <p className={ui.pageSubtitle}>Customer copy</p>
           </div>
 
-          <div className={styles.topActionsRight}>
+          <div className={ui.topActionsRight}>
             <button
               type="button"
-              className={styles.printButton}
+              className={ui.printButton}
               onClick={() => window.print()}
             >
               Print Invoice
@@ -396,7 +404,7 @@ export default function PublicInvoicePage() {
 
             <button
               type="button"
-              className={styles.printButton}
+              className={ui.printButton}
               onClick={generatePDF}
             >
               Download PDF

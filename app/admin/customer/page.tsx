@@ -20,6 +20,7 @@ function buildCustomerKey(job: RepairRequest) {
   const phone = normalizePhone(job.phone)
   const email = (job.email || '').trim().toLowerCase()
   const name = job.full_name.trim().toLowerCase()
+
   if (phone) return `phone:${phone}`
   if (email) return `email:${email}`
   return `name:${name}`
@@ -48,8 +49,10 @@ export default function CustomerDetailPage() {
         setLoading(false)
         return
       }
+
       setLoading(true)
       setError('')
+
       try {
         const [{ data: jobsData, error: jobsError }, { data: invoiceData, error: invoiceError }] =
           await Promise.all([
@@ -67,6 +70,7 @@ export default function CustomerDetailPage() {
                 device_type,
                 serial_imei,
                 fault_description,
+                repair_performed,
                 status,
                 preferred_contact,
                 internal_notes,
@@ -92,6 +96,8 @@ export default function CustomerDetailPage() {
                 subtotal,
                 total,
                 notes,
+                customer_visible_notes,
+                internal_reference_notes,
                 issued_at,
                 paid_at,
                 sent_at,
@@ -101,16 +107,21 @@ export default function CustomerDetailPage() {
               `)
               .order('created_at', { ascending: false }),
           ])
+
         if (jobsError) throw jobsError
         if (invoiceError) throw invoiceError
+
         const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
           ...job,
           internal_notes: job.internal_notes ?? '',
           quoted_price: job.quoted_price ?? null,
           serial_imei: job.serial_imei ?? null,
+          repair_performed: job.repair_performed ?? '',
           is_hidden: Boolean(job.is_hidden),
         }))
+
         const matchingJobs = safeJobs.filter((job) => buildCustomerKey(job) === customerKey)
+
         const safeInvoices = ((invoiceData || []) as Invoice[]).map((invoice) => ({
           ...invoice,
           tax_rate: Number(invoice.tax_rate ?? 0),
@@ -118,11 +129,15 @@ export default function CustomerDetailPage() {
           tax_amount: Number(invoice.tax_amount ?? 0),
           subtotal: Number(invoice.subtotal ?? 0),
           total: Number(invoice.total ?? 0),
+          customer_visible_notes: invoice.customer_visible_notes ?? null,
+          internal_reference_notes: invoice.internal_reference_notes ?? null,
         }))
+
         const jobIds = new Set(matchingJobs.map((job) => job.id))
         const matchingInvoices = safeInvoices.filter((invoice) =>
           jobIds.has(invoice.repair_request_id)
         )
+
         setJobs(matchingJobs)
         setInvoices(matchingInvoices)
       } catch (err) {
@@ -131,15 +146,21 @@ export default function CustomerDetailPage() {
         setLoading(false)
       }
     }
+
     void loadData()
   }, [customerKey])
 
   const customerSummary = useMemo(() => {
     if (jobs.length === 0) return null
-    const newest = jobs[0]
+
+    const newest = [...jobs].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+
     const visibleJobs = jobs.filter((job) => !job.is_hidden)
     const hiddenJobs = jobs.filter((job) => job.is_hidden)
     const quotedTotal = jobs.reduce((sum, job) => sum + (job.quoted_price ?? 0), 0)
+
     return {
       name: newest.full_name,
       phone: newest.phone || '',
@@ -160,9 +181,7 @@ export default function CustomerDetailPage() {
     }, {})
   }, [invoices])
 
-  const selectableJobs = useMemo(() => {
-    return jobs.filter((job) => !job.is_hidden)
-  }, [jobs])
+  const selectableJobs = useMemo(() => jobs.filter((job) => !job.is_hidden), [jobs])
 
   function toggleSelectedJob(jobId: string) {
     setSelectedJobIds((prev) =>
@@ -179,13 +198,14 @@ export default function CustomerDetailPage() {
   }
 
   async function deleteJob(jobId: string) {
-    if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) return
+    if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) {
+      return
+    }
 
     setDeleting(true)
-    const { error } = await supabase
-      .from('repair_requests')
-      .delete()
-      .eq('id', jobId)
+    setError('')
+
+    const { error } = await supabase.from('repair_requests').delete().eq('id', jobId)
 
     if (error) {
       setError(error.message)
@@ -200,13 +220,19 @@ export default function CustomerDetailPage() {
 
   async function bulkDeleteJobs() {
     if (selectedJobIds.length === 0) return
-    if (!window.confirm(`Are you sure you want to delete ${selectedJobIds.length} selected jobs? This cannot be undone.`)) return
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This cannot be undone.`
+      )
+    ) {
+      return
+    }
 
     setDeleting(true)
-    const { error } = await supabase
-      .from('repair_requests')
-      .delete()
-      .in('id', selectedJobIds)
+    setError('')
+
+    const { error } = await supabase.from('repair_requests').delete().in('id', selectedJobIds)
 
     if (error) {
       setError(error.message)
@@ -221,35 +247,45 @@ export default function CustomerDetailPage() {
 
   async function handleCreateGroupedInvoice() {
     if (!customerSummary) return
+
     if (selectedJobIds.length === 0) {
       setError('Select at least one visible job first.')
       return
     }
+
     setCreatingGroupedInvoice(true)
     setError('')
+
     const selectedJobs = jobs.filter((job) => selectedJobIds.includes(job.id))
     const primaryJob = selectedJobs[0]
+
     if (!primaryJob) {
       setError('No valid jobs selected.')
       setCreatingGroupedInvoice(false)
       return
     }
+
     const { data: invoiceNumberData, error: invoiceNumberError } = await supabase.rpc(
       'generate_invoice_number'
     )
+
     if (invoiceNumberError || !invoiceNumberData) {
       setError(invoiceNumberError?.message || 'Failed to generate invoice number')
       setCreatingGroupedInvoice(false)
       return
     }
+
     const invoiceNumber = String(invoiceNumberData)
     const subtotal = selectedJobs.reduce((sum, job) => sum + (job.quoted_price ?? 0), 0)
+
     const referenceLines = selectedJobs.map((job) => {
       const device = [job.brand, job.model, job.device_type].filter(Boolean).join(' • ')
       const serial = job.serial_imei?.trim() ? ` | Serial/IMEI: ${job.serial_imei.trim()}` : ''
       return `${job.job_number || 'Pending'} | ${device}${serial}`
     })
+
     const invoiceNotes = `Repair references:\n${referenceLines.join('\n')}`
+
     const { data: insertedInvoice, error: invoiceInsertError } = await supabase
       .from('invoices')
       .insert({
@@ -269,27 +305,31 @@ export default function CustomerDetailPage() {
       })
       .select('id')
       .single()
+
     if (invoiceInsertError || !insertedInvoice) {
       setError(invoiceInsertError?.message || 'Failed to create invoice')
       setCreatingGroupedInvoice(false)
       return
     }
+
     const linkRows = selectedJobs.map((job) => ({
       invoice_id: insertedInvoice.id,
       repair_request_id: job.id,
     }))
-    const { error: linkError } = await supabase
-      .from('invoice_repair_links')
-      .insert(linkRows)
+
+    const { error: linkError } = await supabase.from('invoice_repair_links').insert(linkRows)
+
     if (linkError) {
       await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
       setError(linkError.message || 'Failed to link jobs to invoice')
       setCreatingGroupedInvoice(false)
       return
     }
+
     const itemRows = selectedJobs.map((job, index) => {
       const cleanDevice = [job.brand, job.model].filter(Boolean).join(' ')
       const cleanFault = job.fault_description.trim()
+
       return {
         invoice_id: insertedInvoice.id,
         description: `${cleanDevice} • ${cleanFault}`,
@@ -299,9 +339,9 @@ export default function CustomerDetailPage() {
         sort_order: index,
       }
     })
-    const { error: itemError } = await supabase
-      .from('invoice_items')
-      .insert(itemRows)
+
+    const { error: itemError } = await supabase.from('invoice_items').insert(itemRows)
+
     if (itemError) {
       await supabase.from('invoice_repair_links').delete().eq('invoice_id', insertedInvoice.id)
       await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
@@ -309,14 +349,17 @@ export default function CustomerDetailPage() {
       setCreatingGroupedInvoice(false)
       return
     }
+
     const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
       p_invoice_id: insertedInvoice.id,
     })
+
     if (recalcError) {
       setError(recalcError.message || 'Invoice created, but total recalculation failed')
       setCreatingGroupedInvoice(false)
       return
     }
+
     window.location.href = `/admin/invoice?id=${insertedInvoice.id}`
   }
 
@@ -360,10 +403,9 @@ export default function CustomerDetailPage() {
         <div>
           <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
           <h1 className={styles.pageTitle}>{customerSummary.name}</h1>
-          <p className={styles.pageSubtitle}>
-            Full repair and invoice history for this customer
-          </p>
+          <p className={styles.pageSubtitle}>Full repair and invoice history for this customer</p>
         </div>
+
         <div className={styles.toolbar}>
           <Link href="/admin/customers" className={styles.viewButton}>
             Back to Customers
@@ -375,14 +417,20 @@ export default function CustomerDetailPage() {
             Invoices
           </Link>
           <Link
-            href={`/admin/jobs/new?full_name=${encodeURIComponent(customerSummary.name)}&phone=${encodeURIComponent(customerSummary.phone)}&email=${encodeURIComponent(customerSummary.email)}`}
+            href={`/admin/jobs/new?full_name=${encodeURIComponent(
+              customerSummary.name
+            )}&phone=${encodeURIComponent(customerSummary.phone)}&email=${encodeURIComponent(
+              customerSummary.email
+            )}`}
             className={styles.viewButton}
           >
             New Job for Customer
           </Link>
         </div>
       </div>
-      {!!error && <p className={styles.errorText}>{error}</p>}
+
+      {error ? <p className={styles.errorText}>{error}</p> : null}
+
       <div className={styles.customerDetailHeader}>
         <div className={styles.summaryGrid}>
           <div className={styles.summaryCard}>
@@ -415,22 +463,16 @@ export default function CustomerDetailPage() {
           </div>
         </div>
       </div>
+
       <section className={styles.customerDetailSection}>
         <div className={styles.customerSectionHeader}>
           <h2 className={styles.sectionTitle}>Jobs</h2>
+
           <div className={styles.bulkBarActions}>
-            <button
-              type="button"
-              className={styles.miniButton}
-              onClick={selectAllVisibleJobs}
-            >
+            <button type="button" className={styles.miniButton} onClick={selectAllVisibleJobs}>
               Select All Visible
             </button>
-            <button
-              type="button"
-              className={styles.miniButton}
-              onClick={clearSelectedJobs}
-            >
+            <button type="button" className={styles.miniButton} onClick={clearSelectedJobs}>
               Clear Selection
             </button>
             <button
@@ -443,19 +485,20 @@ export default function CustomerDetailPage() {
             </button>
             <button
               type="button"
-              className={styles.actionButton}
-              onClick={bulkDeleteJobs}
+              className={styles.deleteButton}
+              onClick={() => void bulkDeleteJobs()}
               disabled={deleting || selectedJobIds.length === 0}
             >
               {deleting ? 'Deleting...' : `Delete Selected (${selectedJobIds.length})`}
             </button>
           </div>
         </div>
+
         <div className={styles.tableWrap}>
-          <table className={styles.table}>
+          <table className={`${styles.table} ${styles.tableAligned}`}>
             <thead>
               <tr>
-                <th>Select</th>
+                <th className={styles.tableCellCenter}>Select</th>
                 <th>Job</th>
                 <th>Device</th>
                 <th>Serial / IMEI</th>
@@ -464,15 +507,17 @@ export default function CustomerDetailPage() {
                 <th>Quote</th>
                 <th>Booked</th>
                 <th>Invoice</th>
+                <th className={styles.tableCellCenter}>Delete</th>
               </tr>
             </thead>
             <tbody>
               {jobs.map((job) => {
                 const linkedInvoices = invoicesByJobId[job.id] || []
                 const canSelect = !job.is_hidden
+
                 return (
                   <tr key={job.id}>
-                    <td>
+                    <td className={styles.tableCellCenter}>
                       {canSelect ? (
                         <input
                           type="checkbox"
@@ -484,10 +529,15 @@ export default function CustomerDetailPage() {
                       )}
                     </td>
                     <td>{job.job_number || 'Pending'}</td>
-                    <td>
-                      {job.brand} {job.model}
-                      {job.device_type ? ` • ${job.device_type}` : ''}
+                    <td className={styles.tableCellWrap}>
+                      <div>
+                        {job.brand} {job.model}
+                        {job.device_type ? ` • ${job.device_type}` : ''}
+                      </div>
                       <div className={styles.inlineMuted}>{job.fault_description}</div>
+                      {job.repair_performed ? (
+                        <div className={styles.inlineMuted}>Repair: {job.repair_performed}</div>
+                      ) : null}
                     </td>
                     <td>{job.serial_imei || '-'}</td>
                     <td>
@@ -515,6 +565,16 @@ export default function CustomerDetailPage() {
                         </div>
                       )}
                     </td>
+                    <td className={styles.tableButtonCell}>
+                      <button
+                        type="button"
+                        className={styles.deleteButton}
+                        onClick={() => void deleteJob(job.id)}
+                        disabled={deleting}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
@@ -522,13 +582,15 @@ export default function CustomerDetailPage() {
           </table>
         </div>
       </section>
+
       <section className={styles.customerDetailSection}>
         <h2 className={styles.sectionTitle}>Invoices</h2>
+
         {invoices.length === 0 ? (
           <p className={styles.message}>No invoices for this customer yet.</p>
         ) : (
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
+            <table className={`${styles.table} ${styles.tableAligned}`}>
               <thead>
                 <tr>
                   <th>Invoice Number</th>
@@ -536,7 +598,7 @@ export default function CustomerDetailPage() {
                   <th>Total</th>
                   <th>Issued</th>
                   <th>Paid</th>
-                  <th>Open</th>
+                  <th className={styles.tableCellCenter}>Open</th>
                 </tr>
               </thead>
               <tbody>
@@ -551,11 +613,8 @@ export default function CustomerDetailPage() {
                     <td>${Number(invoice.total ?? 0).toFixed(2)}</td>
                     <td>{invoice.issued_at ? formatDateTime(invoice.issued_at) : '-'}</td>
                     <td>{invoice.paid_at ? formatDateTime(invoice.paid_at) : '-'}</td>
-                    <td>
-                      <Link
-                        href={`/admin/invoice?id=${invoice.id}`}
-                        className={styles.inlineLink}
-                      >
+                    <td className={styles.tableButtonCell}>
+                      <Link href={`/admin/invoice?id=${invoice.id}`} className={styles.button}>
                         Open Invoice
                       </Link>
                     </td>

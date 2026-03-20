@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import jsPDF from 'jspdf'
+import { generateInvoicePdf } from '../lib/invoicePdf'
+import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../lib/invoicePdfConfig'
 import styles from './invoice.module.css'
 import ui from '../sharedAdminUi.module.css'
 import type {
@@ -726,14 +727,21 @@ export default function InvoicePrintPage() {
     }, 1000)
   }
 
-  function generatePDF() {
-    if (!invoice) return
+ function generatePDF() {
+  if (!invoice) return
 
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    })
+  generateInvoicePdf({
+    invoice,
+    items,
+    businessDetails: BUSINESS_DETAILS,
+    paymentDetails: PAYMENT_DETAILS,
+    includeInternalReferenceNotes: false,
+  })
+
+
+    const COLOR_DARK: [number, number, number] = [15, 23, 42]
+    const COLOR_GREEN: [number, number, number] = [55, 126, 71]
+    const COLOR_BLUE: [number, number, number] = [37, 99, 235]
 
     const pageWidth = doc.internal.pageSize.getWidth()
     const pageHeight = doc.internal.pageSize.getHeight()
@@ -753,6 +761,7 @@ export default function InvoicePrintPage() {
 
     const drawLabelValueRow = (label: string, value: string) => {
       addPageIfNeeded(7)
+      doc.setTextColor(...COLOR_DARK)
       doc.setFont('helvetica', 'bold')
       doc.text(label, left, y)
       doc.setFont('helvetica', 'normal')
@@ -769,6 +778,7 @@ export default function InvoicePrintPage() {
     const drawWrappedBlock = (title: string, value: string) => {
       const lines = doc.splitTextToSize(value || '-', contentWidth)
       addPageIfNeeded(8 + lines.length * 5)
+      doc.setTextColor(...COLOR_DARK)
       doc.setFont('helvetica', 'bold')
       doc.text(title, left, y)
       y += 5
@@ -779,9 +789,11 @@ export default function InvoicePrintPage() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(18)
+    doc.setTextColor(...COLOR_GREEN)
     doc.text(BUSINESS_DETAILS.name, left, y)
     y += 7
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text(BUSINESS_DETAILS.address, left, y)
@@ -796,8 +808,10 @@ export default function InvoicePrintPage() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
+    doc.setTextColor(...COLOR_BLUE)
     doc.text('TAX INVOICE', right, 16, { align: 'right' })
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text(`Invoice: ${invoice.invoice_number}`, right, 23, { align: 'right' })
@@ -812,6 +826,7 @@ export default function InvoicePrintPage() {
     y = 46
     drawHorizontalLine()
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Bill To', left, y)
@@ -829,6 +844,7 @@ export default function InvoicePrintPage() {
 
     for (const line of billToLines) {
       addPageIfNeeded(5)
+      doc.setTextColor(...COLOR_DARK)
       doc.text(line, left, y)
       y += 5
     }
@@ -837,6 +853,7 @@ export default function InvoicePrintPage() {
     drawHorizontalLine()
 
     addPageIfNeeded(10)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Invoice Items', left, y)
@@ -853,6 +870,7 @@ export default function InvoicePrintPage() {
     doc.line(left, y, right, y)
     y += 5
 
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
 
@@ -867,6 +885,7 @@ export default function InvoicePrintPage() {
 
         addPageIfNeeded(rowHeight + 2)
 
+        doc.setTextColor(...COLOR_DARK)
         doc.text(descriptionLines, left, y)
         doc.text(Number(item.qty).toFixed(2), 120, y, { align: 'right' })
         doc.text(formatCurrency(item.unit_price), 155, y, { align: 'right' })
@@ -880,6 +899,7 @@ export default function InvoicePrintPage() {
     drawHorizontalLine()
 
     addPageIfNeeded(24)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
     doc.text('Summary', 120, y)
@@ -893,6 +913,7 @@ export default function InvoicePrintPage() {
     drawLabelValueRow('GST', formatCurrency(invoice.tax_amount))
 
     addPageIfNeeded(7)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.text('Total', left, y)
     doc.text(formatCurrency(invoice.total), right, y, { align: 'right' })
@@ -914,6 +935,7 @@ export default function InvoicePrintPage() {
     drawHorizontalLine()
 
     addPageIfNeeded(28)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Payment Details', left, y)
@@ -930,6 +952,7 @@ export default function InvoicePrintPage() {
 
     y += 4
     addPageIfNeeded(8)
+    doc.setTextColor(...COLOR_DARK)
     doc.setFontSize(9)
     doc.text('Thank you for choosing The Mobile Phone Clinic.', left, y)
 
