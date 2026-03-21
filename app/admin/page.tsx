@@ -49,14 +49,14 @@ export default function AdminPage() {
   const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
 
   const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
-    new: false,
-    quoted: false,
-    approved: false,
-    in_progress: false,
-    ready: false,
-    closed: false,
-    rejected: false,
-    cancelled: false,
+    new: true,
+    quoted: true,
+    approved: true,
+    in_progress: true,
+    ready: true,
+    closed: true,
+    rejected: true,
+    cancelled: true,
   })
 
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -115,37 +115,39 @@ const {
     normalizeInvoice,
   })
 
-const {
-  hideJob,
-  unhideJob,
-  bulkHideArchiveJobs,
-  bulkUnhideHiddenJobs,
-  bulkUpdateArchiveStatus,
-  bulkDuplicateArchiveJobs,
-  bulkDeleteArchiveJobs,
-  bulkDeleteHiddenJobs,
-} = useAdminArchiveActions({
-  supabase,
-  jobs,
-  hiddenJobs,
-  invoicesByJobId,
-  invoiceItemsByInvoiceId,
-  highlightedJobId,
-  selectedArchiveJobIds,
-  selectedHiddenJobIds,
-  setJobs,
-  setHiddenJobs,
-  setInvoicesByJobId,
-  setInvoiceItemsByInvoiceId,
-  setHighlightedJobId,
-  setSelectedArchiveJobIds,
-  setSelectedHiddenJobIds,
-  setBulkBusy,
-  setError,
-  normalizeJob,
-  loadInvoices,
-  loadInvoiceItems,
-})
+   const {
+    hideJob,
+    unhideJob,
+    deleteSingleJob,
+    bulkHideArchiveJobs,
+    bulkUnhideHiddenJobs,
+    bulkUpdateArchiveStatus,
+    bulkDuplicateArchiveJobs,
+    bulkDeleteArchiveJobs,
+    bulkDeleteHiddenJobs,
+  } = useAdminArchiveActions({
+    supabase,
+    jobs,
+    hiddenJobs,
+    invoicesByJobId,
+    invoiceItemsByInvoiceId,
+    highlightedJobId,
+    selectedArchiveJobIds,
+    selectedHiddenJobIds,
+    setJobs,
+    setHiddenJobs,
+    setInvoicesByJobId,
+    setInvoiceItemsByInvoiceId,
+    setHighlightedJobId,
+    setSelectedArchiveJobIds,
+    setSelectedHiddenJobIds,
+    setBulkBusy,
+    setError,
+    normalizeJob,
+    loadJobs,
+    loadInvoices,
+    loadInvoiceItems,
+  })
 
   const {
     filteredJobs,
@@ -1049,6 +1051,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                               onToggleSelected={toggleArchiveSelected}
                               onHideJob={hideJob}
                               onUnhideJob={unhideJob}
+
                             />
                           )
                         })
@@ -1306,6 +1309,8 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     onDuplicateJob={duplicateJob}
                     onHideJob={hideJob}
                     onUnhideJob={unhideJob}
+onDeleteJob={deleteSingleJob}
+
                   />
                 )
               })}

@@ -16,7 +16,6 @@ import type {
 import {
   formatDateTime,
   getStatusLabel,
-  normalizeMoneyValue,
   normalizePhone,
   normalizeQuoteInput,
 } from '../utils'
@@ -105,8 +104,8 @@ type Props = {
   onToggleSelected?: (jobId: string) => void
   onHideJob?: (jobId: string) => Promise<void>
   onUnhideJob?: (jobId: string) => Promise<void>
+  onDeleteJob?: (jobId: string) => Promise<void>
 }
-
 export default function JobCard({
   job,
   expanded,
@@ -150,6 +149,7 @@ export default function JobCard({
   onToggleSelected,
   onHideJob,
   onUnhideJob,
+onDeleteJob,
 }: Props) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
   const [localPartsCost, setLocalPartsCost] = useState(job.parts_cost?.toString() ?? '')
@@ -1314,6 +1314,27 @@ if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
                     Unhide Job
                   </button>
                 ) : null}
+
+{job.is_hidden ? (
+  <button
+    type="button"
+    className={styles.miniDangerButton}
+    onClick={(e) => {
+      e.stopPropagation()
+
+      if (!onDeleteJob) {
+        console.error('onDeleteJob prop is missing for job', job.id)
+        window.alert('Delete handler is missing for this card.')
+        return
+      }
+
+      void onDeleteJob(job.id)
+    }}
+  >
+    Delete Job
+  </button>
+) : null}
+
               </div>
             </div>
 

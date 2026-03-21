@@ -22,6 +22,7 @@ type Params = {
   setBulkBusy: Dispatch<SetStateAction<boolean>>
   setError: Dispatch<SetStateAction<string>>
   normalizeJob: (raw: RepairRequest) => RepairRequest
+  loadJobs: () => Promise<void>
   loadInvoices: () => Promise<void>
   loadInvoiceItems: () => Promise<void>
 }
@@ -45,9 +46,16 @@ export default function useAdminArchiveActions({
   setBulkBusy,
   setError,
   normalizeJob,
+  loadJobs,
   loadInvoices,
   loadInvoiceItems,
 }: Params) {
+  async function refreshAllAdminData() {
+    await loadJobs()
+    await loadInvoices()
+    await loadInvoiceItems()
+  }
+
   async function safeDeleteInvoiceRepairLinks(invoiceIds: string[]) {
     if (invoiceIds.length === 0) return
 
@@ -58,7 +66,6 @@ export default function useAdminArchiveActions({
 
     if (error) {
       const message = String(error.message || '').toLowerCase()
-
       if (
         !message.includes('relation') &&
         !message.includes('does not exist') &&
@@ -88,9 +95,7 @@ export default function useAdminArchiveActions({
         .from('fault-photos')
         .remove(storagePaths)
 
-      if (storageError) {
-        throw storageError
-      }
+      if (storageError) throw storageError
     }
 
     const { error: deletePhotosError } = await supabase
@@ -244,6 +249,7 @@ export default function useAdminArchiveActions({
       setSelectedArchiveJobIds([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to hide selected jobs')
+      console.error('bulkHideArchiveJobs failed:', err)
     } finally {
       setBulkBusy(false)
     }
@@ -298,6 +304,7 @@ export default function useAdminArchiveActions({
       setSelectedHiddenJobIds([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unhide selected jobs')
+      console.error('bulkUnhideHiddenJobs failed:', err)
     } finally {
       setBulkBusy(false)
     }
@@ -356,6 +363,7 @@ export default function useAdminArchiveActions({
       setSelectedArchiveJobIds([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update selected jobs')
+      console.error('bulkUpdateArchiveStatus failed:', err)
     } finally {
       setBulkBusy(false)
     }
@@ -369,7 +377,6 @@ export default function useAdminArchiveActions({
 
     try {
       const sourceJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
-
       if (sourceJobs.length === 0) return
 
       const insertRows = sourceJobs.map((job) => ({
@@ -427,32 +434,169 @@ export default function useAdminArchiveActions({
       setSelectedArchiveJobIds([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to duplicate selected jobs')
+      console.error('bulkDuplicateArchiveJobs failed:', err)
     } finally {
       setBulkBusy(false)
     }
   }
 
+  async function deleteJobsCore(idsToDelete: string[]) {
+    if (idsToDelete.length === 0) {
+      throw new Error('No jobs selected for deletion')
+    }
+
+    console.log('Deleting jobs:', idsToDelete)
+
+    const { data: directInvoices, error: directInvoicesError } = await supabase
+      .from('invoices')
+      .select('id, repair_request_id')
+      .in('repair_request_id', idsToDelete)
+
+    if (directInvoicesError) throw directInvoicesError
+
+    const { data: linkedRows, error: linkedRowsError } = await supabase
+      .from('invoice_repair_links')
+      .select('invoice_id, repair_request_id')
+      .in('repair_request_id', idsToDelete)
+
+    if (linkedRowsError) throw linkedRowsError
+
+    const affectedInvoiceIds = Array.from(
+      new Set([
+        ...((directInvoices || []) as Array<{ id: string }>).map((row) => row.id),
+        ...((linkedRows || []) as Array<{ invoice_id: string }>).map((row) => row.invoice_id),
+      ])
+    )
+
+    await safeDeleteRepairRequestPhotos(idsToDelete)
+
+    for (const invoiceId of affectedInvoiceIds) {
+      const { error: deleteSelectedLinksError } = await supabase
+        .from('invoice_repair_links')
+        .delete()
+        .eq('invoice_id', invoiceId)
+        .in('repair_request_id', idsToDelete)
+
+      if (deleteSelectedLinksError) {
+        const msg = String(deleteSelectedLinksError.message || '').toLowerCase()
+        if (
+          !msg.includes('relation') &&
+          !msg.includes('does not exist') &&
+          !msg.includes('schema cache')
+        ) {
+          throw deleteSelectedLinksError
+        }
+      }
+
+      const { data: remainingLinks, error: remainingLinksError } = await supabase
+        .from('invoice_repair_links')
+        .select('repair_request_id')
+        .eq('invoice_id', invoiceId)
+
+      if (remainingLinksError) {
+        const msg = String(remainingLinksError.message || '').toLowerCase()
+        if (
+          !msg.includes('relation') &&
+          !msg.includes('does not exist') &&
+          !msg.includes('schema cache')
+        ) {
+          throw remainingLinksError
+        }
+      }
+
+      const remainingLinkedJobIds = (
+        (remainingLinks || []) as Array<{ repair_request_id: string }>
+      ).map((row) => row.repair_request_id)
+
+      const { data: invoiceRow, error: invoiceRowError } = await supabase
+        .from('invoices')
+        .select('id, repair_request_id')
+        .eq('id', invoiceId)
+        .single()
+
+      if (invoiceRowError) throw invoiceRowError
+
+      const currentPrimaryJobId = String(invoiceRow.repair_request_id || '')
+      const primaryStillExists = currentPrimaryJobId && !idsToDelete.includes(currentPrimaryJobId)
+
+      const remainingJobIds = Array.from(
+        new Set([
+          ...(primaryStillExists ? [currentPrimaryJobId] : []),
+          ...remainingLinkedJobIds,
+        ])
+      )
+
+      if (remainingJobIds.length === 0) {
+        const { error: deleteInvoiceItemsError } = await supabase
+          .from('invoice_items')
+          .delete()
+          .eq('invoice_id', invoiceId)
+
+        if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
+
+        await safeDeleteInvoiceRepairLinks([invoiceId])
+
+        const { error: deleteInvoiceError } = await supabase
+          .from('invoices')
+          .delete()
+          .eq('id', invoiceId)
+
+        if (deleteInvoiceError) throw deleteInvoiceError
+        continue
+      }
+
+      if (!primaryStillExists) {
+        const nextPrimaryJobId = remainingJobIds[0]
+
+        const { error: updateInvoicePrimaryError } = await supabase
+          .from('invoices')
+          .update({ repair_request_id: nextPrimaryJobId })
+          .eq('id', invoiceId)
+
+        if (updateInvoicePrimaryError) throw updateInvoicePrimaryError
+
+        const { error: removeDuplicatePrimaryLinkError } = await supabase
+          .from('invoice_repair_links')
+          .delete()
+          .eq('invoice_id', invoiceId)
+          .eq('repair_request_id', nextPrimaryJobId)
+
+        if (removeDuplicatePrimaryLinkError) {
+          const msg = String(removeDuplicatePrimaryLinkError.message || '').toLowerCase()
+          if (
+            !msg.includes('relation') &&
+            !msg.includes('does not exist') &&
+            !msg.includes('schema cache')
+          ) {
+            throw removeDuplicatePrimaryLinkError
+          }
+        }
+      }
+    }
+
+    const { error: deleteJobsError } = await supabase
+      .from('repair_requests')
+      .delete()
+      .in('id', idsToDelete)
+
+    if (deleteJobsError) throw deleteJobsError
+  }
+
   async function deleteJobsByIds(idsToDelete: string[], source: 'archive' | 'hidden') {
-    if (idsToDelete.length === 0) return
+    if (idsToDelete.length === 0) {
+      setError('No jobs selected for deletion')
+      return
+    }
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${idsToDelete.length} selected jobs? This cannot be undone.`
+      `Are you sure you want to delete ${idsToDelete.length} selected job(s)? This cannot be undone.`
     )
     if (!confirmed) return
-
-    if (typeof loadInvoices !== 'function') {
-      throw new Error('loadInvoices is not wired into useAdminArchiveActions')
-    }
-
-    if (typeof loadInvoiceItems !== 'function') {
-      throw new Error('loadInvoiceItems is not wired into useAdminArchiveActions')
-    }
 
     setBulkBusy(true)
     setError('')
 
     const selectedSet = new Set(idsToDelete)
-
     const previousJobs = jobs
     const previousHiddenJobs = hiddenJobs
     const previousHighlightedJobId = highlightedJobId
@@ -460,162 +604,20 @@ export default function useAdminArchiveActions({
     const previousInvoiceItemsByInvoiceId = invoiceItemsByInvoiceId
 
     try {
-      const { data: directInvoices, error: directInvoicesError } = await supabase
-        .from('invoices')
-        .select('id, repair_request_id')
-        .in('repair_request_id', idsToDelete)
-
-      if (directInvoicesError) throw directInvoicesError
-
-      const { data: linkedRows, error: linkedRowsError } = await supabase
-        .from('invoice_repair_links')
-        .select('invoice_id, repair_request_id')
-        .in('repair_request_id', idsToDelete)
-
-      if (linkedRowsError) throw linkedRowsError
-
-      const affectedInvoiceIds = Array.from(
-        new Set([
-          ...((directInvoices || []) as Array<{ id: string }>).map((row) => row.id),
-          ...((linkedRows || []) as Array<{ invoice_id: string }>).map((row) => row.invoice_id),
-        ])
-      )
-
-      await safeDeleteRepairRequestPhotos(idsToDelete)
-
-      for (const invoiceId of affectedInvoiceIds) {
-        const { error: deleteSelectedLinksError } = await supabase
-          .from('invoice_repair_links')
-          .delete()
-          .eq('invoice_id', invoiceId)
-          .in('repair_request_id', idsToDelete)
-
-        if (deleteSelectedLinksError) {
-          const msg = String(deleteSelectedLinksError.message || '').toLowerCase()
-          if (
-            !msg.includes('relation') &&
-            !msg.includes('does not exist') &&
-            !msg.includes('schema cache')
-          ) {
-            throw deleteSelectedLinksError
-          }
-        }
-
-        const { data: remainingLinks, error: remainingLinksError } = await supabase
-          .from('invoice_repair_links')
-          .select('repair_request_id')
-          .eq('invoice_id', invoiceId)
-
-        if (remainingLinksError) {
-          const msg = String(remainingLinksError.message || '').toLowerCase()
-          if (
-            !msg.includes('relation') &&
-            !msg.includes('does not exist') &&
-            !msg.includes('schema cache')
-          ) {
-            throw remainingLinksError
-          }
-        }
-
-        const remainingLinkedJobIds = (
-          (remainingLinks || []) as Array<{ repair_request_id: string }>
-        ).map((row) => row.repair_request_id)
-
-        const { data: invoiceRow, error: invoiceRowError } = await supabase
-          .from('invoices')
-          .select('id, repair_request_id')
-          .eq('id', invoiceId)
-          .single()
-
-        if (invoiceRowError) throw invoiceRowError
-
-        const currentPrimaryJobId = invoiceRow.repair_request_id as string
-        const primaryStillExists = !selectedSet.has(currentPrimaryJobId)
-
-        const remainingJobIds = Array.from(
-          new Set([
-            ...(primaryStillExists ? [currentPrimaryJobId] : []),
-            ...remainingLinkedJobIds,
-          ])
-        )
-
-        if (remainingJobIds.length === 0) {
-          const { error: deleteInvoiceItemsError } = await supabase
-            .from('invoice_items')
-            .delete()
-            .eq('invoice_id', invoiceId)
-
-          if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
-
-          await safeDeleteInvoiceRepairLinks([invoiceId])
-
-          const { error: deleteInvoiceError } = await supabase
-            .from('invoices')
-            .delete()
-            .eq('id', invoiceId)
-
-          if (deleteInvoiceError) throw deleteInvoiceError
-          continue
-        }
-
-        if (!primaryStillExists) {
-          const nextPrimaryJobId = remainingJobIds[0]
-
-          const { error: updateInvoicePrimaryError } = await supabase
-            .from('invoices')
-            .update({ repair_request_id: nextPrimaryJobId })
-            .eq('id', invoiceId)
-
-          if (updateInvoicePrimaryError) throw updateInvoicePrimaryError
-
-          const { error: removeDuplicatePrimaryLinkError } = await supabase
-            .from('invoice_repair_links')
-            .delete()
-            .eq('invoice_id', invoiceId)
-            .eq('repair_request_id', nextPrimaryJobId)
-
-          if (removeDuplicatePrimaryLinkError) {
-            const msg = String(removeDuplicatePrimaryLinkError.message || '').toLowerCase()
-            if (
-              !msg.includes('relation') &&
-              !msg.includes('does not exist') &&
-              !msg.includes('schema cache')
-            ) {
-              throw removeDuplicatePrimaryLinkError
-            }
-          }
-        }
-      }
-
-      const { error: deleteJobsError } = await supabase
-        .from('repair_requests')
-        .delete()
-        .in('id', idsToDelete)
-
-      if (deleteJobsError) throw deleteJobsError
+      await deleteJobsCore(idsToDelete)
+      await refreshAllAdminData()
 
       setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
       setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-
-      if (source === 'archive') {
-        setSelectedArchiveJobIds([])
-      } else {
-        setSelectedHiddenJobIds([])
-      }
 
       if (highlightedJobId && selectedSet.has(highlightedJobId)) {
         setHighlightedJobId(null)
       }
 
-      try {
-        await loadInvoices()
-        await loadInvoiceItems()
-      } catch (refreshError) {
-        setError(
-          refreshError instanceof Error
-            ? refreshError.message
-            : 'Jobs deleted, but invoice refresh failed'
-        )
+      if (source === 'archive') {
+        setSelectedArchiveJobIds([])
+      } else {
+        setSelectedHiddenJobIds([])
       }
     } catch (err) {
       setJobs(previousJobs)
@@ -630,10 +632,18 @@ export default function useAdminArchiveActions({
         setSelectedHiddenJobIds(idsToDelete)
       }
 
-      setError(err instanceof Error ? err.message : 'Failed to delete selected jobs')
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete selected jobs'
+      setError(message)
+      console.error('deleteJobsByIds failed:', err)
+      window.alert(`Delete failed: ${message}`)
     } finally {
       setBulkBusy(false)
     }
+  }
+
+  async function deleteSingleJob(jobId: string) {
+    await deleteJobsByIds([jobId], 'hidden')
   }
 
   async function bulkDeleteArchiveJobs() {
@@ -647,6 +657,7 @@ export default function useAdminArchiveActions({
   return {
     hideJob,
     unhideJob,
+    deleteSingleJob,
     bulkHideArchiveJobs,
     bulkUnhideHiddenJobs,
     bulkUpdateArchiveStatus,
