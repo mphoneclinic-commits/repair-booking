@@ -82,3 +82,30 @@ export function normalizeQuoteInput(value: string): string {
 
   return `${beforeDot}${afterDot}`
 }
+
+export function normalizeMoneyValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string') {
+    const cleaned = value.trim().replace(/[^0-9.-]/g, '')
+    if (!cleaned) return null
+
+    const parsed = Number(cleaned)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+export function calculateJobProfit(
+  quoted: number | null | undefined,
+  cost: number | null | undefined
+) {
+  const q = Number(quoted ?? 0)
+  const c = Number(cost ?? 0)
+  return q - c
+}

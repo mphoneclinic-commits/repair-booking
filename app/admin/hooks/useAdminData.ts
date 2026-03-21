@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import type { Invoice, InvoiceItem, RepairRequest } from '../types'
+import { normalizeMoneyValue } from '../utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,20 +20,21 @@ export default function useAdminData() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
-    return {
-      ...raw,
-      internal_notes: raw.internal_notes ?? '',
-      quoted_price: raw.quoted_price ?? null,
-      serial_imei: raw.serial_imei ?? null,
-      is_hidden: Boolean(raw.is_hidden),
-      fault_photo_url: raw.fault_photo_url ?? null,
-      repair_performed: raw.repair_performed ?? '',
-      last_sms_sent_at: raw.last_sms_sent_at ?? null,
-      last_sms_to: raw.last_sms_to ?? null,
-      last_sms_message: raw.last_sms_message ?? null,
-    }
-  }, [])
+const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
+  return {
+    ...raw,
+    internal_notes: raw.internal_notes ?? '',
+    quoted_price: normalizeMoneyValue(raw.quoted_price),
+    parts_cost: normalizeMoneyValue(raw.parts_cost),
+    serial_imei: raw.serial_imei ?? null,
+    is_hidden: Boolean(raw.is_hidden),
+    fault_photo_url: raw.fault_photo_url ?? null,
+    repair_performed: raw.repair_performed ?? '',
+    last_sms_sent_at: raw.last_sms_sent_at ?? null,
+    last_sms_to: raw.last_sms_to ?? null,
+    last_sms_message: raw.last_sms_message ?? null,
+  }
+}, [])
 
   const normalizeInvoice = useCallback((raw: Invoice): Invoice => {
     return {
@@ -80,6 +82,7 @@ export default function useAdminData() {
         preferred_contact,
         internal_notes,
         quoted_price,
+	parts_cost,
         is_hidden,
         fault_photo_url,
         last_sms_sent_at,

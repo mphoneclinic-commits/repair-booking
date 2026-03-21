@@ -249,6 +249,7 @@ export default function AdminPage() {
         preferred_contact: sourceJob.preferred_contact,
         internal_notes: sourceJob.internal_notes,
         quoted_price: sourceJob.quoted_price,
+parts_cost: sourceJob.parts_cost,
         is_hidden: false,
         fault_photo_url: sourceJob.fault_photo_url ?? null,
       })
@@ -268,6 +269,7 @@ export default function AdminPage() {
         preferred_contact,
         internal_notes,
         quoted_price,
+parts_cost,
         is_hidden,
         fault_photo_url
       `)
@@ -474,7 +476,48 @@ const newDescription = [
     setFieldSaved(id, 'quote')
     return true
   }
+  async function updatePartsCost(id: string, cost: number | null) {
+    setFieldState(id, 'parts_cost' as any, 'saving')
 
+    const { data, error } = await supabase
+      .from('repair_requests')
+      .update({ parts_cost: cost })
+      .eq('id', id)
+      .select('id, parts_cost')
+      .single()
+
+    if (error) {
+      setFieldState(id, 'parts_cost' as any, 'error')
+      return false
+    }
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              parts_cost:
+                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+            }
+          : job
+      )
+    )
+
+    setHiddenJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              parts_cost:
+                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+            }
+          : job
+      )
+    )
+
+    setFieldSaved(id, 'parts_cost' as any)
+    return true
+  }
   async function updateNotes(id: string, notes: string) {
     setFieldState(id, 'notes', 'saving')
 
@@ -642,6 +685,9 @@ const newDescription = [
             <Link href="/admin/customers" className={styles.viewButton}>
               Customers
             </Link>
+<Link href="/admin/stats" className={styles.viewButton}>
+  Stats
+</Link>
           </div>
 
           <div className={styles.adminTopBarGroupPill}>
@@ -763,6 +809,8 @@ const newDescription = [
                             toggleExpanded={toggleExpanded}
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
+updatePartsCost={updatePartsCost}
+partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                             updateNotes={updateNotes}
                             updateRepairPerformed={updateRepairPerformed}
                             updateJobBasics={updateJobBasics}
@@ -960,6 +1008,8 @@ const newDescription = [
                               toggleExpanded={toggleExpanded}
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
+updatePartsCost={updatePartsCost}
+partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                               updateNotes={updateNotes}
                               updateRepairPerformed={updateRepairPerformed}
                               updateJobBasics={updateJobBasics}
@@ -1102,6 +1152,8 @@ const newDescription = [
                 toggleExpanded={toggleExpanded}
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
+updatePartsCost={updatePartsCost}
+partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 updateNotes={updateNotes}
                 updateRepairPerformed={updateRepairPerformed}
                 updateJobBasics={updateJobBasics}
@@ -1213,6 +1265,8 @@ const newDescription = [
                     toggleExpanded={toggleExpanded}
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
+updatePartsCost={updatePartsCost}
+partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     updateNotes={updateNotes}
                     updateRepairPerformed={updateRepairPerformed}
                     updateJobBasics={updateJobBasics}

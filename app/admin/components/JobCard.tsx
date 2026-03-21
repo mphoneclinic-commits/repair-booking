@@ -16,6 +16,7 @@ import type {
 import {
   formatDateTime,
   getStatusLabel,
+  normalizeMoneyValue,
   normalizePhone,
   normalizeQuoteInput,
 } from '../utils'
@@ -46,6 +47,7 @@ type Props = {
   toggleExpanded: (jobId: string) => void
   updateStatus: (id: string, newStatus: RepairStatus) => Promise<void>
   updateQuote: (id: string, price: number | null) => Promise<boolean>
+  updatePartsCost: (id: string, cost: number | null) => Promise<boolean>
   updateNotes: (id: string, notes: string) => Promise<boolean>
   updateRepairPerformed: (id: string, value: string) => Promise<boolean>
   updateJobBasics: (
@@ -68,6 +70,7 @@ type Props = {
   ) => Promise<boolean>
   statusSaveState: SaveState
   quoteSaveState: SaveState
+  partsCostSaveState: SaveState
   notesSaveState: SaveState
   repairPerformedSaveState: SaveState
   jobNumberSaveState: SaveState
@@ -110,6 +113,8 @@ export default function JobCard({
   toggleExpanded,
   updateStatus,
   updateQuote,
+  updatePartsCost,
+  partsCostSaveState,
   updateNotes,
   updateRepairPerformed,
   updateJobBasics,
@@ -147,6 +152,7 @@ export default function JobCard({
   onUnhideJob,
 }: Props) {
   const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
+  const [localPartsCost, setLocalPartsCost] = useState(job.parts_cost?.toString() ?? '')
   const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
   const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed ?? '')
   const [localJobNumber, setLocalJobNumber] = useState(job.job_number ?? '')
@@ -179,6 +185,8 @@ export default function JobCard({
   const [smsSuccess, setSmsSuccess] = useState('')
 
   const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const partsCostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const partsCostFocusedRef = useRef(false)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repairPerformedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const jobNumberTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -205,6 +213,10 @@ export default function JobCard({
   useEffect(() => {
     if (!quoteFocusedRef.current) setLocalQuote(job.quoted_price?.toString() ?? '')
   }, [job.quoted_price])
+
+  useEffect(() => {
+    if (!partsCostFocusedRef.current) setLocalPartsCost(job.parts_cost?.toString() ?? '')
+  }, [job.parts_cost])
 
   useEffect(() => {
     if (!notesFocusedRef.current) setLocalNotes(job.internal_notes ?? '')
@@ -250,6 +262,7 @@ export default function JobCard({
       if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
       if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
       if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
+if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
     }
   }, [])
 
@@ -428,6 +441,28 @@ export default function JobCard({
     setPhotoSuccess('Photo deleted.')
   }
 
+  async function flushPartsCost(rawValue: string) {
+    const normalized = normalizeQuoteInput(rawValue).trim()
+    const nextValue = normalized === '' ? null : Number(normalized)
+    const currentDbValue = job.parts_cost ?? null
+
+    if (nextValue === currentDbValue) {
+      setFieldState(job.id, 'parts_cost' as SaveField, 'idle')
+      return
+    }
+
+    setFieldState(job.id, 'parts_cost' as SaveField, 'saving')
+    const success = await updatePartsCost(job.id, nextValue)
+
+    if (!success) {
+      setFieldState(job.id, 'parts_cost' as SaveField, 'error')
+    } else {
+      setFieldState(job.id, 'parts_cost' as SaveField, 'saved')
+      setTimeout(() => setFieldState(job.id, 'parts_cost' as SaveField, 'idle'), 1300)
+    }
+  }
+
+
   async function flushQuote(rawValue: string) {
     const normalized = normalizeQuoteInput(rawValue).trim()
     const nextValue = normalized === '' ? null : Number(normalized)
@@ -604,6 +639,15 @@ export default function JobCard({
     quoteTimerRef.current = setTimeout(() => void flushQuote(normalized), 700)
   }
 
+  function handlePartsCostChange(value: string) {
+    const normalized = normalizeQuoteInput(value)
+    setLocalPartsCost(normalized)
+    setFieldState(job.id, 'parts_cost' as SaveField, 'dirty')
+
+    if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
+    partsCostTimerRef.current = setTimeout(() => void flushPartsCost(normalized), 700)
+  }
+
   function handleNotesChange(value: string) {
     setLocalNotes(value)
     setFieldState(job.id, 'notes', 'dirty')
@@ -661,6 +705,12 @@ export default function JobCard({
     quoteFocusedRef.current = false
     if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
     await flushQuote(localQuote)
+  }
+
+  async function handlePartsCostBlur() {
+    partsCostFocusedRef.current = false
+    if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
+    await flushPartsCost(localPartsCost)
   }
 
   async function handleNotesBlur() {
@@ -824,8 +874,13 @@ export default function JobCard({
             {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
           </p>
         </div>
-      </div>
-
+      <div>
+          <div className={styles.sectionLabel}>Parts Cost</div>
+          <p className={styles.metaText}>
+            {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
+          </p>
+</div>
+</div>
       {job.serial_imei ? (
         <div>
           <div className={styles.sectionLabel}>Serial / IMEI</div>
@@ -844,7 +899,7 @@ export default function JobCard({
     job.status === 'closed' || job.status === 'rejected' || job.status === 'cancelled'
 
   return (
-    <div
+    <div	
       ref={cardRef}
       className={`${styles.jobCard} ${styles[`jobCard_${job.status}`]} ${
         draggableEnabled ? styles.jobCardDraggable : ''
@@ -950,6 +1005,13 @@ export default function JobCard({
               <div className={styles.sectionLabel}>Quote</div>
               <p className={styles.metaText}>
                 {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
+              </p>
+            </div>
+
+            <div>
+              <div className={styles.sectionLabel}>Parts Cost</div>
+              <p className={styles.metaText}>
+                {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
               </p>
             </div>
           </div>
@@ -1169,6 +1231,27 @@ export default function JobCard({
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
+
+<div className={styles.expandedSectionCard}>
+  <div className={styles.inputTopRow}>
+    <label className={styles.expandedSectionTitle}>Parts Cost</label>
+    <SaveIndicator state={partsCostSaveState} />
+  </div>
+
+  <input
+    inputMode="decimal"
+    value={localPartsCost}
+    placeholder="Enter parts cost"
+    className={styles.smallField}
+    onFocus={() => {
+      partsCostFocusedRef.current = true
+      onSelectCard?.(job.id)
+    }}
+    onBlur={() => void handlePartsCostBlur()}
+    onChange={(e) => handlePartsCostChange(e.target.value)}
+    onClick={(e) => e.stopPropagation()}
+  />
+</div>
 
             <div className={styles.expandedSectionCard}>
               <div className={styles.inputTopRow}>

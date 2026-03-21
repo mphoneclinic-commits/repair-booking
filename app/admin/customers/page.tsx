@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
 import type { Invoice, RepairRequest } from '../types'
-import { formatDateTime, getStatusLabel } from '../utils'
+import { formatDateTime, getStatusLabel, normalizeMoneyValue } from '../utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,6 +72,7 @@ export default function CustomersPage() {
                 preferred_contact,
                 internal_notes,
                 quoted_price,
+                parts_cost,
                 is_hidden
               `)
               .order('created_at', { ascending: false }),
@@ -108,14 +109,15 @@ export default function CustomersPage() {
         if (jobsError) throw jobsError
         if (invoiceError) throw invoiceError
 
-        const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
-          ...job,
-          internal_notes: job.internal_notes ?? '',
-          quoted_price: job.quoted_price ?? null,
-          serial_imei: job.serial_imei ?? null,
-          repair_performed: job.repair_performed ?? '',
-          is_hidden: Boolean(job.is_hidden),
-        }))
+const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
+  ...job,
+  internal_notes: job.internal_notes ?? '',
+  quoted_price: normalizeMoneyValue(job.quoted_price),
+  parts_cost: normalizeMoneyValue(job.parts_cost),
+  serial_imei: job.serial_imei ?? null,
+  repair_performed: job.repair_performed ?? '',
+  is_hidden: Boolean(job.is_hidden),
+}))
 
         const safeInvoices = ((invoiceData || []) as Invoice[]).map((invoice) => ({
           ...invoice,
@@ -162,7 +164,7 @@ export default function CustomersPage() {
           visibleJobs: job.is_hidden ? [] : [job],
           hiddenJobs: job.is_hidden ? [job] : [],
           invoiceCount: invoiceCountByJobId[job.id] || 0,
-          totalQuoted: job.quoted_price ?? 0,
+          totalQuoted: normalizeMoneyValue(job.quoted_price) ?? 0,
         })
       } else {
         existing.jobs.push(job)
@@ -174,7 +176,7 @@ export default function CustomersPage() {
         }
 
         existing.invoiceCount += invoiceCountByJobId[job.id] || 0
-        existing.totalQuoted += job.quoted_price ?? 0
+        existing.totalQuoted += normalizeMoneyValue(job.quoted_price) ?? 0
 
         if (!existing.phone && job.phone) existing.phone = job.phone
         if (!existing.email && job.email) existing.email = job.email
@@ -234,6 +236,12 @@ export default function CustomersPage() {
           <Link href="/admin/invoices" className={styles.viewButton}>
             View Invoices
           </Link>
+          <Link href="/admin/stats" className={styles.viewButton}>
+            Stats
+          </Link>
+          <Link href="/admin/jobs/new" className={styles.viewButton}>
+            Add New Customer
+          </Link>
         </div>
       </div>
 
@@ -241,7 +249,7 @@ export default function CustomersPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search customer, phone, email, device, serial, fault..."
+          placeholder="Search customer, phone, email, device, serial, fault, repair..."
           className={styles.field}
         />
         <div className={styles.readOnlyValue}>
@@ -301,6 +309,7 @@ export default function CustomersPage() {
                       <th>Serial / IMEI</th>
                       <th>Status</th>
                       <th>Quote</th>
+                      <th>Parts Cost</th>
                       <th>Booked</th>
                     </tr>
                   </thead>
@@ -314,6 +323,11 @@ export default function CustomersPage() {
                             {job.device_type ? ` • ${job.device_type}` : ''}
                           </div>
                           <div className={styles.inlineMuted}>{job.fault_description}</div>
+                          {job.repair_performed ? (
+                            <div className={styles.inlineMuted}>
+                              Repair: {job.repair_performed}
+                            </div>
+                          ) : null}
                         </td>
                         <td>{job.serial_imei || '-'}</td>
                         <td>
@@ -322,6 +336,7 @@ export default function CustomersPage() {
                           </span>
                         </td>
                         <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
+                        <td>{job.parts_cost != null ? `$${Number(job.parts_cost).toFixed(2)}` : '-'}</td>
                         <td>{formatDateTime(job.created_at)}</td>
                       </tr>
                     ))}

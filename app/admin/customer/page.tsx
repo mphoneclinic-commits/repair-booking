@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
 import type { Invoice, RepairRequest } from '../types'
-import { formatDateTime, getStatusLabel } from '../utils'
+import { formatDateTime, getStatusLabel, normalizeMoneyValue } from '../utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,6 +75,7 @@ export default function CustomerDetailPage() {
                 preferred_contact,
                 internal_notes,
                 quoted_price,
+                parts_cost,
                 is_hidden
               `)
               .order('created_at', { ascending: false }),
@@ -111,14 +112,15 @@ export default function CustomerDetailPage() {
         if (jobsError) throw jobsError
         if (invoiceError) throw invoiceError
 
-        const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
-          ...job,
-          internal_notes: job.internal_notes ?? '',
-          quoted_price: job.quoted_price ?? null,
-          serial_imei: job.serial_imei ?? null,
-          repair_performed: job.repair_performed ?? '',
-          is_hidden: Boolean(job.is_hidden),
-        }))
+       const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
+  ...job,
+  internal_notes: job.internal_notes ?? '',
+  quoted_price: normalizeMoneyValue(job.quoted_price),
+  parts_cost: normalizeMoneyValue(job.parts_cost),
+  serial_imei: job.serial_imei ?? null,
+  repair_performed: job.repair_performed ?? '',
+  is_hidden: Boolean(job.is_hidden),
+}))
 
         const matchingJobs = safeJobs.filter((job) => buildCustomerKey(job) === customerKey)
 
@@ -159,7 +161,15 @@ export default function CustomerDetailPage() {
 
     const visibleJobs = jobs.filter((job) => !job.is_hidden)
     const hiddenJobs = jobs.filter((job) => job.is_hidden)
-    const quotedTotal = jobs.reduce((sum, job) => sum + (job.quoted_price ?? 0), 0)
+const quotedTotal = jobs.reduce(
+  (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
+  0
+)
+
+const totalPartsCost = jobs.reduce(
+  (sum, job) => sum + (normalizeMoneyValue(job.parts_cost) ?? 0),
+  0
+)
 
     return {
       name: newest.full_name,
@@ -169,6 +179,7 @@ export default function CustomerDetailPage() {
       hiddenCount: hiddenJobs.length,
       totalJobs: jobs.length,
       quotedTotal,
+      totalPartsCost,
       invoiceCount: invoices.length,
     }
   }, [jobs, invoices])
@@ -276,12 +287,15 @@ export default function CustomerDetailPage() {
     }
 
     const invoiceNumber = String(invoiceNumberData)
-    const subtotal = selectedJobs.reduce((sum, job) => sum + (job.quoted_price ?? 0), 0)
-
+const subtotal = selectedJobs.reduce(
+  (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
+  0
+)
     const referenceLines = selectedJobs.map((job) => {
       const device = [job.brand, job.model, job.device_type].filter(Boolean).join(' • ')
       const serial = job.serial_imei?.trim() ? ` | Serial/IMEI: ${job.serial_imei.trim()}` : ''
-      return `${job.job_number || 'Pending'} | ${device}${serial}`
+      const repair = job.repair_performed?.trim() ? ` | Repair: ${job.repair_performed.trim()}` : ''
+      return `${job.job_number || 'Pending'} | ${device}${serial}${repair}`
     })
 
     const invoiceNotes = `Repair references:\n${referenceLines.join('\n')}`
@@ -328,14 +342,14 @@ export default function CustomerDetailPage() {
 
     const itemRows = selectedJobs.map((job, index) => {
       const cleanDevice = [job.brand, job.model].filter(Boolean).join(' ')
-      const cleanFault = job.fault_description.trim()
+      const cleanRepair = job.repair_performed?.trim() || job.fault_description.trim()
 
       return {
         invoice_id: insertedInvoice.id,
-        description: `${cleanDevice} • ${cleanFault}`,
+        description: `${cleanDevice} • ${cleanRepair}`,
         qty: 1,
-        unit_price: Number(job.quoted_price ?? 0),
-        line_total: Number(job.quoted_price ?? 0),
+unit_price: normalizeMoneyValue(job.quoted_price) ?? 0,
+line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
         sort_order: index,
       }
     })
@@ -416,6 +430,9 @@ export default function CustomerDetailPage() {
           <Link href="/admin/invoices" className={styles.viewButton}>
             Invoices
           </Link>
+          <Link href="/admin/stats" className={styles.viewButton}>
+            Stats
+          </Link>
           <Link
             href={`/admin/jobs/new?full_name=${encodeURIComponent(
               customerSummary.name
@@ -461,18 +478,24 @@ export default function CustomerDetailPage() {
             <div className={styles.summaryLabel}>Quoted Total</div>
             <div className={styles.summaryValue}>${customerSummary.quotedTotal.toFixed(2)}</div>
           </div>
+          <div className={styles.summaryCard}>
+            <div className={styles.summaryLabel}>Parts Cost Total</div>
+            <div className={styles.summaryValue}>${customerSummary.totalPartsCost.toFixed(2)}</div>
+          </div>
         </div>
       </div>
 
       <section className={styles.customerDetailSection}>
-        <div className={styles.customerSectionHeader}>
-          <h2 className={styles.sectionTitle}>Jobs</h2>
+        <div className={styles.bulkBar}>
+          <div className={styles.bulkBarText}>
+            Selected visible jobs: <strong>{selectedJobIds.length}</strong>
+          </div>
 
           <div className={styles.bulkBarActions}>
-            <button type="button" className={styles.miniButton} onClick={selectAllVisibleJobs}>
+            <button type="button" className={styles.actionButton} onClick={selectAllVisibleJobs}>
               Select All Visible
             </button>
-            <button type="button" className={styles.miniButton} onClick={clearSelectedJobs}>
+            <button type="button" className={styles.actionButton} onClick={clearSelectedJobs}>
               Clear Selection
             </button>
             <button
@@ -481,7 +504,9 @@ export default function CustomerDetailPage() {
               onClick={() => void handleCreateGroupedInvoice()}
               disabled={creatingGroupedInvoice || selectedJobIds.length === 0}
             >
-              {creatingGroupedInvoice ? 'Creating...' : `Create Grouped Invoice (${selectedJobIds.length})`}
+              {creatingGroupedInvoice
+                ? 'Creating...'
+                : `Create Grouped Invoice (${selectedJobIds.length})`}
             </button>
             <button
               type="button"
@@ -494,6 +519,8 @@ export default function CustomerDetailPage() {
           </div>
         </div>
 
+        <h2 className={styles.sectionTitle}>Jobs</h2>
+
         <div className={styles.tableWrap}>
           <table className={`${styles.table} ${styles.tableAligned}`}>
             <thead>
@@ -505,6 +532,7 @@ export default function CustomerDetailPage() {
                 <th>Status</th>
                 <th>Visible</th>
                 <th>Quote</th>
+                <th>Parts Cost</th>
                 <th>Booked</th>
                 <th>Invoice</th>
                 <th className={styles.tableCellCenter}>Delete</th>
@@ -547,6 +575,7 @@ export default function CustomerDetailPage() {
                     </td>
                     <td>{job.is_hidden ? 'Hidden' : 'Visible'}</td>
                     <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
+                    <td>{job.parts_cost != null ? `$${Number(job.parts_cost).toFixed(2)}` : '-'}</td>
                     <td>{formatDateTime(job.created_at)}</td>
                     <td>
                       {linkedInvoices.length === 0 ? (
