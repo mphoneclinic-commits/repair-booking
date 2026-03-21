@@ -1,5 +1,6 @@
 'use client'
 
+import type { Dispatch, SetStateAction } from 'react'
 import type { Invoice, InvoiceItem, RepairRequest, RepairStatus } from '../types'
 
 type Params = {
@@ -11,18 +12,18 @@ type Params = {
   highlightedJobId: string | null
   selectedArchiveJobIds: string[]
   selectedHiddenJobIds: string[]
-  setJobs: React.Dispatch<React.SetStateAction<RepairRequest[]>>
-  setHiddenJobs: React.Dispatch<React.SetStateAction<RepairRequest[]>>
-  setInvoicesByJobId: React.Dispatch<React.SetStateAction<Record<string, Invoice>>>
-  setInvoiceItemsByInvoiceId: React.Dispatch<
-    React.SetStateAction<Record<string, InvoiceItem[]>>
-  >
-  setHighlightedJobId: React.Dispatch<React.SetStateAction<string | null>>
-  setSelectedArchiveJobIds: React.Dispatch<React.SetStateAction<string[]>>
-  setSelectedHiddenJobIds: React.Dispatch<React.SetStateAction<string[]>>
-  setBulkBusy: React.Dispatch<React.SetStateAction<boolean>>
-  setError: React.Dispatch<React.SetStateAction<string>>
+  setJobs: Dispatch<SetStateAction<RepairRequest[]>>
+  setHiddenJobs: Dispatch<SetStateAction<RepairRequest[]>>
+  setInvoicesByJobId: Dispatch<SetStateAction<Record<string, Invoice>>>
+  setInvoiceItemsByInvoiceId: Dispatch<SetStateAction<Record<string, InvoiceItem[]>>>
+  setHighlightedJobId: Dispatch<SetStateAction<string | null>>
+  setSelectedArchiveJobIds: Dispatch<SetStateAction<string[]>>
+  setSelectedHiddenJobIds: Dispatch<SetStateAction<string[]>>
+  setBulkBusy: Dispatch<SetStateAction<boolean>>
+  setError: Dispatch<SetStateAction<string>>
   normalizeJob: (raw: RepairRequest) => RepairRequest
+  loadInvoices: () => Promise<void>
+  loadInvoiceItems: () => Promise<void>
 }
 
 export default function useAdminArchiveActions({
@@ -44,194 +45,69 @@ export default function useAdminArchiveActions({
   setBulkBusy,
   setError,
   normalizeJob,
+  loadInvoices,
+  loadInvoiceItems,
 }: Params) {
-  async function hideJob(id: string) {
-    const previousVisible = jobs
-    const previousHidden = hiddenJobs
-    const jobToHide = jobs.find((job) => job.id === id)
-
-    if (!jobToHide) return
-
-    setJobs((prev) => prev.filter((job) => job.id !== id))
-    setHiddenJobs((prev) => [{ ...jobToHide, is_hidden: true }, ...prev])
-    setSelectedArchiveJobIds((prev) => prev.filter((jobId) => jobId !== id))
+  async function safeDeleteInvoiceRepairLinks(invoiceIds: string[]) {
+    if (invoiceIds.length === 0) return
 
     const { error } = await supabase
-      .from('repair_requests')
-      .update({ is_hidden: true })
-      .eq('id', id)
+      .from('invoice_repair_links')
+      .delete()
+      .in('invoice_id', invoiceIds)
 
     if (error) {
-      setJobs(previousVisible)
-      setHiddenJobs(previousHidden)
-      setError(error.message)
-      return
-    }
+      const message = String(error.message || '').toLowerCase()
 
-    if (highlightedJobId === id) {
-      setHighlightedJobId(null)
+      if (
+        !message.includes('relation') &&
+        !message.includes('does not exist') &&
+        !message.includes('schema cache')
+      ) {
+        throw error
+      }
     }
   }
 
-  async function unhideJob(id: string) {
-    const previousVisible = jobs
-    const previousHidden = hiddenJobs
-    const jobToUnhide = hiddenJobs.find((job) => job.id === id)
+  async function safeDeleteRepairRequestPhotos(jobIds: string[]) {
+    if (jobIds.length === 0) return
 
-    if (!jobToUnhide) return
+    const { data: photos, error: photosError } = await supabase
+      .from('repair_request_photos')
+      .select('id, storage_path')
+      .in('repair_request_id', jobIds)
 
-    setHiddenJobs((prev) => prev.filter((job) => job.id !== id))
-    setJobs((prev) => [{ ...jobToUnhide, is_hidden: false }, ...prev])
-    setSelectedHiddenJobIds((prev) => prev.filter((jobId) => jobId !== id))
+    if (photosError) throw photosError
 
-    const { error } = await supabase
-      .from('repair_requests')
-      .update({ is_hidden: false })
-      .eq('id', id)
+    const storagePaths = ((photos || []) as Array<{ storage_path?: string | null }>)
+      .map((photo) => photo.storage_path)
+      .filter(Boolean) as string[]
 
-    if (error) {
-      setJobs(previousVisible)
-      setHiddenJobs(previousHidden)
-      setError(error.message)
-      return
+    if (storagePaths.length > 0) {
+      const { error: storageError } = await supabase.storage
+        .from('fault-photos')
+        .remove(storagePaths)
+
+      if (storageError) {
+        throw storageError
+      }
     }
 
-    setHighlightedJobId(id)
+    const { error: deletePhotosError } = await supabase
+      .from('repair_request_photos')
+      .delete()
+      .in('repair_request_id', jobIds)
+
+    if (deletePhotosError) throw deletePhotosError
   }
 
-  async function bulkHideArchiveJobs() {
-    if (selectedArchiveJobIds.length === 0) return
-
-    setBulkBusy(true)
+  async function hideJob(jobId: string) {
     setError('')
-
-    const selectedSet = new Set(selectedArchiveJobIds)
-    const previousVisible = jobs
-    const previousHidden = hiddenJobs
-    const jobsToHide = jobs.filter((job) => selectedSet.has(job.id))
-
-    setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setHiddenJobs((prev) => [
-      ...jobsToHide.map((job) => ({ ...job, is_hidden: true })),
-      ...prev,
-    ])
-
-    const { error } = await supabase
-      .from('repair_requests')
-      .update({ is_hidden: true })
-      .in('id', selectedArchiveJobIds)
-
-    if (error) {
-      setJobs(previousVisible)
-      setHiddenJobs(previousHidden)
-      setError(error.message)
-      setBulkBusy(false)
-      return
-    }
-
-    if (highlightedJobId && selectedSet.has(highlightedJobId)) {
-      setHighlightedJobId(null)
-    }
-
-    setSelectedArchiveJobIds([])
-    setBulkBusy(false)
-  }
-
-  async function bulkUnhideHiddenJobs() {
-    if (selectedHiddenJobIds.length === 0) return
-
-    setBulkBusy(true)
-    setError('')
-
-    const selectedSet = new Set(selectedHiddenJobIds)
-    const previousVisible = jobs
-    const previousHidden = hiddenJobs
-    const jobsToUnhide = hiddenJobs.filter((job) => selectedSet.has(job.id))
-
-    setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
-    setJobs((prev) => [
-      ...jobsToUnhide.map((job) => ({ ...job, is_hidden: false })),
-      ...prev,
-    ])
-
-    const { error } = await supabase
-      .from('repair_requests')
-      .update({ is_hidden: false })
-      .in('id', selectedHiddenJobIds)
-
-    if (error) {
-      setJobs(previousVisible)
-      setHiddenJobs(previousHidden)
-      setError(error.message)
-      setBulkBusy(false)
-      return
-    }
-
-    setSelectedHiddenJobIds([])
-    setBulkBusy(false)
-  }
-
-  async function bulkUpdateArchiveStatus(targetStatus: RepairStatus) {
-    if (selectedArchiveJobIds.length === 0) return
-
-    setBulkBusy(true)
-    setError('')
-
-    const selectedSet = new Set(selectedArchiveJobIds)
-    const previousJobs = jobs
-
-    setJobs((prev) =>
-      prev.map((job) =>
-        selectedSet.has(job.id) ? { ...job, status: targetStatus } : job
-      )
-    )
-
-    const { error } = await supabase
-      .from('repair_requests')
-      .update({ status: targetStatus })
-      .in('id', selectedArchiveJobIds)
-
-    if (error) {
-      setJobs(previousJobs)
-      setError(error.message)
-      setBulkBusy(false)
-      return
-    }
-
-    setSelectedArchiveJobIds([])
-    setBulkBusy(false)
-  }
-
-  async function bulkDuplicateArchiveJobs() {
-    if (selectedArchiveJobIds.length === 0) return
-
-    setBulkBusy(true)
-    setError('')
-
-    const selectedJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
-
-    const inserts = selectedJobs.map((job) => ({
-      job_number: null,
-      full_name: job.full_name,
-      phone: job.phone,
-      email: job.email,
-      brand: job.brand,
-      model: job.model,
-      device_type: job.device_type,
-      serial_imei: job.serial_imei,
-      fault_description: job.fault_description,
-      repair_performed: job.repair_performed ?? null,
-      status: 'new' as RepairStatus,
-      preferred_contact: job.preferred_contact,
-      internal_notes: job.internal_notes,
-      quoted_price: job.quoted_price,
-      is_hidden: false,
-      fault_photo_url: job.fault_photo_url ?? null,
-    }))
 
     const { data, error } = await supabase
       .from('repair_requests')
-      .insert(inserts)
+      .update({ is_hidden: true })
+      .eq('id', jobId)
       .select(`
         id,
         job_number,
@@ -249,61 +125,328 @@ export default function useAdminArchiveActions({
         preferred_contact,
         internal_notes,
         quoted_price,
+        parts_cost,
         is_hidden,
-        fault_photo_url
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
       `)
+      .single()
 
-    if (error) {
-      setError(error.message)
+    if (error || !data) {
+      setError(error?.message || 'Failed to hide job')
+      return
+    }
+
+    const normalized = normalizeJob(data as RepairRequest)
+
+    setJobs((prev) => prev.filter((job) => job.id !== jobId))
+    setHiddenJobs((prev) => {
+      const withoutExisting = prev.filter((job) => job.id !== jobId)
+      return [normalized, ...withoutExisting]
+    })
+  }
+
+  async function unhideJob(jobId: string) {
+    setError('')
+
+    const { data, error } = await supabase
+      .from('repair_requests')
+      .update({ is_hidden: false })
+      .eq('id', jobId)
+      .select(`
+        id,
+        job_number,
+        created_at,
+        full_name,
+        phone,
+        email,
+        brand,
+        model,
+        device_type,
+        serial_imei,
+        fault_description,
+        repair_performed,
+        status,
+        preferred_contact,
+        internal_notes,
+        quoted_price,
+        parts_cost,
+        is_hidden,
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
+      `)
+      .single()
+
+    if (error || !data) {
+      setError(error?.message || 'Failed to unhide job')
+      return
+    }
+
+    const normalized = normalizeJob(data as RepairRequest)
+
+    setHiddenJobs((prev) => prev.filter((job) => job.id !== jobId))
+    setJobs((prev) => {
+      const withoutExisting = prev.filter((job) => job.id !== jobId)
+      return [normalized, ...withoutExisting]
+    })
+  }
+
+  async function bulkHideArchiveJobs() {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    try {
+      const { data, error } = await supabase
+        .from('repair_requests')
+        .update({ is_hidden: true })
+        .in('id', selectedArchiveJobIds)
+        .select(`
+          id,
+          job_number,
+          created_at,
+          full_name,
+          phone,
+          email,
+          brand,
+          model,
+          device_type,
+          serial_imei,
+          fault_description,
+          repair_performed,
+          status,
+          preferred_contact,
+          internal_notes,
+          quoted_price,
+          parts_cost,
+          is_hidden,
+          fault_photo_url,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message
+        `)
+
+      if (error) throw error
+
+      const normalized = ((data || []) as RepairRequest[]).map(normalizeJob)
+      const selectedSet = new Set(selectedArchiveJobIds)
+
+      setJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setHiddenJobs((prev) => {
+        const kept = prev.filter((job) => !selectedSet.has(job.id))
+        return [...normalized, ...kept]
+      })
+      setSelectedArchiveJobIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to hide selected jobs')
+    } finally {
       setBulkBusy(false)
-      return
     }
-
-    const newJobs = ((data || []) as RepairRequest[]).map(normalizeJob)
-
-    setJobs((prev) => [...newJobs, ...prev])
-    setSelectedArchiveJobIds([])
-
-    if (newJobs[0]) {
-      setHighlightedJobId(newJobs[0].id)
-    }
-
-    setBulkBusy(false)
   }
 
-  async function safeDeleteInvoiceRepairLinks(invoiceIds: string[]) {
-    if (invoiceIds.length === 0) return
+  async function bulkUnhideHiddenJobs() {
+    if (selectedHiddenJobIds.length === 0) return
 
-    const { error } = await supabase
-      .from('invoice_repair_links')
-      .delete()
-      .in('invoice_id', invoiceIds)
+    setBulkBusy(true)
+    setError('')
 
-    if (!error) return
+    try {
+      const { data, error } = await supabase
+        .from('repair_requests')
+        .update({ is_hidden: false })
+        .in('id', selectedHiddenJobIds)
+        .select(`
+          id,
+          job_number,
+          created_at,
+          full_name,
+          phone,
+          email,
+          brand,
+          model,
+          device_type,
+          serial_imei,
+          fault_description,
+          repair_performed,
+          status,
+          preferred_contact,
+          internal_notes,
+          quoted_price,
+          parts_cost,
+          is_hidden,
+          fault_photo_url,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message
+        `)
 
-    const msg = String(error.message || '').toLowerCase()
+      if (error) throw error
 
-    if (
-      msg.includes('relation') ||
-      msg.includes('does not exist') ||
-      msg.includes('schema cache')
-    ) {
-      return
+      const normalized = ((data || []) as RepairRequest[]).map(normalizeJob)
+      const selectedSet = new Set(selectedHiddenJobIds)
+
+      setHiddenJobs((prev) => prev.filter((job) => !selectedSet.has(job.id)))
+      setJobs((prev) => {
+        const kept = prev.filter((job) => !selectedSet.has(job.id))
+        return [...normalized, ...kept]
+      })
+      setSelectedHiddenJobIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unhide selected jobs')
+    } finally {
+      setBulkBusy(false)
     }
-
-    throw error
   }
 
-  async function deleteJobsByIds(
-    idsToDelete: string[],
-    source: 'archive' | 'hidden'
-  ) {
+  async function bulkUpdateArchiveStatus(nextStatus: RepairStatus) {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    try {
+      const { data, error } = await supabase
+        .from('repair_requests')
+        .update({ status: nextStatus })
+        .in('id', selectedArchiveJobIds)
+        .select(`
+          id,
+          job_number,
+          created_at,
+          full_name,
+          phone,
+          email,
+          brand,
+          model,
+          device_type,
+          serial_imei,
+          fault_description,
+          repair_performed,
+          status,
+          preferred_contact,
+          internal_notes,
+          quoted_price,
+          parts_cost,
+          is_hidden,
+          fault_photo_url,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message
+        `)
+
+      if (error) throw error
+
+      const normalized = ((data || []) as RepairRequest[]).map(normalizeJob)
+      const normalizedById = new Map(normalized.map((job) => [job.id, job]))
+      const selectedSet = new Set(selectedArchiveJobIds)
+
+      setJobs((prev) =>
+        prev.map((job) => (selectedSet.has(job.id) ? normalizedById.get(job.id) || job : job))
+      )
+
+      setHiddenJobs((prev) =>
+        prev.map((job) => (selectedSet.has(job.id) ? normalizedById.get(job.id) || job : job))
+      )
+
+      setSelectedArchiveJobIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update selected jobs')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function bulkDuplicateArchiveJobs() {
+    if (selectedArchiveJobIds.length === 0) return
+
+    setBulkBusy(true)
+    setError('')
+
+    try {
+      const sourceJobs = jobs.filter((job) => selectedArchiveJobIds.includes(job.id))
+
+      if (sourceJobs.length === 0) return
+
+      const insertRows = sourceJobs.map((job) => ({
+        job_number: null,
+        full_name: job.full_name,
+        phone: job.phone,
+        email: job.email,
+        brand: job.brand,
+        model: job.model,
+        device_type: job.device_type,
+        serial_imei: job.serial_imei,
+        fault_description: job.fault_description,
+        repair_performed: job.repair_performed,
+        status: 'new',
+        preferred_contact: job.preferred_contact,
+        internal_notes: job.internal_notes,
+        quoted_price: job.quoted_price,
+        parts_cost: job.parts_cost,
+        is_hidden: false,
+        fault_photo_url: job.fault_photo_url ?? null,
+      }))
+
+      const { data, error } = await supabase
+        .from('repair_requests')
+        .insert(insertRows)
+        .select(`
+          id,
+          job_number,
+          created_at,
+          full_name,
+          phone,
+          email,
+          brand,
+          model,
+          device_type,
+          serial_imei,
+          fault_description,
+          repair_performed,
+          status,
+          preferred_contact,
+          internal_notes,
+          quoted_price,
+          parts_cost,
+          is_hidden,
+          fault_photo_url,
+          last_sms_sent_at,
+          last_sms_to,
+          last_sms_message
+        `)
+
+      if (error) throw error
+
+      const normalized = ((data || []) as RepairRequest[]).map(normalizeJob)
+      setJobs((prev) => [...normalized, ...prev])
+      setSelectedArchiveJobIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to duplicate selected jobs')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function deleteJobsByIds(idsToDelete: string[], source: 'archive' | 'hidden') {
     if (idsToDelete.length === 0) return
 
     const confirmed = window.confirm(
       `Are you sure you want to delete ${idsToDelete.length} selected jobs? This cannot be undone.`
     )
     if (!confirmed) return
+
+    if (typeof loadInvoices !== 'function') {
+      throw new Error('loadInvoices is not wired into useAdminArchiveActions')
+    }
+
+    if (typeof loadInvoiceItems !== 'function') {
+      throw new Error('loadInvoiceItems is not wired into useAdminArchiveActions')
+    }
 
     setBulkBusy(true)
     setError('')
@@ -317,39 +460,132 @@ export default function useAdminArchiveActions({
     const previousInvoiceItemsByInvoiceId = invoiceItemsByInvoiceId
 
     try {
-      const { data: linkedInvoices, error: linkedInvoicesError } = await supabase
+      const { data: directInvoices, error: directInvoicesError } = await supabase
         .from('invoices')
         .select('id, repair_request_id')
         .in('repair_request_id', idsToDelete)
 
-      if (linkedInvoicesError) throw linkedInvoicesError
+      if (directInvoicesError) throw directInvoicesError
 
-      const invoiceIds = (linkedInvoices || []).map((invoice: { id: string }) => invoice.id)
-
-      if (invoiceIds.length > 0) {
-        const { error: deleteInvoiceItemsError } = await supabase
-          .from('invoice_items')
-          .delete()
-          .in('invoice_id', invoiceIds)
-
-        if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
-
-        await safeDeleteInvoiceRepairLinks(invoiceIds)
-
-        const { error: deleteInvoicesError } = await supabase
-          .from('invoices')
-          .delete()
-          .in('id', invoiceIds)
-
-        if (deleteInvoicesError) throw deleteInvoicesError
-      }
-
-      const { error: deletePhotosError } = await supabase
-        .from('repair_request_photos')
-        .delete()
+      const { data: linkedRows, error: linkedRowsError } = await supabase
+        .from('invoice_repair_links')
+        .select('invoice_id, repair_request_id')
         .in('repair_request_id', idsToDelete)
 
-      if (deletePhotosError) throw deletePhotosError
+      if (linkedRowsError) throw linkedRowsError
+
+      const affectedInvoiceIds = Array.from(
+        new Set([
+          ...((directInvoices || []) as Array<{ id: string }>).map((row) => row.id),
+          ...((linkedRows || []) as Array<{ invoice_id: string }>).map((row) => row.invoice_id),
+        ])
+      )
+
+      await safeDeleteRepairRequestPhotos(idsToDelete)
+
+      for (const invoiceId of affectedInvoiceIds) {
+        const { error: deleteSelectedLinksError } = await supabase
+          .from('invoice_repair_links')
+          .delete()
+          .eq('invoice_id', invoiceId)
+          .in('repair_request_id', idsToDelete)
+
+        if (deleteSelectedLinksError) {
+          const msg = String(deleteSelectedLinksError.message || '').toLowerCase()
+          if (
+            !msg.includes('relation') &&
+            !msg.includes('does not exist') &&
+            !msg.includes('schema cache')
+          ) {
+            throw deleteSelectedLinksError
+          }
+        }
+
+        const { data: remainingLinks, error: remainingLinksError } = await supabase
+          .from('invoice_repair_links')
+          .select('repair_request_id')
+          .eq('invoice_id', invoiceId)
+
+        if (remainingLinksError) {
+          const msg = String(remainingLinksError.message || '').toLowerCase()
+          if (
+            !msg.includes('relation') &&
+            !msg.includes('does not exist') &&
+            !msg.includes('schema cache')
+          ) {
+            throw remainingLinksError
+          }
+        }
+
+        const remainingLinkedJobIds = (
+          (remainingLinks || []) as Array<{ repair_request_id: string }>
+        ).map((row) => row.repair_request_id)
+
+        const { data: invoiceRow, error: invoiceRowError } = await supabase
+          .from('invoices')
+          .select('id, repair_request_id')
+          .eq('id', invoiceId)
+          .single()
+
+        if (invoiceRowError) throw invoiceRowError
+
+        const currentPrimaryJobId = invoiceRow.repair_request_id as string
+        const primaryStillExists = !selectedSet.has(currentPrimaryJobId)
+
+        const remainingJobIds = Array.from(
+          new Set([
+            ...(primaryStillExists ? [currentPrimaryJobId] : []),
+            ...remainingLinkedJobIds,
+          ])
+        )
+
+        if (remainingJobIds.length === 0) {
+          const { error: deleteInvoiceItemsError } = await supabase
+            .from('invoice_items')
+            .delete()
+            .eq('invoice_id', invoiceId)
+
+          if (deleteInvoiceItemsError) throw deleteInvoiceItemsError
+
+          await safeDeleteInvoiceRepairLinks([invoiceId])
+
+          const { error: deleteInvoiceError } = await supabase
+            .from('invoices')
+            .delete()
+            .eq('id', invoiceId)
+
+          if (deleteInvoiceError) throw deleteInvoiceError
+          continue
+        }
+
+        if (!primaryStillExists) {
+          const nextPrimaryJobId = remainingJobIds[0]
+
+          const { error: updateInvoicePrimaryError } = await supabase
+            .from('invoices')
+            .update({ repair_request_id: nextPrimaryJobId })
+            .eq('id', invoiceId)
+
+          if (updateInvoicePrimaryError) throw updateInvoicePrimaryError
+
+          const { error: removeDuplicatePrimaryLinkError } = await supabase
+            .from('invoice_repair_links')
+            .delete()
+            .eq('invoice_id', invoiceId)
+            .eq('repair_request_id', nextPrimaryJobId)
+
+          if (removeDuplicatePrimaryLinkError) {
+            const msg = String(removeDuplicatePrimaryLinkError.message || '').toLowerCase()
+            if (
+              !msg.includes('relation') &&
+              !msg.includes('does not exist') &&
+              !msg.includes('schema cache')
+            ) {
+              throw removeDuplicatePrimaryLinkError
+            }
+          }
+        }
+      }
 
       const { error: deleteJobsError } = await supabase
         .from('repair_requests')
@@ -371,23 +607,16 @@ export default function useAdminArchiveActions({
         setHighlightedJobId(null)
       }
 
-      setInvoicesByJobId((prev) => {
-        const next = { ...prev }
-        for (const [jobId, invoice] of Object.entries(prev)) {
-          if (selectedSet.has(jobId) || invoiceIds.includes(invoice.id)) {
-            delete next[jobId]
-          }
-        }
-        return next
-      })
-
-      setInvoiceItemsByInvoiceId((prev) => {
-        const next = { ...prev }
-        for (const invoiceId of invoiceIds) {
-          delete next[invoiceId]
-        }
-        return next
-      })
+      try {
+        await loadInvoices()
+        await loadInvoiceItems()
+      } catch (refreshError) {
+        setError(
+          refreshError instanceof Error
+            ? refreshError.message
+            : 'Jobs deleted, but invoice refresh failed'
+        )
+      }
     } catch (err) {
       setJobs(previousJobs)
       setHiddenJobs(previousHiddenJobs)
@@ -408,11 +637,11 @@ export default function useAdminArchiveActions({
   }
 
   async function bulkDeleteArchiveJobs() {
-    await deleteJobsByIds([...selectedArchiveJobIds], 'archive')
+    await deleteJobsByIds(selectedArchiveJobIds, 'archive')
   }
 
   async function bulkDeleteHiddenJobs() {
-    await deleteJobsByIds([...selectedHiddenJobIds], 'hidden')
+    await deleteJobsByIds(selectedHiddenJobIds, 'hidden')
   }
 
   return {
