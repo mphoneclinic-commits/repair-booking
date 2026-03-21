@@ -48,6 +48,16 @@ export default function AdminPage() {
   const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
   const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
 
+const DEFAULT_COLLAPSED_COLUMNS: Record<RepairStatus, boolean> = {
+  new: true,
+  quoted: true,
+  approved: true,
+  in_progress: true,
+  ready: true,
+  closed: true,
+  rejected: true,
+  cancelled: true,
+}
   const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
     new: true,
     quoted: true,
@@ -167,6 +177,14 @@ const {
     hiddenSort,
   })
 
+useEffect(() => {
+  try {
+    localStorage.setItem('admin_collapsed_columns', JSON.stringify(collapsedColumns))
+  } catch {
+    // ignore
+  }
+}, [collapsedColumns])
+
   useEffect(() => {
     async function checkAuth() {
       const { data, error } = await supabase.auth.getUser()
@@ -187,6 +205,10 @@ const {
     if (!authChecked || !isAdminSignedIn) return
     void loadAllData()
   }, [authChecked, isAdminSignedIn, loadAllData])
+
+function resetColumnLayout() {
+  setCollapsedColumns(DEFAULT_COLLAPSED_COLUMNS)
+}
 
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
@@ -710,7 +732,13 @@ const newDescription = [
               </button>
             ))}
           </div>
-
+<button
+  type="button"
+  className={styles.viewButton}
+  onClick={resetColumnLayout}
+>
+  Reset Layout
+</button>
           <div className={styles.adminTopBarGroup}>
             <button type="button" onClick={() => void loadAllData()} className={styles.button}>
               Refresh
