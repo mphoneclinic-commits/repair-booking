@@ -1,56 +1,39 @@
 import jsPDF from 'jspdf'
-import type { Invoice, InvoiceItem } from '../types'
+import autoTable from 'jspdf-autotable'
+import type { Invoice, InvoiceItem, RepairRequest } from '../types'
+import type { BUSINESS_DETAILS, PAYMENT_DETAILS } from './invoicePdfConfig'
 import { formatDateTime } from '../utils'
 
-export type InvoicePdfBusinessDetails = {
-  name: string
-  address: string
-  landline: string
-  mobile: string
-  email: string
-  abn: string
-}
+type BusinessDetails = typeof BUSINESS_DETAILS
+type PaymentDetails = typeof PAYMENT_DETAILS
 
-export type InvoicePdfPaymentDetails = {
-  bankName: string
-  accountName: string
-  bsb: string
-  accountNumber: string
-  payId: string
-}
-
-type GenerateInvoicePdfParams = {
+export type GenerateInvoicePdfParams = {
   invoice: Invoice
   items: InvoiceItem[]
-  businessDetails: InvoicePdfBusinessDetails
-  paymentDetails: InvoicePdfPaymentDetails
+  linkedJobs?: RepairRequest[]
+  businessDetails: BusinessDetails
+  paymentDetails: PaymentDetails
   includeInternalReferenceNotes?: boolean
-  filename?: string
-  businessSubtitle?: string | null
 }
 
-const COLOR_DARK: [number, number, number] = [15, 23, 42]
-const COLOR_GREEN: [number, number, number] = [55, 126, 71]
-const COLOR_BLUE: [number, number, number] = [37, 99, 235]
-
-export function formatCurrency(value: number | null | undefined) {
+function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
 }
 
 export function generateInvoicePdf({
   invoice,
   items,
+  linkedJobs = [],
   businessDetails,
   paymentDetails,
   includeInternalReferenceNotes = false,
-  filename,
-  businessSubtitle = null,
 }: GenerateInvoicePdfParams) {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  })
+  const doc = new jsPDF()
+
+  const COLOR_DARK: [number, number, number] = [15, 23, 42]
+  const COLOR_GREEN: [number, number, number] = [55, 126, 71]
+  const COLOR_BLUE: [number, number, number] = [37, 99, 235]
+  const COLOR_MUTED: [number, number, number] = [100, 116, 139]
 
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -68,6 +51,13 @@ export function generateInvoicePdf({
     }
   }
 
+  const drawHorizontalLine = () => {
+    addPageIfNeeded(4)
+    doc.setDrawColor(...COLOR_MUTED)
+    doc.line(left, y, right, y)
+    y += 4
+  }
+
   const drawLabelValueRow = (label: string, value: string) => {
     addPageIfNeeded(7)
     doc.setTextColor(...COLOR_DARK)
@@ -76,13 +66,6 @@ export function generateInvoicePdf({
     doc.setFont('helvetica', 'normal')
     doc.text(value, left + 42, y)
     y += 6
-  }
-
-  const drawHorizontalLine = () => {
-    addPageIfNeeded(4)
-    doc.setDrawColor(203, 213, 225)
-    doc.line(left, y, right, y)
-    y += 4
   }
 
   const drawWrappedBlock = (title: string, value: string) => {
@@ -106,12 +89,6 @@ export function generateInvoicePdf({
   doc.setTextColor(...COLOR_DARK)
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
-
-  if (businessSubtitle) {
-    doc.text(businessSubtitle, left, y)
-    y += 5
-  }
-
   doc.text(businessDetails.address, left, y)
   y += 5
   doc.text(`Landline: ${businessDetails.landline}`, left, y)
@@ -139,7 +116,7 @@ export function generateInvoicePdf({
   )
   doc.text(`Status: ${invoice.status.toUpperCase()}`, right, 35, { align: 'right' })
 
-  y = businessSubtitle ? 46 : 42
+  y = 46
   drawHorizontalLine()
 
   doc.setTextColor(...COLOR_DARK)
@@ -160,12 +137,41 @@ export function generateInvoicePdf({
 
   for (const line of billToLines) {
     addPageIfNeeded(5)
-    doc.setTextColor(...COLOR_DARK)
     doc.text(line, left, y)
     y += 5
   }
 
-  y += 3
+  if (linkedJobs.length > 0) {
+    y += 3
+    drawHorizontalLine()
+
+    addPageIfNeeded(10)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...COLOR_DARK)
+    doc.text('Linked Jobs', left, y)
+    y += 7
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+
+    for (const job of linkedJobs) {
+      const line = [
+        job.job_number || 'Pending',
+        [job.brand, job.model].filter(Boolean).join(' '),
+        job.repair_performed?.trim() || job.fault_description.trim(),
+      ]
+        .filter(Boolean)
+        .join(' • ')
+
+      const lines = doc.splitTextToSize(line, contentWidth)
+      addPageIfNeeded(lines.length * 5 + 2)
+      doc.text(lines, left, y)
+      y += lines.length * 5 + 2
+    }
+  }
+
+  y += 2
   drawHorizontalLine()
 
   addPageIfNeeded(10)
@@ -175,51 +181,45 @@ export function generateInvoicePdf({
   doc.text('Invoice Items', left, y)
   y += 7
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'bold')
-  doc.text('Description', left, y)
-  doc.text('Qty', 120, y, { align: 'right' })
-  doc.text('Unit Price', 155, y, { align: 'right' })
-  doc.text('Line Total', right, y, { align: 'right' })
-  y += 4
+  autoTable(doc, {
+    startY: y,
+    margin: { left, right },
+    styles: {
+      font: 'helvetica',
+      fontSize: 9,
+      textColor: COLOR_DARK,
+    },
+    headStyles: {
+      fillColor: COLOR_BLUE,
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+    },
+    body: items.length
+      ? items.map((item) => [
+          item.description,
+          Number(item.qty).toFixed(2),
+          formatCurrency(item.unit_price),
+          formatCurrency(item.line_total),
+        ])
+      : [['No invoice items found.', '', '', '']],
+    head: [['Description', 'Qty', 'Unit Price', 'Line Total']],
+    theme: 'grid',
+    columnStyles: {
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+    },
+  })
 
-  doc.setDrawColor(203, 213, 225)
-  doc.line(left, y, right, y)
-  y += 5
+  y = (doc as any).lastAutoTable.finalY + 8
 
-  doc.setTextColor(...COLOR_DARK)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-
-  if (items.length === 0) {
-    addPageIfNeeded(6)
-    doc.text('No invoice items found.', left, y)
-    y += 6
-  } else {
-    for (const item of items) {
-      const descriptionLines = doc.splitTextToSize(item.description, 95)
-      const rowHeight = Math.max(descriptionLines.length * 4.5, 5)
-
-      addPageIfNeeded(rowHeight + 2)
-
-      doc.setTextColor(...COLOR_DARK)
-      doc.text(descriptionLines, left, y)
-      doc.text(Number(item.qty).toFixed(2), 120, y, { align: 'right' })
-      doc.text(formatCurrency(item.unit_price), 155, y, { align: 'right' })
-      doc.text(formatCurrency(item.line_total), right, y, { align: 'right' })
-
-      y += rowHeight + 2
-    }
-  }
-
-  y += 2
   drawHorizontalLine()
 
   addPageIfNeeded(24)
   doc.setTextColor(...COLOR_DARK)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
-  doc.text('Summary', 120, y)
+  doc.text('Summary', left, y)
   y += 6
 
   drawLabelValueRow(
@@ -273,5 +273,5 @@ export function generateInvoicePdf({
   doc.setFontSize(9)
   doc.text('Thank you for choosing The Mobile Phone Clinic.', left, y)
 
-  doc.save(filename || `invoice_${invoice.invoice_number}.pdf`)
+  doc.save(`invoice_${invoice.invoice_number}.pdf`)
 }
