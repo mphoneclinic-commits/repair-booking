@@ -14,6 +14,7 @@ export type GenerateInvoicePdfParams = {
   businessDetails: BusinessDetails
   paymentDetails: PaymentDetails
   includeInternalReferenceNotes?: boolean
+  businessSubtitle?: string
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -27,6 +28,7 @@ export function generateInvoicePdf({
   businessDetails,
   paymentDetails,
   includeInternalReferenceNotes = false,
+  businessSubtitle,
 }: GenerateInvoicePdfParams) {
   const doc = new jsPDF()
 
@@ -86,6 +88,14 @@ export function generateInvoicePdf({
   doc.text(businessDetails.name, left, y)
   y += 7
 
+  if (businessSubtitle?.trim()) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(...COLOR_MUTED)
+    doc.text(businessSubtitle.trim(), left, y)
+    y += 5
+  }
+
   doc.setTextColor(...COLOR_DARK)
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
@@ -116,7 +126,7 @@ export function generateInvoicePdf({
   )
   doc.text(`Status: ${invoice.status.toUpperCase()}`, right, 35, { align: 'right' })
 
-  y = 46
+  y = Math.max(y, 46)
   drawHorizontalLine()
 
   doc.setTextColor(...COLOR_DARK)
