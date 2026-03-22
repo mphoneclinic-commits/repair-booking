@@ -836,7 +836,7 @@ export default function JobCard({
                     className={styles.actionButton}
                     onClick={(e) => {
                       e.stopPropagation()
-                      void addInvoiceItemForInvoice?.(invoice.id, {})
+                      void addInvoiceItemForInvoice?.(invoice.id)
                     }}
                   >
                     Add Item
@@ -855,7 +855,7 @@ export default function JobCard({
 
                   <a
                     href={`/admin/invoice?id=${invoice.id}`}
-                    className={styles.actionButton}
+                    className={styles.deleteButton}
                     onClick={(e) => e.stopPropagation()}
                   >
                     Open Invoice
