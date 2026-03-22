@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
-import type { Invoice, RepairRequest } from '../types'
+import type { Customer, Invoice, RepairRequest } from '../types'
 import { formatDateTime, getStatusLabel, normalizeMoneyValue } from '../utils'
 
 const supabase = createClient(
@@ -12,22 +12,23 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-function normalizePhone(value: string | null | undefined) {
-  return (value || '').replace(/\D/g, '')
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, '').slice(0, 10)
 }
 
-function buildCustomerKey(job: RepairRequest) {
-  const phone = normalizePhone(job.phone)
-  const email = (job.email || '').trim().toLowerCase()
-  const name = job.full_name.trim().toLowerCase()
-
-  if (phone) return `phone:${phone}`
-  if (email) return `email:${email}`
-  return `name:${name}`
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase()
 }
+
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 export default function CustomerDetailPage() {
-  const [customerKey, setCustomerKey] = useState('')
+  const [customerId, setCustomerId] = useState('')
+  const [customer, setCustomer] = useState<Customer | null>(null)
   const [jobs, setJobs] = useState<RepairRequest[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,16 +37,33 @@ export default function CustomerDetailPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([])
   const [deleting, setDeleting] = useState(false)
 
+  const [customerDraft, setCustomerDraft] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    preferred_contact: '',
+    billing_address: '',
+    notes: '',
+    is_active: true,
+  })
+
+  const [propagateIdentityChanges, setPropagateIdentityChanges] = useState(true)
+  const [propagateDetailChanges, setPropagateDetailChanges] = useState(true)
+
+  const [identitySaveState, setIdentitySaveState] = useState<SaveState>('idle')
+  const [detailSaveState, setDetailSaveState] = useState<SaveState>('idle')
+  const [notesSaveState, setNotesSaveState] = useState<SaveState>('idle')
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
-    setCustomerKey(params.get('key') || '')
+    setCustomerId(params.get('id') || '')
   }, [])
 
   useEffect(() => {
     async function loadData() {
-      if (!customerKey) {
-        setError('Missing customer key')
+      if (!customerId) {
+        setError('Missing customer ID')
         setLoading(false)
         return
       }
@@ -54,78 +72,128 @@ export default function CustomerDetailPage() {
       setError('')
 
       try {
-        const [{ data: jobsData, error: jobsError }, { data: invoiceData, error: invoiceError }] =
-          await Promise.all([
-            supabase
-              .from('repair_requests')
-              .select(`
-                id,
-                job_number,
-                created_at,
-                full_name,
-                phone,
-                email,
-                brand,
-                model,
-                device_type,
-                serial_imei,
-                fault_description,
-                repair_performed,
-                status,
-                preferred_contact,
-                internal_notes,
-                quoted_price,
-                parts_cost,
-                is_hidden
-              `)
-              .order('created_at', { ascending: false }),
-            supabase
-              .from('invoices')
-              .select(`
-                id,
-                repair_request_id,
-                invoice_number,
-                status,
-                customer_name,
-                customer_phone,
-                customer_email,
-                bill_to_address,
-                tax_mode,
-                tax_rate,
-                subtotal_ex_tax,
-                tax_amount,
-                subtotal,
-                total,
-                notes,
-                customer_visible_notes,
-                internal_reference_notes,
-                issued_at,
-                paid_at,
-                sent_at,
-                sent_to_email,
-                created_at,
-                updated_at
-              `)
-              .order('created_at', { ascending: false }),
-          ])
+        const [
+          { data: customerData, error: customerError },
+          { data: jobsData, error: jobsError },
+          { data: invoiceData, error: invoiceError },
+        ] = await Promise.all([
+          supabase
+            .from('customers')
+            .select(`
+              id,
+              full_name,
+              phone,
+              email,
+              preferred_contact,
+              billing_address,
+              notes,
+              is_active,
+              created_at,
+              updated_at
+            `)
+            .eq('id', customerId)
+            .single(),
+          supabase
+            .from('repair_requests')
+            .select(`
+              id,
+              customer_id,
+              job_number,
+              created_at,
+              full_name,
+              phone,
+              email,
+              brand,
+              model,
+              device_type,
+              serial_imei,
+              fault_description,
+              repair_performed,
+              status,
+              preferred_contact,
+              internal_notes,
+              quoted_price,
+              parts_cost,
+              is_hidden,
+              fault_photo_url,
+              last_sms_sent_at,
+              last_sms_to,
+              last_sms_message
+            `)
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('invoices')
+            .select(`
+              id,
+              customer_id,
+              repair_request_id,
+              invoice_number,
+              status,
+              customer_name,
+              customer_phone,
+              customer_email,
+              bill_to_address,
+              tax_mode,
+              tax_rate,
+              subtotal_ex_tax,
+              tax_amount,
+              subtotal,
+              total,
+              notes,
+              customer_visible_notes,
+              internal_reference_notes,
+              issued_at,
+              paid_at,
+              sent_at,
+              sent_to_email,
+              last_sms_sent_at,
+              last_sms_to,
+              last_sms_message,
+              created_at,
+              updated_at
+            `)
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false }),
+        ])
 
+        if (customerError) throw customerError
         if (jobsError) throw jobsError
         if (invoiceError) throw invoiceError
 
-       const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
-  ...job,
-  internal_notes: job.internal_notes ?? '',
-  quoted_price: normalizeMoneyValue(job.quoted_price),
-  parts_cost: normalizeMoneyValue(job.parts_cost),
-  serial_imei: job.serial_imei ?? null,
-  repair_performed: job.repair_performed ?? '',
-  is_hidden: Boolean(job.is_hidden),
-}))
+        const safeCustomer = (customerData || null) as Customer | null
+        setCustomer(safeCustomer)
 
-        const matchingJobs = safeJobs.filter((job) => buildCustomerKey(job) === customerKey)
+        if (safeCustomer) {
+          setCustomerDraft({
+            full_name: safeCustomer.full_name || '',
+            phone: safeCustomer.phone || '',
+            email: safeCustomer.email || '',
+            preferred_contact: safeCustomer.preferred_contact || '',
+            billing_address: safeCustomer.billing_address || '',
+            notes: safeCustomer.notes || '',
+            is_active: Boolean(safeCustomer.is_active),
+          })
+        }
+
+        const safeJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
+          ...job,
+          customer_id: job.customer_id ?? null,
+          internal_notes: job.internal_notes ?? '',
+          quoted_price: normalizeMoneyValue(job.quoted_price),
+          parts_cost: normalizeMoneyValue(job.parts_cost),
+          serial_imei: job.serial_imei ?? null,
+          repair_performed: job.repair_performed ?? '',
+          is_hidden: Boolean(job.is_hidden),
+          fault_photo_url: job.fault_photo_url ?? null,
+          last_sms_sent_at: job.last_sms_sent_at ?? null,
+          last_sms_to: job.last_sms_to ?? null,
+          last_sms_message: job.last_sms_message ?? null,
+        }))
 
         const safeInvoices = ((invoiceData || []) as Invoice[]).map((invoice) => ({
           ...invoice,
+          customer_id: invoice.customer_id ?? null,
           tax_rate: Number(invoice.tax_rate ?? 0),
           subtotal_ex_tax: Number(invoice.subtotal_ex_tax ?? 0),
           tax_amount: Number(invoice.tax_amount ?? 0),
@@ -133,15 +201,13 @@ export default function CustomerDetailPage() {
           total: Number(invoice.total ?? 0),
           customer_visible_notes: invoice.customer_visible_notes ?? null,
           internal_reference_notes: invoice.internal_reference_notes ?? null,
+          last_sms_sent_at: invoice.last_sms_sent_at ?? null,
+          last_sms_to: invoice.last_sms_to ?? null,
+          last_sms_message: invoice.last_sms_message ?? null,
         }))
 
-        const jobIds = new Set(matchingJobs.map((job) => job.id))
-        const matchingInvoices = safeInvoices.filter((invoice) =>
-          jobIds.has(invoice.repair_request_id)
-        )
-
-        setJobs(matchingJobs)
-        setInvoices(matchingInvoices)
+        setJobs(safeJobs)
+        setInvoices(safeInvoices)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load customer')
       } finally {
@@ -150,31 +216,26 @@ export default function CustomerDetailPage() {
     }
 
     void loadData()
-  }, [customerKey])
+  }, [customerId])
 
   const customerSummary = useMemo(() => {
-    if (jobs.length === 0) return null
-
-    const newest = [...jobs].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )[0]
+    if (!customer) return null
 
     const visibleJobs = jobs.filter((job) => !job.is_hidden)
     const hiddenJobs = jobs.filter((job) => job.is_hidden)
-const quotedTotal = jobs.reduce(
-  (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
-  0
-)
 
-const totalPartsCost = jobs.reduce(
-  (sum, job) => sum + (normalizeMoneyValue(job.parts_cost) ?? 0),
-  0
-)
+    const quotedTotal = jobs.reduce(
+      (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
+      0
+    )
+
+    const totalPartsCost = jobs.reduce(
+      (sum, job) => sum + (normalizeMoneyValue(job.parts_cost) ?? 0),
+      0
+    )
 
     return {
-      name: newest.full_name,
-      phone: newest.phone || '',
-      email: newest.email || '',
+      ...customer,
       visibleCount: visibleJobs.length,
       hiddenCount: hiddenJobs.length,
       totalJobs: jobs.length,
@@ -182,7 +243,7 @@ const totalPartsCost = jobs.reduce(
       totalPartsCost,
       invoiceCount: invoices.length,
     }
-  }, [jobs, invoices])
+  }, [customer, jobs, invoices])
 
   const invoicesByJobId = useMemo(() => {
     return invoices.reduce<Record<string, Invoice[]>>((acc, invoice) => {
@@ -208,6 +269,255 @@ const totalPartsCost = jobs.reduce(
     setSelectedJobIds([])
   }
 
+  function setSavedBriefly(setter: React.Dispatch<React.SetStateAction<SaveState>>) {
+    setter('saved')
+    window.setTimeout(() => {
+      setter((prev) => (prev === 'saved' ? 'idle' : prev))
+    }, 1300)
+  }
+
+  async function saveIdentityDetails() {
+    if (!customer) return
+
+    const full_name = normalizeName(customerDraft.full_name)
+    const phone = normalizePhone(customerDraft.phone)
+    const email = normalizeEmail(customerDraft.email)
+
+    if (!full_name) {
+      setError('Full name is required.')
+      setIdentitySaveState('error')
+      return
+    }
+
+    setIdentitySaveState('saving')
+    setError('')
+
+    const { data, error: customerUpdateError } = await supabase
+      .from('customers')
+      .update({
+        full_name,
+        phone: phone || null,
+        email: email || null,
+      })
+      .eq('id', customer.id)
+      .select(`
+        id,
+        full_name,
+        phone,
+        email,
+        preferred_contact,
+        billing_address,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (customerUpdateError || !data) {
+      setIdentitySaveState('error')
+      setError(customerUpdateError?.message || 'Failed to save customer identity')
+      return
+    }
+
+    if (propagateIdentityChanges) {
+      const [{ error: jobsUpdateError }, { error: invoicesUpdateError }] = await Promise.all([
+        supabase
+          .from('repair_requests')
+          .update({
+            full_name,
+            phone: phone || '',
+            email: email || null,
+          })
+          .eq('customer_id', customer.id),
+        supabase
+          .from('invoices')
+          .update({
+            customer_name: full_name,
+            customer_phone: phone || null,
+            customer_email: email || null,
+          })
+          .eq('customer_id', customer.id),
+      ])
+
+      if (jobsUpdateError || invoicesUpdateError) {
+        setIdentitySaveState('error')
+        setError(
+          jobsUpdateError?.message ||
+            invoicesUpdateError?.message ||
+            'Customer saved, but linked record propagation failed'
+        )
+        return
+      }
+    }
+
+    const updatedCustomer = data as Customer
+    setCustomer(updatedCustomer)
+    setCustomerDraft((prev) => ({
+      ...prev,
+      full_name: updatedCustomer.full_name || '',
+      phone: updatedCustomer.phone || '',
+      email: updatedCustomer.email || '',
+    }))
+
+    if (propagateIdentityChanges) {
+      setJobs((prev) =>
+        prev.map((job) => ({
+          ...job,
+          full_name: updatedCustomer.full_name,
+          phone: updatedCustomer.phone || '',
+          email: updatedCustomer.email || null,
+        }))
+      )
+
+      setInvoices((prev) =>
+        prev.map((invoice) => ({
+          ...invoice,
+          customer_name: updatedCustomer.full_name,
+          customer_phone: updatedCustomer.phone || null,
+          customer_email: updatedCustomer.email || null,
+        }))
+      )
+    }
+
+    setSavedBriefly(setIdentitySaveState)
+  }
+
+  async function saveCustomerDetails() {
+    if (!customer) return
+
+    const preferred_contact = customerDraft.preferred_contact.trim() || null
+    const billing_address = customerDraft.billing_address.trim() || null
+    const is_active = Boolean(customerDraft.is_active)
+
+    setDetailSaveState('saving')
+    setError('')
+
+    const { data, error: customerUpdateError } = await supabase
+      .from('customers')
+      .update({
+        preferred_contact,
+        billing_address,
+        is_active,
+      })
+      .eq('id', customer.id)
+      .select(`
+        id,
+        full_name,
+        phone,
+        email,
+        preferred_contact,
+        billing_address,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (customerUpdateError || !data) {
+      setDetailSaveState('error')
+      setError(customerUpdateError?.message || 'Failed to save customer details')
+      return
+    }
+
+    if (propagateDetailChanges) {
+      const [{ error: jobsUpdateError }, { error: invoicesUpdateError }] = await Promise.all([
+        supabase
+          .from('repair_requests')
+          .update({
+            preferred_contact,
+          })
+          .eq('customer_id', customer.id),
+        supabase
+          .from('invoices')
+          .update({
+            bill_to_address: billing_address,
+          })
+          .eq('customer_id', customer.id),
+      ])
+
+      if (jobsUpdateError || invoicesUpdateError) {
+        setDetailSaveState('error')
+        setError(
+          jobsUpdateError?.message ||
+            invoicesUpdateError?.message ||
+            'Customer saved, but linked record propagation failed'
+        )
+        return
+      }
+    }
+
+    const updatedCustomer = data as Customer
+    setCustomer(updatedCustomer)
+    setCustomerDraft((prev) => ({
+      ...prev,
+      preferred_contact: updatedCustomer.preferred_contact || '',
+      billing_address: updatedCustomer.billing_address || '',
+      is_active: Boolean(updatedCustomer.is_active),
+    }))
+
+    if (propagateDetailChanges) {
+      setJobs((prev) =>
+        prev.map((job) => ({
+          ...job,
+          preferred_contact: updatedCustomer.preferred_contact || null,
+        }))
+      )
+
+      setInvoices((prev) =>
+        prev.map((invoice) => ({
+          ...invoice,
+          bill_to_address: updatedCustomer.billing_address || null,
+        }))
+      )
+    }
+
+    setSavedBriefly(setDetailSaveState)
+  }
+
+  async function saveCustomerNotes() {
+    if (!customer) return
+
+    setNotesSaveState('saving')
+    setError('')
+
+    const { data, error: updateError } = await supabase
+      .from('customers')
+      .update({
+        notes: customerDraft.notes.trim() || null,
+      })
+      .eq('id', customer.id)
+      .select(`
+        id,
+        full_name,
+        phone,
+        email,
+        preferred_contact,
+        billing_address,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (updateError || !data) {
+      setNotesSaveState('error')
+      setError(updateError?.message || 'Failed to save customer notes')
+      return
+    }
+
+    const updatedCustomer = data as Customer
+    setCustomer(updatedCustomer)
+    setCustomerDraft((prev) => ({
+      ...prev,
+      notes: updatedCustomer.notes || '',
+    }))
+
+    setSavedBriefly(setNotesSaveState)
+  }
+
   async function deleteJob(jobId: string) {
     if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) {
       return
@@ -216,10 +526,10 @@ const totalPartsCost = jobs.reduce(
     setDeleting(true)
     setError('')
 
-    const { error } = await supabase.from('repair_requests').delete().eq('id', jobId)
+    const { error: deleteError } = await supabase.from('repair_requests').delete().eq('id', jobId)
 
-    if (error) {
-      setError(error.message)
+    if (deleteError) {
+      setError(deleteError.message)
       setDeleting(false)
       return
     }
@@ -243,10 +553,13 @@ const totalPartsCost = jobs.reduce(
     setDeleting(true)
     setError('')
 
-    const { error } = await supabase.from('repair_requests').delete().in('id', selectedJobIds)
+    const { error: deleteError } = await supabase
+      .from('repair_requests')
+      .delete()
+      .in('id', selectedJobIds)
 
-    if (error) {
-      setError(error.message)
+    if (deleteError) {
+      setError(deleteError.message)
       setDeleting(false)
       return
     }
@@ -287,10 +600,11 @@ const totalPartsCost = jobs.reduce(
     }
 
     const invoiceNumber = String(invoiceNumberData)
-const subtotal = selectedJobs.reduce(
-  (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
-  0
-)
+    const subtotal = selectedJobs.reduce(
+      (sum, job) => sum + (normalizeMoneyValue(job.quoted_price) ?? 0),
+      0
+    )
+
     const referenceLines = selectedJobs.map((job) => {
       const device = [job.brand, job.model, job.device_type].filter(Boolean).join(' • ')
       const serial = job.serial_imei?.trim() ? ` | Serial/IMEI: ${job.serial_imei.trim()}` : ''
@@ -303,12 +617,14 @@ const subtotal = selectedJobs.reduce(
     const { data: insertedInvoice, error: invoiceInsertError } = await supabase
       .from('invoices')
       .insert({
+        customer_id: customerSummary.id,
         repair_request_id: primaryJob.id,
         invoice_number: invoiceNumber,
         status: 'draft',
-        customer_name: customerSummary.name,
+        customer_name: customerSummary.full_name,
         customer_phone: customerSummary.phone || null,
         customer_email: customerSummary.email || null,
+        bill_to_address: customerSummary.billing_address || null,
         tax_mode: 'exclusive',
         tax_rate: 0.1,
         subtotal_ex_tax: subtotal,
@@ -348,8 +664,8 @@ const subtotal = selectedJobs.reduce(
         invoice_id: insertedInvoice.id,
         description: `${cleanDevice} • ${cleanRepair}`,
         qty: 1,
-unit_price: normalizeMoneyValue(job.quoted_price) ?? 0,
-line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
+        unit_price: normalizeMoneyValue(job.quoted_price) ?? 0,
+        line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
         sort_order: index,
       }
     })
@@ -416,7 +732,7 @@ line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
       <div className={styles.topBar}>
         <div>
           <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
-          <h1 className={styles.pageTitle}>{customerSummary.name}</h1>
+          <h1 className={styles.pageTitle}>{customerSummary.full_name}</h1>
           <p className={styles.pageSubtitle}>Full repair and invoice history for this customer</p>
         </div>
 
@@ -434,11 +750,7 @@ line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
             Stats
           </Link>
           <Link
-            href={`/admin/jobs/new?full_name=${encodeURIComponent(
-              customerSummary.name
-            )}&phone=${encodeURIComponent(customerSummary.phone)}&email=${encodeURIComponent(
-              customerSummary.email
-            )}`}
+            href={`/admin/jobs/new?customer_id=${encodeURIComponent(customerSummary.id)}`}
             className={styles.viewButton}
           >
             New Job for Customer
@@ -457,6 +769,12 @@ line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
           <div className={styles.summaryCard}>
             <div className={styles.summaryLabel}>Email</div>
             <div className={styles.summaryValueSmall}>{customerSummary.email || '-'}</div>
+          </div>
+          <div className={styles.summaryCard}>
+            <div className={styles.summaryLabel}>Preferred Contact</div>
+            <div className={styles.summaryValueSmall}>
+              {customerSummary.preferred_contact || '-'}
+            </div>
           </div>
           <div className={styles.summaryCard}>
             <div className={styles.summaryLabel}>Total Jobs</div>
@@ -480,10 +798,195 @@ line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
           </div>
           <div className={styles.summaryCard}>
             <div className={styles.summaryLabel}>Parts Cost Total</div>
-            <div className={styles.summaryValue}>${customerSummary.totalPartsCost.toFixed(2)}</div>
+            <div className={styles.summaryValue}>
+              ${customerSummary.totalPartsCost.toFixed(2)}
+            </div>
           </div>
         </div>
       </div>
+
+      <section className={styles.customerDetailSection}>
+        <div className={styles.customerSectionHeader}>
+          <h2 className={styles.sectionTitle}>Customer Details</h2>
+        </div>
+
+        <div className={styles.customerFormCard}>
+          <div className={styles.formGrid}>
+            <div>
+              <label className={styles.smallLabel}>Full Name</label>
+              <input
+                value={customerDraft.full_name}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({ ...prev, full_name: e.target.value }))
+                }
+                className={styles.smallField}
+              />
+            </div>
+
+            <div>
+              <label className={styles.smallLabel}>Phone</label>
+              <input
+                value={customerDraft.phone}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({
+                    ...prev,
+                    phone: normalizePhone(e.target.value),
+                  }))
+                }
+                className={styles.smallField}
+                inputMode="numeric"
+                maxLength={10}
+              />
+            </div>
+
+            <div>
+              <label className={styles.smallLabel}>Email</label>
+              <input
+                value={customerDraft.email}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({ ...prev, email: e.target.value }))
+                }
+                className={styles.smallField}
+              />
+            </div>
+
+            <div className={styles.customerFullWidth}>
+              <label className={styles.archiveCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={propagateIdentityChanges}
+                  onChange={(e) => setPropagateIdentityChanges(e.target.checked)}
+                />
+                <span>Also update linked jobs and invoices with name / phone / email</span>
+              </label>
+            </div>
+
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void saveIdentityDetails()}
+                disabled={identitySaveState === 'saving'}
+              >
+                {identitySaveState === 'saving' ? 'Saving...' : 'Save Identity'}
+              </button>
+              <span className={styles.inlineMuted}>
+                {identitySaveState === 'saved'
+                  ? 'Saved'
+                  : identitySaveState === 'error'
+                    ? 'Error'
+                    : ''}
+              </span>
+            </div>
+
+            <div>
+              <label className={styles.smallLabel}>Preferred Contact</label>
+              <input
+                value={customerDraft.preferred_contact}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({
+                    ...prev,
+                    preferred_contact: e.target.value,
+                  }))
+                }
+                className={styles.smallField}
+                placeholder="sms, phone, email"
+              />
+            </div>
+
+            <div>
+              <label className={styles.smallLabel}>Status</label>
+              <select
+                value={customerDraft.is_active ? 'active' : 'inactive'}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({
+                    ...prev,
+                    is_active: e.target.value === 'active',
+                  }))
+                }
+                className={styles.smallField}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className={styles.customerFullWidth}>
+              <label className={styles.smallLabel}>Billing Address</label>
+              <textarea
+                value={customerDraft.billing_address}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({
+                    ...prev,
+                    billing_address: e.target.value,
+                  }))
+                }
+                className={styles.notesField}
+                placeholder="Billing address"
+              />
+            </div>
+
+            <div className={styles.customerFullWidth}>
+              <label className={styles.archiveCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={propagateDetailChanges}
+                  onChange={(e) => setPropagateDetailChanges(e.target.checked)}
+                />
+                <span>Also update linked jobs and invoices with preferred contact / billing address</span>
+              </label>
+            </div>
+
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void saveCustomerDetails()}
+                disabled={detailSaveState === 'saving'}
+              >
+                {detailSaveState === 'saving' ? 'Saving...' : 'Save Details'}
+              </button>
+              <span className={styles.inlineMuted}>
+                {detailSaveState === 'saved'
+                  ? 'Saved'
+                  : detailSaveState === 'error'
+                    ? 'Error'
+                    : ''}
+              </span>
+            </div>
+
+            <div className={styles.customerFullWidth}>
+              <label className={styles.smallLabel}>Customer Notes</label>
+              <textarea
+                value={customerDraft.notes}
+                onChange={(e) =>
+                  setCustomerDraft((prev) => ({ ...prev, notes: e.target.value }))
+                }
+                className={styles.notesField}
+                placeholder="Customer notes"
+              />
+            </div>
+
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={() => void saveCustomerNotes()}
+                disabled={notesSaveState === 'saving'}
+              >
+                {notesSaveState === 'saving' ? 'Saving...' : 'Save Notes'}
+              </button>
+              <span className={styles.inlineMuted}>
+                {notesSaveState === 'saved'
+                  ? 'Saved'
+                  : notesSaveState === 'error'
+                    ? 'Error'
+                    : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className={styles.customerDetailSection}>
         <div className={styles.bulkBar}>
@@ -575,7 +1078,9 @@ line_total: normalizeMoneyValue(job.quoted_price) ?? 0,
                     </td>
                     <td>{job.is_hidden ? 'Hidden' : 'Visible'}</td>
                     <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
-                    <td>{job.parts_cost != null ? `$${Number(job.parts_cost).toFixed(2)}` : '-'}</td>
+                    <td>
+                      {job.parts_cost != null ? `$${Number(job.parts_cost).toFixed(2)}` : '-'}
+                    </td>
                     <td>{formatDateTime(job.created_at)}</td>
                     <td>
                       {linkedInvoices.length === 0 ? (

@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import styles from '../../admin.module.css'
+import type { Customer } from '../../types'
+import { normalizeMoneyValue } from '../../utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,18 +26,34 @@ function normalizePhone(value: string) {
   return value.replace(/\D/g, '').slice(0, 10)
 }
 
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
 export default function NewJobPage() {
   const router = useRouter()
 
   const [loadingPrefill, setLoadingPrefill] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [creatingCustomerInline, setCreatingCustomerInline] = useState(false)
   const [error, setError] = useState('')
   const [successJobId, setSuccessJobId] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState('')
   const [duplicateJobCount, setDuplicateJobCount] = useState(0)
-  const [customerKeyForDuplicates, setCustomerKeyForDuplicates] = useState('')
+  const [duplicateCustomerId, setDuplicateCustomerId] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+
+  const [linkedCustomer, setLinkedCustomer] = useState<Customer | null>(null)
+  const [customerId, setCustomerId] = useState('')
+
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearchResults, setCustomerSearchResults] = useState<Customer[]>([])
+  const [searchingCustomers, setSearchingCustomers] = useState(false)
 
   const [form, setForm] = useState({
     full_name: '',
@@ -53,67 +71,421 @@ export default function NewJobPage() {
   })
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    async function loadPrefill() {
+      if (typeof window === 'undefined') return
 
-    const params = new URLSearchParams(window.location.search)
+      const params = new URLSearchParams(window.location.search)
+      const paramCustomerId = params.get('customer_id') || ''
 
-    setForm((prev) => ({
-      ...prev,
-      full_name: params.get('full_name') || prev.full_name,
-      phone: params.get('phone') || prev.phone,
-      email: params.get('email') || prev.email,
-    }))
+      setCustomerId(paramCustomerId)
 
-    setLoadingPrefill(false)
-  }, [])
+      try {
+        if (paramCustomerId) {
+          const { data, error } = await supabase
+            .from('customers')
+            .select(`
+              id,
+              full_name,
+              phone,
+              email,
+              preferred_contact,
+              billing_address,
+              notes,
+              is_active,
+              created_at,
+              updated_at
+            `)
+            .eq('id', paramCustomerId)
+            .single()
 
-  useEffect(() => {
-    const phone = normalizePhone(form.phone)
+          if (error) throw error
 
-    if (phone.length < 10) {
-      setDuplicateWarning('')
-      setDuplicateJobCount(0)
-      setCustomerKeyForDuplicates('')
-      return
+          const customer = (data || null) as Customer | null
+          setLinkedCustomer(customer)
+
+          if (customer) {
+            setForm((prev) => ({
+              ...prev,
+              full_name: customer.full_name || '',
+              phone: customer.phone || '',
+              email: customer.email || '',
+              preferred_contact: customer.preferred_contact || prev.preferred_contact || 'sms',
+            }))
+            setCustomerSearch(customer.full_name || '')
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load customer prefill')
+      } finally {
+        setLoadingPrefill(false)
+      }
     }
 
-    const checkDuplicates = async () => {
-      const { count, error } = await supabase
+    void loadPrefill()
+  }, [])
+
+  const normalizedPhone = useMemo(() => normalizePhone(form.phone), [form.phone])
+  const normalizedEmail = useMemo(() => normalizeEmail(form.email), [form.email])
+  const normalizedFullName = useMemo(() => normalizeName(form.full_name), [form.full_name])
+
+  useEffect(() => {
+    async function checkDuplicates() {
+      if (customerId) {
+        const { data, error } = await supabase
+          .from('repair_requests')
+          .select('id')
+          .eq('customer_id', customerId)
+          .neq('status', 'closed')
+          .neq('status', 'cancelled')
+          .neq('status', 'rejected')
+
+        if (error) return
+
+        const count = data?.length || 0
+
+        if (count > 0) {
+          setDuplicateWarning(
+            `This customer already has ${count} open job${count > 1 ? 's' : ''}. Check existing jobs before creating another.`
+          )
+          setDuplicateJobCount(count)
+          setDuplicateCustomerId(customerId)
+        } else {
+          setDuplicateWarning('')
+          setDuplicateJobCount(0)
+          setDuplicateCustomerId('')
+        }
+
+        return
+      }
+
+      if (normalizedPhone.length < 9 && !normalizedEmail && normalizedFullName.length < 2) {
+        setDuplicateWarning('')
+        setDuplicateJobCount(0)
+        setDuplicateCustomerId('')
+        return
+      }
+
+      let matchedCustomerId = ''
+
+      if (normalizedPhone.length >= 9) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('phone', normalizedPhone)
+          .limit(1)
+
+        matchedCustomerId = data?.[0]?.id || ''
+      }
+
+      if (!matchedCustomerId && normalizedEmail) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('email', normalizedEmail)
+          .limit(1)
+
+        matchedCustomerId = data?.[0]?.id || ''
+      }
+
+      if (!matchedCustomerId && normalizedFullName) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('full_name', normalizedFullName)
+          .limit(1)
+
+        matchedCustomerId = data?.[0]?.id || ''
+      }
+
+      let query = supabase
         .from('repair_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('phone', phone)
+        .select('id')
         .neq('status', 'closed')
         .neq('status', 'cancelled')
         .neq('status', 'rejected')
 
-      if (error) {
-        console.warn('Duplicate check failed:', error)
-        return
-      }
-
-      if (count && count > 0) {
-        const key = `phone:${phone}`
-        setDuplicateWarning(
-          `This phone already has ${count} open job${count > 1 ? 's' : ''}. Check existing jobs before creating another.`
-        )
-        setDuplicateJobCount(count)
-        setCustomerKeyForDuplicates(key)
+      if (matchedCustomerId) {
+        query = query.eq('customer_id', matchedCustomerId)
+      } else if (normalizedPhone.length >= 9) {
+        query = query.eq('phone', normalizedPhone)
       } else {
         setDuplicateWarning('')
         setDuplicateJobCount(0)
-        setCustomerKeyForDuplicates('')
+        setDuplicateCustomerId('')
+        return
+      }
+
+      const { data, error } = await query
+
+      if (error) return
+
+      const count = data?.length || 0
+
+      if (count > 0) {
+        setDuplicateWarning(
+          `Possible duplicate found: ${count} open job${count > 1 ? 's' : ''}. Check before creating another.`
+        )
+        setDuplicateJobCount(count)
+        setDuplicateCustomerId(matchedCustomerId)
+      } else {
+        setDuplicateWarning('')
+        setDuplicateJobCount(0)
+        setDuplicateCustomerId('')
       }
     }
 
-    const timer = window.setTimeout(checkDuplicates, 500)
+    const timer = window.setTimeout(() => {
+      void checkDuplicates()
+    }, 400)
+
     return () => window.clearTimeout(timer)
-  }, [form.phone])
+  }, [customerId, normalizedPhone, normalizedEmail, normalizedFullName])
+
+  useEffect(() => {
+    async function runCustomerSearch() {
+      const term = customerSearch.trim()
+
+      if (!term || linkedCustomer?.full_name === term) {
+        setCustomerSearchResults([])
+        return
+      }
+
+      setSearchingCustomers(true)
+
+      const phoneTerm = normalizePhone(term)
+      const emailTerm = normalizeEmail(term)
+
+      const seen = new Map<string, Customer>()
+
+      if (phoneTerm.length >= 4) {
+        const { data } = await supabase
+          .from('customers')
+          .select(`
+            id,
+            full_name,
+            phone,
+            email,
+            preferred_contact,
+            billing_address,
+            notes,
+            is_active,
+            created_at,
+            updated_at
+          `)
+          .ilike('phone', `%${phoneTerm}%`)
+          .limit(10)
+
+        for (const row of (data || []) as Customer[]) {
+          seen.set(row.id, row)
+        }
+      }
+
+      if (emailTerm.length >= 3 && emailTerm.includes('@')) {
+        const { data } = await supabase
+          .from('customers')
+          .select(`
+            id,
+            full_name,
+            phone,
+            email,
+            preferred_contact,
+            billing_address,
+            notes,
+            is_active,
+            created_at,
+            updated_at
+          `)
+          .ilike('email', `%${emailTerm}%`)
+          .limit(10)
+
+        for (const row of (data || []) as Customer[]) {
+          seen.set(row.id, row)
+        }
+      }
+
+      const { data: nameData } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .ilike('full_name', `%${term}%`)
+        .limit(10)
+
+      for (const row of (nameData || []) as Customer[]) {
+        seen.set(row.id, row)
+      }
+
+      setCustomerSearchResults(Array.from(seen.values()).slice(0, 10))
+      setSearchingCustomers(false)
+    }
+
+    const timer = window.setTimeout(() => {
+      void runCustomerSearch()
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [customerSearch, linkedCustomer?.full_name])
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((prev) => ({
       ...prev,
       [key]: key === 'phone' ? normalizePhone(value) : value,
     }))
+  }
+
+  function applyCustomerToForm(customer: Customer) {
+    setLinkedCustomer(customer)
+    setCustomerId(customer.id)
+    setCustomerSearch(customer.full_name || '')
+    setCustomerSearchResults([])
+
+    setForm((prev) => ({
+      ...prev,
+      full_name: customer.full_name || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+      preferred_contact: customer.preferred_contact || prev.preferred_contact || 'sms',
+    }))
+  }
+
+  function clearSelectedCustomer() {
+    setLinkedCustomer(null)
+    setCustomerId('')
+    setCustomerSearch('')
+    setCustomerSearchResults([])
+  }
+
+  async function findExistingCustomerMatch() {
+    if (normalizedPhone.length >= 9) {
+      const { data } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('phone', normalizedPhone)
+        .limit(1)
+
+      if (data?.[0]) return data[0] as Customer
+    }
+
+    if (normalizedEmail) {
+      const { data } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('email', normalizedEmail)
+        .limit(1)
+
+      if (data?.[0]) return data[0] as Customer
+    }
+
+    if (normalizedFullName) {
+      const { data } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('full_name', normalizedFullName)
+        .limit(1)
+
+      if (data?.[0]) return data[0] as Customer
+    }
+
+    return null
+  }
+
+  async function createInlineCustomerIfNeeded() {
+    if (customerId && linkedCustomer) return linkedCustomer
+
+    setCreatingCustomerInline(true)
+
+    try {
+      const existing = await findExistingCustomerMatch()
+
+      if (existing) {
+        applyCustomerToForm(existing)
+        return existing
+      }
+
+      if (!normalizedFullName) {
+        return null
+      }
+
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          full_name: normalizedFullName,
+          phone: normalizedPhone || null,
+          email: normalizedEmail || null,
+          preferred_contact: form.preferred_contact || null,
+          billing_address: null,
+          notes: null,
+          is_active: true,
+        })
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .single()
+
+      if (error || !data) {
+        throw error || new Error('Failed to create customer')
+      }
+
+      const createdCustomer = data as Customer
+      applyCustomerToForm(createdCustomer)
+      return createdCustomer
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create customer')
+      return null
+    } finally {
+      setCreatingCustomerInline(false)
+    }
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -156,7 +528,6 @@ export default function NewJobPage() {
       .upload(filePath, photoFile)
 
     if (uploadError) {
-      console.error('Photo upload failed:', uploadError)
       setError('Photo upload failed, but job was created.')
       setUploadingPhoto(false)
       return null
@@ -174,19 +545,48 @@ export default function NewJobPage() {
     setError('')
     setSuccessJobId('')
 
-    const parsedQuote =
-      form.quoted_price.trim() === '' ? null : Number(form.quoted_price)
+    const parsedQuote = normalizeMoneyValue(form.quoted_price)
 
-    if (parsedQuote !== null && !Number.isFinite(parsedQuote)) {
-      setError('Quoted price must be a valid number')
+    const cleanFullName = normalizeName(form.full_name)
+    const cleanPhone = normalizePhone(form.phone)
+    const cleanEmail = normalizeEmail(form.email)
+
+    if (!cleanFullName) {
+      setError('Full name is required')
       setSaving(false)
       return
     }
 
+    if (!cleanPhone || cleanPhone.length < 9) {
+      setError('Valid Australian phone number required')
+      setSaving(false)
+      return
+    }
+
+    if (!form.brand.trim() || !form.model.trim()) {
+      setError('Brand and model are required')
+      setSaving(false)
+      return
+    }
+
+    if (!form.fault_description.trim() || form.fault_description.trim().length < 5) {
+      setError('Please describe the fault properly')
+      setSaving(false)
+      return
+    }
+
+    let resolvedCustomerId = customerId || null
+
+    const resolvedCustomer = await createInlineCustomerIfNeeded()
+    if (resolvedCustomer?.id) {
+      resolvedCustomerId = resolvedCustomer.id
+    }
+
     const payload = {
-      full_name: form.full_name.trim(),
-      phone: normalizePhone(form.phone),
-      email: form.email.trim() || null,
+      customer_id: resolvedCustomerId,
+      full_name: cleanFullName,
+      phone: cleanPhone,
+      email: cleanEmail || null,
       brand: form.brand.trim(),
       model: form.model.trim(),
       device_type: form.device_type.trim() || null,
@@ -196,30 +596,6 @@ export default function NewJobPage() {
       quoted_price: parsedQuote,
       internal_notes: form.internal_notes.trim() || null,
       status: form.status,
-    }
-
-    if (!payload.full_name) {
-      setError('Full name is required')
-      setSaving(false)
-      return
-    }
-
-    if (!payload.phone || payload.phone.length < 9) {
-      setError('Valid Australian phone number required (e.g. 0412345678)')
-      setSaving(false)
-      return
-    }
-
-    if (!payload.brand || !payload.model) {
-      setError('Brand and model are required')
-      setSaving(false)
-      return
-    }
-
-    if (!payload.fault_description || payload.fault_description.length < 10) {
-      setError('Please describe the fault in more detail')
-      setSaving(false)
-      return
     }
 
     const { data, error: insertError } = await supabase
@@ -238,14 +614,10 @@ export default function NewJobPage() {
       const photoUrl = await uploadPhoto(data.id)
 
       if (photoUrl) {
-        const { error: photoLinkError } = await supabase
+        await supabase
           .from('repair_requests')
           .update({ fault_photo_url: photoUrl })
           .eq('id', data.id)
-
-        if (photoLinkError) {
-          setError('Job created, but the photo link could not be saved.')
-        }
       }
     }
 
@@ -254,7 +626,7 @@ export default function NewJobPage() {
 
     window.setTimeout(() => {
       router.push(`/admin?highlightJob=${data.id}`)
-    }, 1200)
+    }, 1000)
   }
 
   return (
@@ -264,7 +636,7 @@ export default function NewJobPage() {
           <div className={styles.eyebrow}>The Mobile Phone Clinic</div>
           <h1 className={styles.pageTitle}>Create New Job</h1>
           <p className={styles.pageSubtitle}>
-            Create a repair job with optional prefilled customer details
+            Search an existing customer or create one inline before booking the repair
           </p>
         </div>
 
@@ -275,6 +647,11 @@ export default function NewJobPage() {
           <Link href="/admin/customers" className={styles.viewButton}>
             Customers
           </Link>
+          {customerId ? (
+            <Link href={`/admin/customer?id=${customerId}`} className={styles.viewButton}>
+              Back to Customer
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -282,43 +659,99 @@ export default function NewJobPage() {
         <p className={styles.message}>Loading form...</p>
       ) : (
         <form onSubmit={handleSubmit} className={styles.customerFormCard}>
-          {error && <p className={styles.errorText}>{error}</p>}
+          {error ? <p className={styles.errorText}>{error}</p> : null}
 
-          {duplicateWarning && (
+          {duplicateWarning ? (
             <div className={styles.warningBanner}>
               <div>{duplicateWarning}</div>
-
-              {duplicateJobCount > 0 && customerKeyForDuplicates && (
+              {duplicateJobCount > 0 && duplicateCustomerId ? (
                 <div className={styles.warningBannerLinkRow}>
                   <Link
-                    href={`/admin/customer?key=${encodeURIComponent(customerKeyForDuplicates)}`}
+                    href={`/admin/customer?id=${encodeURIComponent(duplicateCustomerId)}`}
                     className={styles.inlineLink}
                   >
-                    View existing jobs for this customer →
+                    View existing customer jobs →
                   </Link>
                 </div>
-              )}
+              ) : null}
             </div>
-          )}
+          ) : null}
 
           {successJobId ? (
             <div className={styles.successBanner}>
               Job created successfully. Redirecting to dashboard...
               <div className={styles.buttonRow}>
-                <Link
-                  href={`/admin?highlightJob=${successJobId}`}
-                  className={styles.actionButton}
-                >
+                <Link href={`/admin?highlightJob=${successJobId}`} className={styles.actionButton}>
                   Open in Dashboard Now
-                </Link>
-                <Link href="/admin/jobs/new" className={styles.actionButton}>
-                  Create Another
                 </Link>
               </div>
             </div>
           ) : null}
 
+          <div className={styles.formSectionTitle}>Customer</div>
+
           <div className={styles.formGrid}>
+            <div className={styles.customerFullWidth}>
+              <label className={styles.smallLabel}>Find Existing Customer</label>
+              <input
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className={styles.field}
+                placeholder="Search by name, phone or email..."
+              />
+              {searchingCustomers ? (
+                <div className={styles.inlineMuted}>Searching customers...</div>
+              ) : null}
+
+              {customerSearchResults.length > 0 ? (
+                <div className={styles.customerGrid} style={{ marginTop: 10 }}>
+                  {customerSearchResults.map((customer) => (
+                    <div key={customer.id} className={styles.customerCard}>
+                      <div className={styles.customerCardHeader}>
+                        <div>
+                          <div className={styles.customerTitle}>{customer.full_name}</div>
+                          <div className={styles.customerMeta}>
+                            {customer.phone || '-'} {customer.email ? `• ${customer.email}` : ''}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => applyCustomerToForm(customer)}
+                        >
+                          Use Customer
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {linkedCustomer ? (
+              <div className={styles.customerFullWidth}>
+                <div className={styles.successBanner}>
+                  Using customer: <strong>{linkedCustomer.full_name}</strong>
+                  <div className={styles.buttonRow}>
+                    <Link
+                      href={`/admin/customer?id=${linkedCustomer.id}`}
+                      className={styles.actionButton}
+                    >
+                      Open Customer
+                    </Link>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={clearSelectedCustomer}
+                    >
+                      Clear Customer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <label className={styles.smallLabel}>Full Name *</label>
               <input
@@ -362,7 +795,11 @@ export default function NewJobPage() {
                 <option value="email">Email</option>
               </select>
             </div>
+          </div>
 
+          <div className={styles.formSectionTitle}>Job Details</div>
+
+          <div className={styles.formGrid}>
             <div>
               <label className={styles.smallLabel}>Brand *</label>
               <input
@@ -456,13 +893,11 @@ export default function NewJobPage() {
                 disabled={saving}
               />
 
-              {uploadingPhoto && (
-                <p className={styles.helperText}>Uploading photo...</p>
-              )}
+              {uploadingPhoto ? <p className={styles.helperText}>Uploading photo...</p> : null}
 
-              {photoFile && !uploadingPhoto && (
+              {photoFile && !uploadingPhoto ? (
                 <p className={styles.helperText}>Selected: {photoFile.name}</p>
-              )}
+              ) : null}
 
               <p className={styles.helperText}>
                 Accepted: JPG, PNG, WEBP, HEIC, HEIF. Max {MAX_PHOTO_SIZE_MB}MB.
@@ -471,6 +906,24 @@ export default function NewJobPage() {
           </div>
 
           <div className={styles.buttonRow}>
+            <button
+              type="button"
+              className={styles.viewButton}
+              onClick={() => void createInlineCustomerIfNeeded()}
+              disabled={
+                creatingCustomerInline ||
+                !!customerId ||
+                !normalizedFullName ||
+                !normalizedPhone
+              }
+            >
+              {creatingCustomerInline
+                ? 'Creating Customer...'
+                : customerId
+                  ? 'Customer Linked'
+                  : 'Create / Link Customer'}
+            </button>
+
             <button
               type="submit"
               className={styles.actionButton}

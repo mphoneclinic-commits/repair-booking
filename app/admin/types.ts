@@ -27,6 +27,19 @@ export type StatusFilter = 'all' | RepairStatus
 
 export type ViewMode = 'board' | 'list' | 'details' | 'tiles'
 
+export type Customer = {
+  id: string
+  full_name: string
+  phone: string | null
+  email: string | null
+  preferred_contact: string | null
+  billing_address: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type RepairRequest = {
   id: string
   job_number: string | null
@@ -44,6 +57,7 @@ export type RepairRequest = {
   preferred_contact: string | null
   internal_notes: string | null
   quoted_price: number | null
+customer_id: string | null
 
   parts_cost: number | null
   is_hidden: boolean | null
@@ -89,6 +103,7 @@ export type Invoice = {
   last_sms_message?: string | null
   created_at: string
   updated_at: string
+customer_id: string | null
 }
 
 export type InvoiceItem = {

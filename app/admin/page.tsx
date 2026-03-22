@@ -27,26 +27,9 @@ import JobCard from './components/JobCard'
 
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 
-export default function AdminPage() {
-  const [authChecked, setAuthChecked] = useState(false)
-  const [isAdminSignedIn, setIsAdminSignedIn] = useState(false)
-
-  const [showHidden, setShowHidden] = useState(false)
-  const [showBackToTop, setShowBackToTop] = useState(false)
-
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [viewMode, setViewMode] = useState<ViewMode>('board')
-  const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({})
-
-  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
-
-  const [selectedArchiveJobIds, setSelectedArchiveJobIds] = useState<string[]>([])
-  const [selectedHiddenJobIds, setSelectedHiddenJobIds] = useState<string[]>([])
-  const [bulkBusy, setBulkBusy] = useState(false)
-
-  const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
-  const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
+const DASHBOARD_PREFS_KEY = 'admin_dashboard_prefs_v1'
+const DASHBOARD_RETURN_CONTEXT_KEY = 'admin_dashboard_return_context_v1'
+const DASHBOARD_RETURN_CONTEXT_MAX_AGE_MS = 1000 * 60 * 10
 
 const DEFAULT_COLLAPSED_COLUMNS: Record<RepairStatus, boolean> = {
   new: true,
@@ -58,44 +41,230 @@ const DEFAULT_COLLAPSED_COLUMNS: Record<RepairStatus, boolean> = {
   rejected: true,
   cancelled: true,
 }
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
-    new: true,
-    quoted: true,
-    approved: true,
-    in_progress: true,
-    ready: true,
-    closed: true,
-    rejected: true,
-    cancelled: true,
-  })
 
+type DashboardPrefs = {
+  collapsedColumns: Record<RepairStatus, boolean>
+  viewMode: ViewMode
+  search: string
+  statusFilter: StatusFilter
+  archiveSort: SortMode
+  hiddenSort: SortMode
+  showHidden: boolean
+}
+
+type DashboardReturnContext = {
+  highlightedJobId: string | null
+  expandedJobIds: string[]
+  scrollY: number
+  savedAt: number
+}
+
+function getDefaultDashboardPrefs(): DashboardPrefs {
+  return {
+    collapsedColumns: DEFAULT_COLLAPSED_COLUMNS,
+    viewMode: 'board',
+    search: '',
+    statusFilter: 'all',
+    archiveSort: 'newest',
+    hiddenSort: 'newest',
+    showHidden: false,
+  }
+}
+
+function sanitizeCollapsedColumns(
+  value: unknown
+): Record<RepairStatus, boolean> {
+  const fallback = DEFAULT_COLLAPSED_COLUMNS
+
+  if (!value || typeof value !== 'object') return fallback
+
+  const source = value as Partial<Record<RepairStatus, boolean>>
+
+  return {
+    new: typeof source.new === 'boolean' ? source.new : fallback.new,
+    quoted: typeof source.quoted === 'boolean' ? source.quoted : fallback.quoted,
+    approved: typeof source.approved === 'boolean' ? source.approved : fallback.approved,
+    in_progress:
+      typeof source.in_progress === 'boolean' ? source.in_progress : fallback.in_progress,
+    ready: typeof source.ready === 'boolean' ? source.ready : fallback.ready,
+    closed: typeof source.closed === 'boolean' ? source.closed : fallback.closed,
+    rejected: typeof source.rejected === 'boolean' ? source.rejected : fallback.rejected,
+    cancelled: typeof source.cancelled === 'boolean' ? source.cancelled : fallback.cancelled,
+  }
+}
+
+function sanitizeViewMode(value: unknown): ViewMode {
+  return value === 'board' ||
+    value === 'list' ||
+    value === 'details' ||
+    value === 'tiles'
+    ? value
+    : 'board'
+}
+
+function sanitizeStatusFilter(value: unknown): StatusFilter {
+  if (value === 'all') return 'all'
+  return STATUSES.includes(value as StatusFilter) ? (value as StatusFilter) : 'all'
+}
+
+function sanitizeSortMode(value: unknown): SortMode {
+  return value === 'newest' ||
+    value === 'oldest' ||
+    value === 'customer' ||
+    value === 'job_number'
+    ? value
+    : 'newest'
+}
+
+function loadDashboardPrefs(): DashboardPrefs {
+  const defaults = getDefaultDashboardPrefs()
+
+  if (typeof window === 'undefined') return defaults
+
+  try {
+    const raw = localStorage.getItem(DASHBOARD_PREFS_KEY)
+    if (!raw) return defaults
+
+    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
+
+    return {
+      collapsedColumns: sanitizeCollapsedColumns(parsed.collapsedColumns),
+      viewMode: sanitizeViewMode(parsed.viewMode),
+      search: typeof parsed.search === 'string' ? parsed.search : defaults.search,
+      statusFilter: sanitizeStatusFilter(parsed.statusFilter),
+      archiveSort: sanitizeSortMode(parsed.archiveSort),
+      hiddenSort: sanitizeSortMode(parsed.hiddenSort),
+      showHidden: typeof parsed.showHidden === 'boolean' ? parsed.showHidden : defaults.showHidden,
+    }
+  } catch {
+    return defaults
+  }
+}
+
+function saveDashboardReturnContext(params: {
+  highlightedJobId: string | null
+  expandedJobs: Record<string, boolean>
+}) {
+  if (typeof window === 'undefined') return
+
+  try {
+    const expandedJobIds = Object.entries(params.expandedJobs)
+      .filter(([, isExpanded]) => isExpanded)
+      .map(([jobId]) => jobId)
+
+    const payload: DashboardReturnContext = {
+      highlightedJobId: params.highlightedJobId,
+      expandedJobIds,
+      scrollY: window.scrollY,
+      savedAt: Date.now(),
+    }
+
+    sessionStorage.setItem(DASHBOARD_RETURN_CONTEXT_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore
+  }
+}
+
+function loadDashboardReturnContext(): DashboardReturnContext | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_RETURN_CONTEXT_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as Partial<DashboardReturnContext>
+
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof parsed.savedAt !== 'number' ||
+      !Array.isArray(parsed.expandedJobIds)
+    ) {
+      return null
+    }
+
+    if (Date.now() - parsed.savedAt > DASHBOARD_RETURN_CONTEXT_MAX_AGE_MS) {
+      sessionStorage.removeItem(DASHBOARD_RETURN_CONTEXT_KEY)
+      return null
+    }
+
+    return {
+      highlightedJobId:
+        typeof parsed.highlightedJobId === 'string' ? parsed.highlightedJobId : null,
+      expandedJobIds: parsed.expandedJobIds.filter(
+        (value): value is string => typeof value === 'string'
+      ),
+      scrollY: typeof parsed.scrollY === 'number' ? parsed.scrollY : 0,
+      savedAt: parsed.savedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function clearDashboardReturnContext() {
+  if (typeof window === 'undefined') return
+
+  try {
+    sessionStorage.removeItem(DASHBOARD_RETURN_CONTEXT_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export default function AdminPage() {
+  const initialPrefs = loadDashboardPrefs()
+
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isAdminSignedIn, setIsAdminSignedIn] = useState(false)
+
+  const [showHidden, setShowHidden] = useState(initialPrefs.showHidden)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+
+  const [search, setSearch] = useState(initialPrefs.search)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialPrefs.statusFilter)
+  const [viewMode, setViewMode] = useState<ViewMode>(initialPrefs.viewMode)
+  const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({})
+
+  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
+
+  const [selectedArchiveJobIds, setSelectedArchiveJobIds] = useState<string[]>([])
+  const [selectedHiddenJobIds, setSelectedHiddenJobIds] = useState<string[]>([])
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  const [archiveSort, setArchiveSort] = useState<SortMode>(initialPrefs.archiveSort)
+  const [hiddenSort, setHiddenSort] = useState<SortMode>(initialPrefs.hiddenSort)
+
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>(
+    initialPrefs.collapsedColumns
+  )
+
+  const hasRestoredReturnContextRef = useRef(false)
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const { saveStates, setFieldState, setFieldSaved } = useAdminSaveStates()
 
-const {
-  supabase,
-  jobs,
-  setJobs,
-  hiddenJobs,
-  setHiddenJobs,
-  invoicesByJobId,
-  setInvoicesByJobId,
-  invoiceItemsByInvoiceId,
-  setInvoiceItemsByInvoiceId,
-  loading,
-  setLoading,
-  error,
-  setError,
-  normalizeJob,
-  normalizeInvoice,
-  normalizeInvoiceItem,
-  loadJobs,
-  loadInvoices,
-  loadInvoiceItems,
-  refreshInvoiceById,
-  loadAllData,
-} = useAdminData()
+  const {
+    supabase,
+    jobs,
+    setJobs,
+    hiddenJobs,
+    setHiddenJobs,
+    invoicesByJobId,
+    setInvoicesByJobId,
+    invoiceItemsByInvoiceId,
+    setInvoiceItemsByInvoiceId,
+    loading,
+    error,
+    setError,
+    loadJobs,
+    loadInvoices,
+    loadInvoiceItems,
+    loadAllData,
+    refreshInvoiceById,
+    normalizeJob,
+    normalizeInvoice,
+  } = useAdminData()
 
   const {
     invoiceActionStates,
@@ -125,7 +294,7 @@ const {
     normalizeInvoice,
   })
 
-   const {
+  const {
     hideJob,
     unhideJob,
     deleteSingleJob,
@@ -161,12 +330,10 @@ const {
 
   const {
     filteredJobs,
-    filteredHiddenJobs,
     jobsByStatus,
     sortedArchiveJobsByStatus,
     sortedHiddenJobs,
     summary,
-    archiveJobs,
   } = useAdminDerivedState({
     jobs,
     hiddenJobs,
@@ -176,14 +343,6 @@ const {
     archiveSort,
     hiddenSort,
   })
-
-useEffect(() => {
-  try {
-    localStorage.setItem('admin_collapsed_columns', JSON.stringify(collapsedColumns))
-  } catch {
-    // ignore
-  }
-}, [collapsedColumns])
 
   useEffect(() => {
     async function checkAuth() {
@@ -206,9 +365,58 @@ useEffect(() => {
     void loadAllData()
   }, [authChecked, isAdminSignedIn, loadAllData])
 
-function resetColumnLayout() {
-  setCollapsedColumns(DEFAULT_COLLAPSED_COLUMNS)
-}
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const prefs: DashboardPrefs = {
+      collapsedColumns,
+      viewMode,
+      search,
+      statusFilter,
+      archiveSort,
+      hiddenSort,
+      showHidden,
+    }
+
+    try {
+      localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(prefs))
+    } catch {
+      // ignore storage failures
+    }
+  }, [collapsedColumns, viewMode, search, statusFilter, archiveSort, hiddenSort, showHidden])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    saveDashboardReturnContext({
+      highlightedJobId,
+      expandedJobs,
+    })
+  }, [highlightedJobId, expandedJobs])
+
+  function resetDashboardLayout() {
+    const defaults = getDefaultDashboardPrefs()
+    setCollapsedColumns(defaults.collapsedColumns)
+    setViewMode(defaults.viewMode)
+    setSearch(defaults.search)
+    setStatusFilter(defaults.statusFilter)
+    setArchiveSort(defaults.archiveSort)
+    setHiddenSort(defaults.hiddenSort)
+    setShowHidden(defaults.showHidden)
+
+    try {
+      localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(defaults))
+    } catch {
+      // ignore
+    }
+  }
+
+  function rememberDashboardContextBeforeLeave() {
+    saveDashboardReturnContext({
+      highlightedJobId,
+      expandedJobs,
+    })
+  }
 
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
@@ -273,11 +481,12 @@ function resetColumnLayout() {
         device_type: sourceJob.device_type,
         serial_imei: sourceJob.serial_imei,
         fault_description: sourceJob.fault_description,
+        repair_performed: sourceJob.repair_performed,
         status: 'new',
         preferred_contact: sourceJob.preferred_contact,
         internal_notes: sourceJob.internal_notes,
         quoted_price: sourceJob.quoted_price,
-parts_cost: sourceJob.parts_cost,
+        parts_cost: sourceJob.parts_cost,
         is_hidden: false,
         fault_photo_url: sourceJob.fault_photo_url ?? null,
       })
@@ -293,13 +502,17 @@ parts_cost: sourceJob.parts_cost,
         device_type,
         serial_imei,
         fault_description,
+        repair_performed,
         status,
         preferred_contact,
         internal_notes,
         quoted_price,
-parts_cost,
+        parts_cost,
         is_hidden,
-        fault_photo_url
+        fault_photo_url,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message
       `)
       .single()
 
@@ -341,9 +554,7 @@ parts_cost,
 
     setFieldState(id, 'status', 'saving')
 
-    setJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
-    )
+    setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job)))
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
     )
@@ -362,14 +573,10 @@ parts_cost,
     }
 
     setJobs((prev) =>
-      prev.map((job) =>
-        job.id === id ? { ...job, status: data.status as RepairStatus } : job
-      )
+      prev.map((job) => (job.id === id ? { ...job, status: data.status as RepairStatus } : job))
     )
     setHiddenJobs((prev) =>
-      prev.map((job) =>
-        job.id === id ? { ...job, status: data.status as RepairStatus } : job
-      )
+      prev.map((job) => (job.id === id ? { ...job, status: data.status as RepairStatus } : job))
     )
 
     setFieldSaved(id, 'status')
@@ -428,15 +635,15 @@ parts_cost,
         repair_performed: nextValue,
       }
 
-const newDescription = [
-  updatedJob.job_number ? updatedJob.job_number.trim() : '',
-  [updatedJob.brand, updatedJob.model].filter(Boolean).join(' ').trim(),
-  nextValue.trim() || 'Repair service',
-]
-  .filter(Boolean)
-  .join(' - ')
-  .replace(/\s+/g, ' ')
-  .trim()
+      const newDescription = [
+        updatedJob.job_number ? `(${updatedJob.job_number.trim()})` : '',
+        [updatedJob.brand, updatedJob.model].filter(Boolean).join(' ').trim(),
+        nextValue.trim() || 'Repair service',
+      ]
+        .filter(Boolean)
+        .join(' - ')
+        .replace(/\s+/g, ' ')
+        .trim()
 
       const firstItem = (invoiceItemsByInvoiceId[relatedInvoice.id] || []).sort(
         (a, b) => a.sort_order - b.sort_order
@@ -482,8 +689,7 @@ const newDescription = [
         job.id === id
           ? {
               ...job,
-              quoted_price:
-                typeof data?.quoted_price === 'number' ? data.quoted_price : null,
+              quoted_price: typeof data?.quoted_price === 'number' ? data.quoted_price : null,
             }
           : job
       )
@@ -494,8 +700,7 @@ const newDescription = [
         job.id === id
           ? {
               ...job,
-              quoted_price:
-                typeof data?.quoted_price === 'number' ? data.quoted_price : null,
+              quoted_price: typeof data?.quoted_price === 'number' ? data.quoted_price : null,
             }
           : job
       )
@@ -504,8 +709,9 @@ const newDescription = [
     setFieldSaved(id, 'quote')
     return true
   }
+
   async function updatePartsCost(id: string, cost: number | null) {
-    setFieldState(id, 'parts_cost' as any, 'saving')
+    setFieldState(id, 'parts_cost', 'saving')
 
     const { data, error } = await supabase
       .from('repair_requests')
@@ -515,7 +721,7 @@ const newDescription = [
       .single()
 
     if (error) {
-      setFieldState(id, 'parts_cost' as any, 'error')
+      setFieldState(id, 'parts_cost', 'error')
       return false
     }
 
@@ -524,8 +730,7 @@ const newDescription = [
         job.id === id
           ? {
               ...job,
-              parts_cost:
-                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+              parts_cost: typeof data?.parts_cost === 'number' ? data.parts_cost : null,
             }
           : job
       )
@@ -536,16 +741,16 @@ const newDescription = [
         job.id === id
           ? {
               ...job,
-              parts_cost:
-                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+              parts_cost: typeof data?.parts_cost === 'number' ? data.parts_cost : null,
             }
           : job
       )
     )
 
-    setFieldSaved(id, 'parts_cost' as any)
+    setFieldSaved(id, 'parts_cost')
     return true
   }
+
   async function updateNotes(id: string, notes: string) {
     setFieldState(id, 'notes', 'saving')
 
@@ -633,9 +838,7 @@ const newDescription = [
     }
 
     setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
-    setHiddenJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
-    )
+    setHiddenJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
 
     setFieldSaved(id, field)
     return true
@@ -657,31 +860,84 @@ const newDescription = [
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (loading) return
+    if (hasRestoredReturnContextRef.current) return
 
     const params = new URLSearchParams(window.location.search)
-    const highlightJob = params.get('highlightJob')
-    if (!highlightJob) return
+    const highlightJobFromUrl = params.get('highlightJob')
 
-    setHighlightedJobId(highlightJob)
-    setExpandedJobs((prev) => ({
-      ...prev,
-      [highlightJob]: true,
-    }))
+    if (highlightJobFromUrl) {
+      hasRestoredReturnContextRef.current = true
+
+      setHighlightedJobId(highlightJobFromUrl)
+      setExpandedJobs((prev) => ({
+        ...prev,
+        [highlightJobFromUrl]: true,
+      }))
+
+      window.setTimeout(() => {
+        const el = jobRefs.current[highlightJobFromUrl]
+        if (el) {
+          el.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          })
+        }
+      }, 180)
+
+      const nextUrl = new URL(window.location.href)
+      nextUrl.searchParams.delete('highlightJob')
+      window.history.replaceState({}, '', nextUrl.toString())
+      return
+    }
+
+    const context = loadDashboardReturnContext()
+    if (!context) {
+      hasRestoredReturnContextRef.current = true
+      return
+    }
+
+    const allJobIds = new Set([...jobs.map((job) => job.id), ...hiddenJobs.map((job) => job.id)])
+
+    if (context.highlightedJobId && !allJobIds.has(context.highlightedJobId)) {
+      clearDashboardReturnContext()
+      hasRestoredReturnContextRef.current = true
+      return
+    }
+
+    if (context.expandedJobIds.length > 0) {
+      setExpandedJobs((prev) => {
+        const next = { ...prev }
+        for (const jobId of context.expandedJobIds) {
+          if (allJobIds.has(jobId)) next[jobId] = true
+        }
+        return next
+      })
+    }
+
+    if (context.highlightedJobId) {
+      setHighlightedJobId(context.highlightedJobId)
+    }
+
+    hasRestoredReturnContextRef.current = true
 
     window.setTimeout(() => {
-      const el = jobRefs.current[highlightJob]
-      if (el) {
-        el.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        })
+      if (context.highlightedJobId) {
+        const el = jobRefs.current[context.highlightedJobId]
+        if (el) {
+          el.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          })
+          return
+        }
       }
-    }, 150)
 
-    const nextUrl = new URL(window.location.href)
-    nextUrl.searchParams.delete('highlightJob')
-    window.history.replaceState({}, '', nextUrl.toString())
-  }, [loading])
+      window.scrollTo({
+        top: context.scrollY || 0,
+        behavior: 'smooth',
+      })
+    }, 180)
+  }, [loading, jobs, hiddenJobs])
 
   if (!authChecked) {
     return (
@@ -702,23 +958,57 @@ const newDescription = [
           </p>
         </div>
 
-        <div className={styles.adminTopBarControls}>
-          <div className={styles.adminTopBarGroup}>
-            <Link href="/admin/jobs/new" className={styles.viewButton}>
+        <div
+          className={styles.toolbar}
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '12px',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              alignItems: 'center',
+            }}
+          >
+            <Link
+              href="/admin/jobs/new"
+              className={styles.viewButton}
+              onClick={rememberDashboardContextBeforeLeave}
+            >
               New Job
             </Link>
-            <Link href="/admin/invoices" className={styles.viewButton}>
+            <Link
+              href="/admin/invoices"
+              className={styles.viewButton}
+              onClick={rememberDashboardContextBeforeLeave}
+            >
               View Invoices
             </Link>
-            <Link href="/admin/customers" className={styles.viewButton}>
+            <Link
+              href="/admin/customers"
+              className={styles.viewButton}
+              onClick={rememberDashboardContextBeforeLeave}
+            >
               Customers
             </Link>
-<Link href="/admin/stats" className={styles.viewButton}>
-  Stats
-</Link>
           </div>
 
-          <div className={styles.adminTopBarGroupPill}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              alignItems: 'center',
+              padding: '6px 8px',
+              borderRadius: '999px',
+            }}
+          >
             {(['board', 'list', 'details', 'tiles'] as const).map((mode) => (
               <button
                 key={mode}
@@ -732,22 +1022,28 @@ const newDescription = [
               </button>
             ))}
           </div>
-<button
-  type="button"
-  className={styles.viewButton}
-  onClick={resetColumnLayout}
->
-  Reset Layout
-</button>
-          <div className={styles.adminTopBarGroup}>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              alignItems: 'center',
+            }}
+          >
             <button type="button" onClick={() => void loadAllData()} className={styles.button}>
               Refresh
+            </button>
+
+            <button type="button" onClick={resetDashboardLayout} className={styles.viewButton}>
+              Reset Layout
             </button>
 
             <button
               type="button"
               className={styles.viewButton}
               onClick={async () => {
+                clearDashboardReturnContext()
                 await supabase.auth.signOut()
                 window.location.href = '/admin/login'
               }}
@@ -810,9 +1106,7 @@ const newDescription = [
                     </span>
 
                     <div className={styles.columnHeaderActions}>
-                      <span className={styles.columnCount}>
-                        {jobsByStatus[status]?.length || 0}
-                      </span>
+                      <span className={styles.columnCount}>{jobsByStatus[status]?.length || 0}</span>
                       <button
                         type="button"
                         className={styles.columnToggleButton}
@@ -831,9 +1125,7 @@ const newDescription = [
                     ) : (
                       (jobsByStatus[status] || []).map((job) => {
                         const invoice = invoicesByJobId[job.id] ?? null
-                        const invoiceItems = invoice
-                          ? invoiceItemsByInvoiceId[invoice.id] || []
-                          : []
+                        const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
 
                         return (
                           <JobCard
@@ -843,14 +1135,16 @@ const newDescription = [
                             toggleExpanded={toggleExpanded}
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
-updatePartsCost={updatePartsCost}
-partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
+                            updatePartsCost={updatePartsCost}
                             updateNotes={updateNotes}
                             updateRepairPerformed={updateRepairPerformed}
                             updateJobBasics={updateJobBasics}
-                            repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
+                            repairPerformedSaveState={
+                              saveStates[`${job.id}:repair_performed`] || 'idle'
+                            }
                             statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                             quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                            partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                             notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
                             jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
                             customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
@@ -916,9 +1210,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
               <div className={styles.bulkBarActions}>
                 <button
                   type="button"
-                  className={`${styles.actionButton} ${
-                    showHidden ? styles.viewButtonActive : ''
-                  }`}
+                  className={`${styles.actionButton} ${showHidden ? styles.viewButtonActive : ''}`}
                   onClick={() => setShowHidden((prev) => !prev)}
                 >
                   {showHidden ? 'Hide Hidden Jobs' : 'Show Hidden Jobs'}
@@ -974,10 +1266,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 <button
                   type="button"
                   className={styles.actionButton}
-                  onClick={() => {
-                    console.log('bulkDeleteArchiveJobs clicked', selectedArchiveJobIds)
-                    void bulkDeleteArchiveJobs()
-                  }}
+                  onClick={() => void bulkDeleteArchiveJobs()}
                   disabled={bulkBusy || selectedArchiveJobIds.length === 0}
                 >
                   {bulkBusy ? 'Deleting...' : 'Delete Selected'}
@@ -1030,9 +1319,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                       ) : (
                         (sortedArchiveJobsByStatus[status] || []).map((job) => {
                           const invoice = invoicesByJobId[job.id] ?? null
-                          const invoiceItems = invoice
-                            ? invoiceItemsByInvoiceId[invoice.id] || []
-                            : []
+                          const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
 
                           return (
                             <JobCard
@@ -1042,14 +1329,16 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                               toggleExpanded={toggleExpanded}
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
-updatePartsCost={updatePartsCost}
-partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
+                              updatePartsCost={updatePartsCost}
                               updateNotes={updateNotes}
                               updateRepairPerformed={updateRepairPerformed}
                               updateJobBasics={updateJobBasics}
-                              repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
+                              repairPerformedSaveState={
+                                saveStates[`${job.id}:repair_performed`] || 'idle'
+                              }
                               statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                               quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                              partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                               notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
                               jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
                               customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
@@ -1079,7 +1368,6 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                               onToggleSelected={toggleArchiveSelected}
                               onHideJob={hideJob}
                               onUnhideJob={unhideJob}
-
                             />
                           )
                         })
@@ -1123,6 +1411,9 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 <strong>Quote:</strong> {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
               </p>
               <p className={styles.tileText}>
+                <strong>Parts Cost:</strong> {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
+              </p>
+              <p className={styles.tileText}>
                 <strong>Invoice:</strong> {invoicesByJobId[job.id]?.invoice_number || '-'}
               </p>
             </div>
@@ -1141,6 +1432,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 <th>Device</th>
                 <th>Status</th>
                 <th>Quote</th>
+                <th>Parts Cost</th>
                 <th>Invoice</th>
                 <th>Booked In</th>
               </tr>
@@ -1164,6 +1456,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     </span>
                   </td>
                   <td>{job.quoted_price != null ? `$${job.quoted_price}` : '-'}</td>
+                  <td>{job.parts_cost != null ? `$${job.parts_cost}` : '-'}</td>
                   <td>{invoicesByJobId[job.id]?.invoice_number || '-'}</td>
                   <td>{formatDateTime(job.created_at)}</td>
                 </tr>
@@ -1187,14 +1480,14 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 toggleExpanded={toggleExpanded}
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
-updatePartsCost={updatePartsCost}
-partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
+                updatePartsCost={updatePartsCost}
                 updateNotes={updateNotes}
                 updateRepairPerformed={updateRepairPerformed}
                 updateJobBasics={updateJobBasics}
                 repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
                 statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                 quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                 notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
                 jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
                 customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
@@ -1264,10 +1557,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
               <button
                 type="button"
                 className={styles.actionButton}
-                onClick={() => {
-                  console.log('bulkDeleteHiddenJobs clicked', selectedHiddenJobIds)
-                  void bulkDeleteHiddenJobs()
-                }}
+                onClick={() => void bulkDeleteHiddenJobs()}
                 disabled={bulkBusy || selectedHiddenJobIds.length === 0}
               >
                 {bulkBusy ? 'Deleting...' : 'Delete Selected'}
@@ -1300,14 +1590,14 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     toggleExpanded={toggleExpanded}
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
-updatePartsCost={updatePartsCost}
-partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
+                    updatePartsCost={updatePartsCost}
                     updateNotes={updateNotes}
                     updateRepairPerformed={updateRepairPerformed}
                     updateJobBasics={updateJobBasics}
                     repairPerformedSaveState={saveStates[`${job.id}:repair_performed`] || 'idle'}
                     statusSaveState={saveStates[`${job.id}:status`] || 'idle'}
                     quoteSaveState={saveStates[`${job.id}:quote`] || 'idle'}
+                    partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     notesSaveState={saveStates[`${job.id}:notes`] || 'idle'}
                     jobNumberSaveState={saveStates[`${job.id}:job_number`] || 'idle'}
                     customerSaveState={saveStates[`${job.id}:customer`] || 'idle'}
@@ -1337,8 +1627,7 @@ partsCostSaveState={saveStates[`${job.id}:parts_cost`] || 'idle'}
                     onDuplicateJob={duplicateJob}
                     onHideJob={hideJob}
                     onUnhideJob={unhideJob}
-onDeleteJob={deleteSingleJob}
-
+                    onDeleteJob={deleteSingleJob}
                   />
                 )
               })}

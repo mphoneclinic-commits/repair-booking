@@ -775,9 +775,7 @@ export default function InvoicePrintPage() {
               Back to Invoices
             </Link>
 
-            <Link href="/admin" className={ui.secondaryButton}>
-              Back to Dashboard
-            </Link>
+           <Link href={`/admin?highlightJob=${someJobId}`}>Back to Dashboard</Link>
 
             {invoice.status === 'draft' && (
               <button
