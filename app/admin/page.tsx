@@ -1302,7 +1302,7 @@ onDragEnd={() => handleDragEnd()}
                 addInvoiceItemForInvoice={addInvoiceItemForInvoice}
                 updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
                 deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
-                removeInvoiceForJob={removeInvoiceForJob}
+               removeInvoiceForJob={removeInvoiceForJob}
                 highlighted={highlightedJobId === job.id}
                 cardRef={(el) => {
                   jobRefs.current[job.id] = el

@@ -30,6 +30,7 @@ type Props = {
   updatePartsCost: (id: string, cost: number | null) => Promise<boolean> | boolean
   updateNotes: (id: string, notes: string) => Promise<boolean> | boolean
   updateRepairPerformed: (id: string, repairPerformed: string) => Promise<boolean> | boolean
+removeInvoiceForJob: (job: RepairRequest) => Promise<void> | void
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -81,7 +82,6 @@ type Props = {
     invoiceId: string,
     itemId: string
   ) => Promise<void> | void
-  removeInvoiceForJob?: (jobId: string) => Promise<void> | void
 
   compact?: boolean
   selectable?: boolean
@@ -847,7 +847,7 @@ export default function JobCard({
                     className={styles.deleteButton}
                     onClick={(e) => {
                       e.stopPropagation()
-                      void removeInvoiceForJob?.(job.id)
+                      void removeInvoiceForJob?.(job)
                     }}
                   >
                     Delete Invoice
