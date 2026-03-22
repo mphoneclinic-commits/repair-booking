@@ -517,58 +517,159 @@ export default function CustomerDetailPage() {
 
     setSavedBriefly(setNotesSaveState)
   }
+async function getAffectedInvoicesForJobs(jobIds: string[]) {
+  const { data, error } = await supabase
+    .from('invoice_repair_links')
+    .select('invoice_id, repair_request_id')
+    .in('repair_request_id', jobIds)
 
-  async function deleteJob(jobId: string) {
-    if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) {
-      return
+  if (error) throw error
+
+  return (data || []) as { invoice_id: string; repair_request_id: string }[]
+}
+
+async function cleanupInvoicesForDeletedJobs(jobIds: string[]) {
+  const links = await getAffectedInvoicesForJobs(jobIds)
+
+  if (links.length === 0) return
+
+  const affectedInvoiceIds = Array.from(new Set(links.map((row) => row.invoice_id)))
+
+  const { data: invoicesData, error: invoicesError } = await supabase
+    .from('invoices')
+    .select('id, repair_request_id')
+    .in('id', affectedInvoiceIds)
+
+  if (invoicesError) throw invoicesError
+
+  const invoices = (invoicesData || []) as { id: string; repair_request_id: string }[]
+
+  for (const invoice of invoices) {
+    const { data: remainingLinksData, error: remainingLinksError } = await supabase
+      .from('invoice_repair_links')
+      .select('repair_request_id')
+      .eq('invoice_id', invoice.id)
+
+    if (remainingLinksError) throw remainingLinksError
+
+    const remainingLinkedJobIds = (remainingLinksData || [])
+      .map((row) => row.repair_request_id)
+      .filter((id) => !jobIds.includes(id))
+
+    // Remove links for the jobs being deleted
+    const { error: deleteLinksError } = await supabase
+      .from('invoice_repair_links')
+      .delete()
+      .eq('invoice_id', invoice.id)
+      .in('repair_request_id', jobIds)
+
+    if (deleteLinksError) throw deleteLinksError
+
+    if (remainingLinkedJobIds.length === 0) {
+      // No linked jobs left, delete the invoice and its items
+      const { error: deleteItemsError } = await supabase
+        .from('invoice_items')
+        .delete()
+        .eq('invoice_id', invoice.id)
+
+      if (deleteItemsError) throw deleteItemsError
+
+      const { error: deleteInvoiceError } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', invoice.id)
+
+      if (deleteInvoiceError) throw deleteInvoiceError
+    } else {
+      // Repoint primary repair_request_id if it was one of the deleted jobs
+      if (jobIds.includes(invoice.repair_request_id)) {
+        const replacementJobId = remainingLinkedJobIds[0]
+
+        const { error: repointInvoiceError } = await supabase
+          .from('invoices')
+          .update({ repair_request_id: replacementJobId })
+          .eq('id', invoice.id)
+
+        if (repointInvoiceError) throw repointInvoiceError
+      }
     }
+  }
+}
 
-    setDeleting(true)
-    setError('')
+async function deleteJob(jobId: string) {
+  if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) {
+    return
+  }
 
-    const { error: deleteError } = await supabase.from('repair_requests').delete().eq('id', jobId)
+  setDeleting(true)
+  setError('')
 
-    if (deleteError) {
-      setError(deleteError.message)
-      setDeleting(false)
-      return
-    }
+  try {
+    await cleanupInvoicesForDeletedJobs([jobId])
+
+    const { error: deleteJobError } = await supabase
+      .from('repair_requests')
+      .delete()
+      .eq('id', jobId)
+
+    if (deleteJobError) throw deleteJobError
 
     setJobs((prev) => prev.filter((j) => j.id !== jobId))
     setSelectedJobIds((prev) => prev.filter((id) => id !== jobId))
+    setInvoices((prev) =>
+      prev.filter((invoice) => {
+        // keep invoices that still point to existing jobs
+        return true
+      })
+    )
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to delete job')
+  } finally {
     setDeleting(false)
   }
+}
 
-  async function bulkDeleteJobs() {
-    if (selectedJobIds.length === 0) return
+async function bulkDeleteJobs() {
+  if (selectedJobIds.length === 0) return
 
-    if (
-      !window.confirm(
-        `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This cannot be undone.`
-      )
-    ) {
-      return
-    }
+  if (
+    !window.confirm(
+      `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This cannot be undone.`
+    )
+  ) {
+    return
+  }
 
-    setDeleting(true)
-    setError('')
+  setDeleting(true)
+  setError('')
 
-    const { error: deleteError } = await supabase
+  try {
+    const idsToDelete = [...selectedJobIds]
+
+    await cleanupInvoicesForDeletedJobs(idsToDelete)
+
+    const { error: deleteJobsError } = await supabase
       .from('repair_requests')
       .delete()
-      .in('id', selectedJobIds)
+      .in('id', idsToDelete)
 
-    if (deleteError) {
-      setError(deleteError.message)
-      setDeleting(false)
+    if (deleteJobsError) throw deleteJobsError
+
+    setJobs((prev) => prev.filter((j) => !idsToDelete.includes(j.id)))
+    setSelectedJobIds([])
+
+    // simplest reliable refresh after destructive bulk change
+    if (customerId) {
+      window.location.href = `/admin/customer?id=${customerId}`
       return
     }
-
-    setJobs((prev) => prev.filter((j) => !selectedJobIds.includes(j.id)))
-    setSelectedJobIds([])
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to delete selected jobs')
+  } finally {
     setDeleting(false)
   }
-
+}
+ 
   async function handleCreateGroupedInvoice() {
     if (!customerSummary) return
 
