@@ -556,7 +556,6 @@ async function cleanupInvoicesForDeletedJobs(jobIds: string[]) {
       .map((row) => row.repair_request_id)
       .filter((id) => !jobIds.includes(id))
 
-    // Remove links for the jobs being deleted
     const { error: deleteLinksError } = await supabase
       .from('invoice_repair_links')
       .delete()
@@ -566,7 +565,6 @@ async function cleanupInvoicesForDeletedJobs(jobIds: string[]) {
     if (deleteLinksError) throw deleteLinksError
 
     if (remainingLinkedJobIds.length === 0) {
-      // No linked jobs left, delete the invoice and its items
       const { error: deleteItemsError } = await supabase
         .from('invoice_items')
         .delete()
@@ -580,19 +578,70 @@ async function cleanupInvoicesForDeletedJobs(jobIds: string[]) {
         .eq('id', invoice.id)
 
       if (deleteInvoiceError) throw deleteInvoiceError
-    } else {
-      // Repoint primary repair_request_id if it was one of the deleted jobs
-      if (jobIds.includes(invoice.repair_request_id)) {
-        const replacementJobId = remainingLinkedJobIds[0]
+    } else if (jobIds.includes(invoice.repair_request_id)) {
+      const replacementJobId = remainingLinkedJobIds[0]
 
-        const { error: repointInvoiceError } = await supabase
-          .from('invoices')
-          .update({ repair_request_id: replacementJobId })
-          .eq('id', invoice.id)
+      const { error: repointInvoiceError } = await supabase
+        .from('invoices')
+        .update({ repair_request_id: replacementJobId })
+        .eq('id', invoice.id)
 
-        if (repointInvoiceError) throw repointInvoiceError
-      }
+      if (repointInvoiceError) throw repointInvoiceError
     }
+  }
+}
+
+async function cleanupPhotosForDeletedJobs(jobIds: string[]) {
+  const { data: photoRows, error: photosError } = await supabase
+    .from('repair_request_photos')
+    .select('id, repair_request_id, storage_path')
+    .in('repair_request_id', jobIds)
+
+  if (photosError) throw photosError
+
+  const photos = (photoRows || []) as {
+    id: string
+    repair_request_id: string
+    storage_path: string | null
+  }[]
+
+  const storagePaths = photos
+    .map((photo) => photo.storage_path)
+    .filter((path): path is string => Boolean(path))
+
+  if (storagePaths.length > 0) {
+    const { error: storageDeleteError } = await supabase.storage
+      .from('fault-photos')
+      .remove(storagePaths)
+
+    if (storageDeleteError) {
+      throw new Error(`Failed to delete photo files: ${storageDeleteError.message}`)
+    }
+  }
+
+  if (photos.length > 0) {
+    const { error: deletePhotoRowsError } = await supabase
+      .from('repair_request_photos')
+      .delete()
+      .in('repair_request_id', jobIds)
+
+    if (deletePhotoRowsError) throw deletePhotoRowsError
+  }
+}
+
+async function deleteRepairRequests(jobIds: string[]) {
+  if (jobIds.length === 0) return
+
+  await cleanupInvoicesForDeletedJobs(jobIds)
+  await cleanupPhotosForDeletedJobs(jobIds)
+
+  const { error: deleteJobsError } = await supabase
+    .from('repair_requests')
+    .delete()
+    .in('id', jobIds)
+
+  if (deleteJobsError) {
+    throw new Error(`Failed to delete repair request(s): ${deleteJobsError.message}`)
   }
 }
 
@@ -605,23 +654,15 @@ async function deleteJob(jobId: string) {
   setError('')
 
   try {
-    await cleanupInvoicesForDeletedJobs([jobId])
-
-    const { error: deleteJobError } = await supabase
-      .from('repair_requests')
-      .delete()
-      .eq('id', jobId)
-
-    if (deleteJobError) throw deleteJobError
+    await deleteRepairRequests([jobId])
 
     setJobs((prev) => prev.filter((j) => j.id !== jobId))
     setSelectedJobIds((prev) => prev.filter((id) => id !== jobId))
-    setInvoices((prev) =>
-      prev.filter((invoice) => {
-        // keep invoices that still point to existing jobs
-        return true
-      })
-    )
+
+    if (customerId) {
+      window.location.href = `/admin/customer?id=${customerId}`
+      return
+    }
   } catch (err) {
     setError(err instanceof Error ? err.message : 'Failed to delete job')
   } finally {
@@ -646,19 +687,11 @@ async function bulkDeleteJobs() {
   try {
     const idsToDelete = [...selectedJobIds]
 
-    await cleanupInvoicesForDeletedJobs(idsToDelete)
-
-    const { error: deleteJobsError } = await supabase
-      .from('repair_requests')
-      .delete()
-      .in('id', idsToDelete)
-
-    if (deleteJobsError) throw deleteJobsError
+    await deleteRepairRequests(idsToDelete)
 
     setJobs((prev) => prev.filter((j) => !idsToDelete.includes(j.id)))
     setSelectedJobIds([])
 
-    // simplest reliable refresh after destructive bulk change
     if (customerId) {
       window.location.href = `/admin/customer?id=${customerId}`
       return
@@ -669,7 +702,6 @@ async function bulkDeleteJobs() {
     setDeleting(false)
   }
 }
- 
   async function handleCreateGroupedInvoice() {
     if (!customerSummary) return
 
