@@ -917,8 +917,8 @@ export default function AdminPage() {
                             setFieldState={setFieldState}
                             draggableEnabled
                             isDragging={draggedJobId === job.id}
-                            onDragStart={handleDragStart}
-                            onDragEnd={handleDragEnd}
+                           onDragStart={(_e, jobId) => handleDragStart(jobId)}
+onDragEnd={() => handleDragEnd()}
                             invoice={invoice}
                             invoiceItems={invoiceItems}
                             invoiceActionState={invoiceActionStates[job.id] || 'idle'}
