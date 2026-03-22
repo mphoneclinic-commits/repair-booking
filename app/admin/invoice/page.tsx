@@ -17,12 +17,12 @@ import type {
 } from '../types'
 import { formatDateTime } from '../utils'
 import SaveIndicator from '../components/SaveIndicator'
+import useDeleteInvoice from '../hooks/useDeleteInvoice'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -62,8 +62,9 @@ export default function InvoicePrintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [deleting, setDeleting] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+
+  const { deleteInvoice, deletingInvoice, deleteInvoiceError } = useDeleteInvoice()
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -79,6 +80,12 @@ export default function InvoicePrintPage() {
       if (clearInternalSavedTimerRef.current) clearTimeout(clearInternalSavedTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (deleteInvoiceError) {
+      setError(deleteInvoiceError)
+    }
+  }, [deleteInvoiceError])
 
   async function loadInvoicePage(currentInvoiceId: string) {
     if (!currentInvoiceId) {
@@ -100,6 +107,7 @@ export default function InvoicePrintPage() {
         .from('invoices')
         .select(`
           id,
+          customer_id,
           repair_request_id,
           invoice_number,
           status,
@@ -135,6 +143,7 @@ export default function InvoicePrintPage() {
 
       const normalizedInvoice: Invoice = {
         ...(invoiceData as Invoice),
+        customer_id: invoiceData.customer_id ?? null,
         tax_rate: Number(invoiceData.tax_rate ?? 0),
         subtotal_ex_tax: Number(invoiceData.subtotal_ex_tax ?? 0),
         tax_amount: Number(invoiceData.tax_amount ?? 0),
@@ -203,6 +212,7 @@ export default function InvoicePrintPage() {
         .from('repair_requests')
         .select(`
           id,
+          customer_id,
           job_number,
           created_at,
           full_name,
@@ -217,6 +227,7 @@ export default function InvoicePrintPage() {
           preferred_contact,
           internal_notes,
           quoted_price,
+          parts_cost,
           is_hidden,
           fault_photo_url,
           repair_performed,
@@ -230,8 +241,10 @@ export default function InvoicePrintPage() {
 
       const normalizedJobs = ((jobsData || []) as RepairRequest[]).map((job) => ({
         ...job,
+        customer_id: job.customer_id ?? null,
         internal_notes: job.internal_notes ?? '',
         quoted_price: job.quoted_price ?? null,
+        parts_cost: job.parts_cost ?? null,
         serial_imei: job.serial_imei ?? null,
         is_hidden: Boolean(job.is_hidden),
         fault_photo_url: job.fault_photo_url ?? null,
@@ -421,6 +434,7 @@ export default function InvoicePrintPage() {
       .eq('id', invoice.id)
       .select(`
         id,
+        customer_id,
         repair_request_id,
         invoice_number,
         status,
@@ -455,29 +469,9 @@ export default function InvoicePrintPage() {
       return
     }
 
-    if (status === 'paid' && linkedJobs.length > 0) {
-      const openJobIds = linkedJobs
-        .filter((job) => job.status !== 'closed')
-        .map((job) => job.id)
-
-      if (openJobIds.length > 0) {
-        const { error: closeError } = await supabase
-          .from('repair_requests')
-          .update({ status: 'ready' })
-          .in('id', openJobIds)
-
-        if (!closeError) {
-          setLinkedJobs((prev) =>
-            prev.map((job) =>
-              openJobIds.includes(job.id) ? { ...job, status: 'closed' } : job
-            )
-          )
-        }
-      }
-    }
-
     const normalizedInvoice: Invoice = {
       ...(data as Invoice),
+      customer_id: data.customer_id ?? null,
       tax_rate: Number(data.tax_rate ?? 0),
       subtotal_ex_tax: Number(data.subtotal_ex_tax ?? 0),
       tax_amount: Number(data.tax_amount ?? 0),
@@ -679,57 +673,48 @@ export default function InvoicePrintPage() {
     }
   }
 
-  async function deleteInvoice() {
+  async function handleDeleteInvoice() {
     if (!invoice) return
 
     const confirmed = window.confirm(
       'Are you sure you want to delete this invoice? This cannot be undone.'
     )
-
     if (!confirmed) return
 
-    setDeleting(true)
     setError('')
     setSuccessMessage('')
 
-    const { error: deleteInvoiceError } = await supabase
-      .from('invoices')
-      .delete()
-      .eq('id', invoice.id)
+    const result = await deleteInvoice(invoice.id)
 
-    if (deleteInvoiceError) {
-      setError(deleteInvoiceError.message || 'Failed to delete invoice')
-      setDeleting(false)
+    if (!result.success) {
+      setError(result.error || 'Failed to delete invoice')
       return
     }
 
-    setSuccessMessage('Invoice deleted successfully.')
-    setDeleting(false)
-
-    window.setTimeout(() => {
-      window.location.href = '/admin/invoices'
-    }, 1000)
+    window.location.href = '/admin/invoices'
   }
 
- function generatePDF() {
-  if (!invoice) return
+  function generatePDF() {
+    if (!invoice) return
 
-  generateInvoicePdf({
-    invoice,
-    items,
-    businessDetails: BUSINESS_DETAILS,
-    paymentDetails: PAYMENT_DETAILS,
-    includeInternalReferenceNotes: false,
-  })
-
-}
-    
+    generateInvoicePdf({
+      invoice,
+      items,
+      linkedJobs,
+      businessDetails: BUSINESS_DETAILS,
+      paymentDetails: PAYMENT_DETAILS,
+      includeInternalReferenceNotes: true,
+    })
+  }
 
   const totalQty = useMemo(() => {
     return items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)
   }, [items])
 
   const isGroupedInvoice = linkedJobs.length > 1
+  const backToDashboardHref = invoice?.repair_request_id
+    ? `/admin?highlightJob=${invoice.repair_request_id}`
+    : '/admin'
 
   if (loading) {
     return (
@@ -741,13 +726,28 @@ export default function InvoicePrintPage() {
     )
   }
 
-  if (error || !invoice) {
+  if (error && !invoice) {
     return (
       <main className={styles.page}>
         <div className={styles.shell}>
           <div className={styles.messageCardError}>
             {error || 'Invoice could not be loaded.'}
           </div>
+          <div className={ui.topBar}>
+            <Link href="/admin" className={ui.secondaryButton}>
+              Back to Admin
+            </Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (!invoice) {
+    return (
+      <main className={styles.page}>
+        <div className={styles.shell}>
+          <div className={styles.messageCardError}>Invoice could not be loaded.</div>
           <div className={ui.topBar}>
             <Link href="/admin" className={ui.secondaryButton}>
               Back to Admin
@@ -774,9 +774,10 @@ export default function InvoicePrintPage() {
             <Link href="/admin/invoices" className={ui.secondaryButton}>
               Back to Invoices
             </Link>
-<Link href="/admin" className={ui.secondaryButton}>
-  Back to Dashboard
-</Link>
+
+            <Link href={backToDashboardHref} className={ui.secondaryButton}>
+              Back to Dashboard
+            </Link>
 
             {invoice.status === 'draft' && (
               <button
@@ -833,29 +834,21 @@ export default function InvoicePrintPage() {
               </button>
             )}
 
-            <button
-              type="button"
-              className={ui.printButton}
-              onClick={() => window.print()}
-            >
+            <button type="button" className={ui.printButton} onClick={() => window.print()}>
               Print Invoice
             </button>
 
-            <button
-              type="button"
-              className={ui.printButton}
-              onClick={generatePDF}
-            >
+            <button type="button" className={ui.printButton} onClick={generatePDF}>
               Download PDF
             </button>
 
             <button
               type="button"
               className={ui.deleteButton}
-              onClick={() => void deleteInvoice()}
-              disabled={deleting}
+              onClick={() => void handleDeleteInvoice()}
+              disabled={deletingInvoice}
             >
-              {deleting ? 'Deleting...' : 'Delete Invoice'}
+              {deletingInvoice ? 'Deleting...' : 'Delete Invoice'}
             </button>
           </div>
         </div>
@@ -978,6 +971,7 @@ export default function InvoicePrintPage() {
         {emailSendError ? <p className={ui.errorText}>{emailSendError}</p> : null}
         {smsSendSuccess ? <div className={ui.successBanner}>{smsSendSuccess}</div> : null}
         {smsSendError ? <p className={ui.errorText}>{smsSendError}</p> : null}
+        {error ? <p className={ui.errorText}>{error}</p> : null}
 
         <article className={styles.document}>
           <header className={styles.header}>
@@ -1003,7 +997,7 @@ export default function InvoicePrintPage() {
             <div className={styles.metaCard}>
               <div className={styles.metaTitle}>Bill To</div>
               <div className={styles.metaValueStrong}>{invoice.customer_name}</div>
-              <div className={styles.metaValue}>{invoice.customer_phone}</div>
+              <div className={styles.metaValue}>{invoice.customer_phone || '-'}</div>
               <div className={styles.metaValue}>{invoice.customer_email || '-'}</div>
               {invoice.bill_to_address ? (
                 <div className={styles.metaValue}>{invoice.bill_to_address}</div>
@@ -1041,6 +1035,22 @@ export default function InvoicePrintPage() {
               ) : null}
             </div>
           </section>
+
+          {linkedJobs.length > 0 ? (
+            <section className={styles.notesSection}>
+              <div className={styles.sectionHeading}>Linked Jobs</div>
+              <div className={styles.paymentCard}>
+                {linkedJobs.map((job) => (
+                  <div key={job.id} className={styles.paymentRow}>
+                    <span>
+                      {job.job_number || 'Pending'} • {job.brand} {job.model}
+                    </span>
+                    <strong>{job.repair_performed || job.fault_description}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className={styles.tableSection}>
             <div className={styles.sectionHeading}>Invoice Items</div>

@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import styles from '../admin.module.css'
 import type { Customer, Invoice, RepairRequest } from '../types'
 import { formatDateTime, getStatusLabel, normalizeMoneyValue } from '../utils'
+import useDeleteRepairRequests from '../hooks/useDeleteRepairRequests'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,6 @@ export default function CustomerDetailPage() {
   const [error, setError] = useState('')
   const [creatingGroupedInvoice, setCreatingGroupedInvoice] = useState(false)
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([])
-  const [deleting, setDeleting] = useState(false)
 
   const [customerDraft, setCustomerDraft] = useState({
     full_name: '',
@@ -54,11 +54,24 @@ export default function CustomerDetailPage() {
   const [detailSaveState, setDetailSaveState] = useState<SaveState>('idle')
   const [notesSaveState, setNotesSaveState] = useState<SaveState>('idle')
 
+  const {
+    deleting,
+    deleteError,
+    deleteSingle,
+    deleteBulk,
+  } = useDeleteRepairRequests()
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     setCustomerId(params.get('id') || '')
   }, [])
+
+  useEffect(() => {
+    if (deleteError) {
+      setError(deleteError)
+    }
+  }, [deleteError])
 
   useEffect(() => {
     async function loadData() {
@@ -517,79 +530,50 @@ export default function CustomerDetailPage() {
 
     setSavedBriefly(setNotesSaveState)
   }
-async function deleteRepairRequests(jobIds: string[]) {
-  if (jobIds.length === 0) return
 
-  await cleanupInvoicesForDeletedJobs(jobIds)
-  await cleanupPhotosForDeletedJobs(jobIds)
+  async function deleteJob(jobId: string) {
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this job? This cannot be undone.'
+    )
+    if (!confirmed) return
 
-  const { error: deleteJobsError } = await supabase
-    .from('repair_requests')
-    .delete()
-    .in('id', jobIds)
+    setError('')
 
-  if (deleteJobsError) {
-    throw new Error(`Failed to delete repair request(s): ${deleteJobsError.message}`)
-  }
-}
+    const result = await deleteSingle(jobId)
 
-async function deleteJob(jobId: string) {
-  if (!window.confirm('Are you sure you want to delete this job? This cannot be undone.')) {
-    return
-  }
-
-  setDeleting(true)
-  setError('')
-
-  try {
-    await deleteRepairRequests([jobId])
-
-    setJobs((prev) => prev.filter((j) => j.id !== jobId))
-    setSelectedJobIds((prev) => prev.filter((id) => id !== jobId))
-
-    if (customerId) {
-      window.location.href = `/admin/customer?id=${customerId}`
+    if (!result.success) {
+      setError(result.error || 'Failed to delete job')
       return
     }
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to delete job')
-  } finally {
-    setDeleting(false)
+
+    setJobs((prev) => prev.filter((job) => job.id !== jobId))
+    setSelectedJobIds((prev) => prev.filter((id) => id !== jobId))
+    window.location.href = `/admin/customer?id=${customerId}`
   }
-}
 
-async function bulkDeleteJobs() {
-  if (selectedJobIds.length === 0) return
+  async function bulkDeleteJobs() {
+    if (selectedJobIds.length === 0) return
 
-  if (
-    !window.confirm(
+    const confirmed = window.confirm(
       `Are you sure you want to delete ${selectedJobIds.length} selected jobs? This cannot be undone.`
     )
-  ) {
-    return
-  }
+    if (!confirmed) return
 
-  setDeleting(true)
-  setError('')
+    setError('')
 
-  try {
     const idsToDelete = [...selectedJobIds]
+    const result = await deleteBulk(idsToDelete)
 
-    await deleteRepairRequests(idsToDelete)
-
-    setJobs((prev) => prev.filter((j) => !idsToDelete.includes(j.id)))
-    setSelectedJobIds([])
-
-    if (customerId) {
-      window.location.href = `/admin/customer?id=${customerId}`
+    if (!result.success) {
+      setError(result.error || 'Failed to delete selected jobs')
       return
     }
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to delete selected jobs')
-  } finally {
-    setDeleting(false)
+
+    setJobs((prev) => prev.filter((job) => !idsToDelete.includes(job.id)))
+    setSelectedJobIds([])
+    window.location.href = `/admin/customer?id=${customerId}`
   }
-}
+
   async function handleCreateGroupedInvoice() {
     if (!customerSummary) return
 
@@ -629,7 +613,9 @@ async function bulkDeleteJobs() {
     const referenceLines = selectedJobs.map((job) => {
       const device = [job.brand, job.model, job.device_type].filter(Boolean).join(' • ')
       const serial = job.serial_imei?.trim() ? ` | Serial/IMEI: ${job.serial_imei.trim()}` : ''
-      const repair = job.repair_performed?.trim() ? ` | Repair: ${job.repair_performed.trim()}` : ''
+      const repair = job.repair_performed?.trim()
+        ? ` | Repair: ${job.repair_performed.trim()}`
+        : ''
       return `${job.job_number || 'Pending'} | ${device}${serial}${repair}`
     })
 
@@ -668,7 +654,9 @@ async function bulkDeleteJobs() {
       repair_request_id: job.id,
     }))
 
-    const { error: linkError } = await supabase.from('invoice_repair_links').insert(linkRows)
+    const { error: linkError } = await supabase
+      .from('invoice_repair_links')
+      .insert(linkRows)
 
     if (linkError) {
       await supabase.from('invoices').delete().eq('id', insertedInvoice.id)
@@ -691,7 +679,9 @@ async function bulkDeleteJobs() {
       }
     })
 
-    const { error: itemError } = await supabase.from('invoice_items').insert(itemRows)
+    const { error: itemError } = await supabase
+      .from('invoice_items')
+      .insert(itemRows)
 
     if (itemError) {
       await supabase.from('invoice_repair_links').delete().eq('invoice_id', insertedInvoice.id)
@@ -954,7 +944,9 @@ async function bulkDeleteJobs() {
                   checked={propagateDetailChanges}
                   onChange={(e) => setPropagateDetailChanges(e.target.checked)}
                 />
-                <span>Also update linked jobs and invoices with preferred contact / billing address</span>
+                <span>
+                  Also update linked jobs and invoices with preferred contact / billing address
+                </span>
               </label>
             </div>
 
@@ -1161,7 +1153,9 @@ async function bulkDeleteJobs() {
                   <tr key={invoice.id}>
                     <td>{invoice.invoice_number}</td>
                     <td>
-                      <span className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
+                      >
                         {invoice.status.toUpperCase()}
                       </span>
                     </td>

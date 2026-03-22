@@ -12,7 +12,6 @@ export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
-
 export type SaveField =
   | 'status'
   | 'quote'
@@ -42,6 +41,7 @@ export type Customer = {
 
 export type RepairRequest = {
   id: string
+  customer_id: string | null
   job_number: string | null
   created_at: string
   full_name: string
@@ -57,8 +57,6 @@ export type RepairRequest = {
   preferred_contact: string | null
   internal_notes: string | null
   quoted_price: number | null
-customer_id: string | null
-
   parts_cost: number | null
   is_hidden: boolean | null
   fault_photo_url?: string | null
@@ -78,6 +76,7 @@ export type RepairRequestPhoto = {
 
 export type Invoice = {
   id: string
+  customer_id: string | null
   repair_request_id: string
   invoice_number: string
   status: InvoiceStatus
@@ -103,7 +102,6 @@ export type Invoice = {
   last_sms_message?: string | null
   created_at: string
   updated_at: string
-customer_id: string | null
 }
 
 export type InvoiceItem = {
@@ -122,21 +120,4 @@ export type InvoiceRepairLink = {
   invoice_id: string
   repair_request_id: string
   created_at: string
-}
-
-export function normalizeMoneyValue(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-
-  if (typeof value === 'string') {
-    const cleaned = value.trim().replace(/[^0-9.-]/g, '')
-    if (!cleaned) return null
-    const parsed = Number(cleaned)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-
-  return null
 }

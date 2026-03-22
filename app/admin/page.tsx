@@ -9,6 +9,7 @@ import useAdminInvoices from './hooks/useAdminInvoices'
 import useAdminArchiveActions from './hooks/useAdminArchiveActions'
 import useAdminDragDrop from './hooks/useAdminDragDrop'
 import useAdminDerivedState from './hooks/useAdminDerivedState'
+import useDeleteRepairRequests from './hooks/useDeleteRepairRequests'
 import type {
   RepairRequest,
   RepairStatus,
@@ -27,203 +28,16 @@ import JobCard from './components/JobCard'
 
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 
-const DASHBOARD_PREFS_KEY = 'admin_dashboard_prefs_v1'
-const DASHBOARD_RETURN_CONTEXT_KEY = 'admin_dashboard_return_context_v1'
-const DASHBOARD_RETURN_CONTEXT_MAX_AGE_MS = 1000 * 60 * 10
-
-const DEFAULT_COLLAPSED_COLUMNS: Record<RepairStatus, boolean> = {
-  new: true,
-  quoted: true,
-  approved: true,
-  in_progress: true,
-  ready: true,
-  closed: true,
-  rejected: true,
-  cancelled: true,
-}
-
-type DashboardPrefs = {
-  collapsedColumns: Record<RepairStatus, boolean>
-  viewMode: ViewMode
-  search: string
-  statusFilter: StatusFilter
-  archiveSort: SortMode
-  hiddenSort: SortMode
-  showHidden: boolean
-}
-
-type DashboardReturnContext = {
-  highlightedJobId: string | null
-  expandedJobIds: string[]
-  scrollY: number
-  savedAt: number
-}
-
-function getDefaultDashboardPrefs(): DashboardPrefs {
-  return {
-    collapsedColumns: DEFAULT_COLLAPSED_COLUMNS,
-    viewMode: 'board',
-    search: '',
-    statusFilter: 'all',
-    archiveSort: 'newest',
-    hiddenSort: 'newest',
-    showHidden: false,
-  }
-}
-
-function sanitizeCollapsedColumns(
-  value: unknown
-): Record<RepairStatus, boolean> {
-  const fallback = DEFAULT_COLLAPSED_COLUMNS
-
-  if (!value || typeof value !== 'object') return fallback
-
-  const source = value as Partial<Record<RepairStatus, boolean>>
-
-  return {
-    new: typeof source.new === 'boolean' ? source.new : fallback.new,
-    quoted: typeof source.quoted === 'boolean' ? source.quoted : fallback.quoted,
-    approved: typeof source.approved === 'boolean' ? source.approved : fallback.approved,
-    in_progress:
-      typeof source.in_progress === 'boolean' ? source.in_progress : fallback.in_progress,
-    ready: typeof source.ready === 'boolean' ? source.ready : fallback.ready,
-    closed: typeof source.closed === 'boolean' ? source.closed : fallback.closed,
-    rejected: typeof source.rejected === 'boolean' ? source.rejected : fallback.rejected,
-    cancelled: typeof source.cancelled === 'boolean' ? source.cancelled : fallback.cancelled,
-  }
-}
-
-function sanitizeViewMode(value: unknown): ViewMode {
-  return value === 'board' ||
-    value === 'list' ||
-    value === 'details' ||
-    value === 'tiles'
-    ? value
-    : 'board'
-}
-
-function sanitizeStatusFilter(value: unknown): StatusFilter {
-  if (value === 'all') return 'all'
-  return STATUSES.includes(value as StatusFilter) ? (value as StatusFilter) : 'all'
-}
-
-function sanitizeSortMode(value: unknown): SortMode {
-  return value === 'newest' ||
-    value === 'oldest' ||
-    value === 'customer' ||
-    value === 'job_number'
-    ? value
-    : 'newest'
-}
-
-function loadDashboardPrefs(): DashboardPrefs {
-  const defaults = getDefaultDashboardPrefs()
-
-  if (typeof window === 'undefined') return defaults
-
-  try {
-    const raw = localStorage.getItem(DASHBOARD_PREFS_KEY)
-    if (!raw) return defaults
-
-    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
-
-    return {
-      collapsedColumns: sanitizeCollapsedColumns(parsed.collapsedColumns),
-      viewMode: sanitizeViewMode(parsed.viewMode),
-      search: typeof parsed.search === 'string' ? parsed.search : defaults.search,
-      statusFilter: sanitizeStatusFilter(parsed.statusFilter),
-      archiveSort: sanitizeSortMode(parsed.archiveSort),
-      hiddenSort: sanitizeSortMode(parsed.hiddenSort),
-      showHidden: typeof parsed.showHidden === 'boolean' ? parsed.showHidden : defaults.showHidden,
-    }
-  } catch {
-    return defaults
-  }
-}
-
-function saveDashboardReturnContext(params: {
-  highlightedJobId: string | null
-  expandedJobs: Record<string, boolean>
-}) {
-  if (typeof window === 'undefined') return
-
-  try {
-    const expandedJobIds = Object.entries(params.expandedJobs)
-      .filter(([, isExpanded]) => isExpanded)
-      .map(([jobId]) => jobId)
-
-    const payload: DashboardReturnContext = {
-      highlightedJobId: params.highlightedJobId,
-      expandedJobIds,
-      scrollY: window.scrollY,
-      savedAt: Date.now(),
-    }
-
-    sessionStorage.setItem(DASHBOARD_RETURN_CONTEXT_KEY, JSON.stringify(payload))
-  } catch {
-    // ignore
-  }
-}
-
-function loadDashboardReturnContext(): DashboardReturnContext | null {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const raw = sessionStorage.getItem(DASHBOARD_RETURN_CONTEXT_KEY)
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw) as Partial<DashboardReturnContext>
-
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      typeof parsed.savedAt !== 'number' ||
-      !Array.isArray(parsed.expandedJobIds)
-    ) {
-      return null
-    }
-
-    if (Date.now() - parsed.savedAt > DASHBOARD_RETURN_CONTEXT_MAX_AGE_MS) {
-      sessionStorage.removeItem(DASHBOARD_RETURN_CONTEXT_KEY)
-      return null
-    }
-
-    return {
-      highlightedJobId:
-        typeof parsed.highlightedJobId === 'string' ? parsed.highlightedJobId : null,
-      expandedJobIds: parsed.expandedJobIds.filter(
-        (value): value is string => typeof value === 'string'
-      ),
-      scrollY: typeof parsed.scrollY === 'number' ? parsed.scrollY : 0,
-      savedAt: parsed.savedAt,
-    }
-  } catch {
-    return null
-  }
-}
-
-function clearDashboardReturnContext() {
-  if (typeof window === 'undefined') return
-
-  try {
-    sessionStorage.removeItem(DASHBOARD_RETURN_CONTEXT_KEY)
-  } catch {
-    // ignore
-  }
-}
-
 export default function AdminPage() {
-  const initialPrefs = loadDashboardPrefs()
-
   const [authChecked, setAuthChecked] = useState(false)
   const [isAdminSignedIn, setIsAdminSignedIn] = useState(false)
 
-  const [showHidden, setShowHidden] = useState(initialPrefs.showHidden)
+  const [showHidden, setShowHidden] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
 
-  const [search, setSearch] = useState(initialPrefs.search)
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialPrefs.statusFilter)
-  const [viewMode, setViewMode] = useState<ViewMode>(initialPrefs.viewMode)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('board')
   const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({})
 
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
@@ -232,14 +46,20 @@ export default function AdminPage() {
   const [selectedHiddenJobIds, setSelectedHiddenJobIds] = useState<string[]>([])
   const [bulkBusy, setBulkBusy] = useState(false)
 
-  const [archiveSort, setArchiveSort] = useState<SortMode>(initialPrefs.archiveSort)
-  const [hiddenSort, setHiddenSort] = useState<SortMode>(initialPrefs.hiddenSort)
+  const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
+  const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
 
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>(
-    initialPrefs.collapsedColumns
-  )
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
+    new: false,
+    quoted: false,
+    approved: false,
+    in_progress: false,
+    ready: false,
+    closed: false,
+    rejected: false,
+    cancelled: false,
+  })
 
-  const hasRestoredReturnContextRef = useRef(false)
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const { saveStates, setFieldState, setFieldSaved } = useAdminSaveStates()
@@ -265,6 +85,12 @@ export default function AdminPage() {
     normalizeJob,
     normalizeInvoice,
   } = useAdminData()
+
+  const {
+    deleting: deletingJobs,
+    deleteError: deleteJobsError,
+    deleteSingle,
+  } = useDeleteRepairRequests()
 
   const {
     invoiceActionStates,
@@ -297,7 +123,6 @@ export default function AdminPage() {
   const {
     hideJob,
     unhideJob,
-    deleteSingleJob,
     bulkHideArchiveJobs,
     bulkUnhideHiddenJobs,
     bulkUpdateArchiveStatus,
@@ -323,13 +148,11 @@ export default function AdminPage() {
     setBulkBusy,
     setError,
     normalizeJob,
-    loadJobs,
-    loadInvoices,
-    loadInvoiceItems,
   })
 
   const {
     filteredJobs,
+    filteredHiddenJobs,
     jobsByStatus,
     sortedArchiveJobsByStatus,
     sortedHiddenJobs,
@@ -343,6 +166,12 @@ export default function AdminPage() {
     archiveSort,
     hiddenSort,
   })
+
+  useEffect(() => {
+    if (deleteJobsError) {
+      setError(deleteJobsError)
+    }
+  }, [deleteJobsError, setError])
 
   useEffect(() => {
     async function checkAuth() {
@@ -364,59 +193,6 @@ export default function AdminPage() {
     if (!authChecked || !isAdminSignedIn) return
     void loadAllData()
   }, [authChecked, isAdminSignedIn, loadAllData])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const prefs: DashboardPrefs = {
-      collapsedColumns,
-      viewMode,
-      search,
-      statusFilter,
-      archiveSort,
-      hiddenSort,
-      showHidden,
-    }
-
-    try {
-      localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(prefs))
-    } catch {
-      // ignore storage failures
-    }
-  }, [collapsedColumns, viewMode, search, statusFilter, archiveSort, hiddenSort, showHidden])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    saveDashboardReturnContext({
-      highlightedJobId,
-      expandedJobs,
-    })
-  }, [highlightedJobId, expandedJobs])
-
-  function resetDashboardLayout() {
-    const defaults = getDefaultDashboardPrefs()
-    setCollapsedColumns(defaults.collapsedColumns)
-    setViewMode(defaults.viewMode)
-    setSearch(defaults.search)
-    setStatusFilter(defaults.statusFilter)
-    setArchiveSort(defaults.archiveSort)
-    setHiddenSort(defaults.hiddenSort)
-    setShowHidden(defaults.showHidden)
-
-    try {
-      localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(defaults))
-    } catch {
-      // ignore
-    }
-  }
-
-  function rememberDashboardContextBeforeLeave() {
-    saveDashboardReturnContext({
-      highlightedJobId,
-      expandedJobs,
-    })
-  }
 
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
@@ -472,6 +248,7 @@ export default function AdminPage() {
     const { data, error } = await supabase
       .from('repair_requests')
       .insert({
+        customer_id: sourceJob.customer_id ?? null,
         job_number: null,
         full_name: sourceJob.full_name,
         phone: sourceJob.phone,
@@ -492,6 +269,7 @@ export default function AdminPage() {
       })
       .select(`
         id,
+        customer_id,
         job_number,
         created_at,
         full_name,
@@ -541,6 +319,44 @@ export default function AdminPage() {
     }, 150)
   }
 
+  async function deleteJob(jobId: string) {
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this job? This cannot be undone.'
+    )
+    if (!confirmed) return
+
+    setError('')
+
+    const removedInvoice = invoicesByJobId[jobId] || null
+    const result = await deleteSingle(jobId)
+
+    if (!result.success) {
+      setError(result.error || 'Failed to delete job')
+      return
+    }
+
+    setJobs((prev) => prev.filter((job) => job.id !== jobId))
+    setHiddenJobs((prev) => prev.filter((job) => job.id !== jobId))
+
+    setInvoicesByJobId((prev) => {
+      const next = { ...prev }
+      delete next[jobId]
+      return next
+    })
+
+    if (removedInvoice) {
+      setInvoiceItemsByInvoiceId((prev) => {
+        const next = { ...prev }
+        delete next[removedInvoice.id]
+        return next
+      })
+    }
+
+    if (highlightedJobId === jobId) {
+      setHighlightedJobId(null)
+    }
+  }
+
   async function updateStatus(id: string, newStatus: RepairStatus) {
     const existingJob =
       jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
@@ -554,7 +370,9 @@ export default function AdminPage() {
 
     setFieldState(id, 'status', 'saving')
 
-    setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job)))
+    setJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
+    )
     setHiddenJobs((prev) =>
       prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
     )
@@ -573,10 +391,14 @@ export default function AdminPage() {
     }
 
     setJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, status: data.status as RepairStatus } : job))
+      prev.map((job) =>
+        job.id === id ? { ...job, status: data.status as RepairStatus } : job
+      )
     )
     setHiddenJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, status: data.status as RepairStatus } : job))
+      prev.map((job) =>
+        job.id === id ? { ...job, status: data.status as RepairStatus } : job
+      )
     )
 
     setFieldSaved(id, 'status')
@@ -689,7 +511,8 @@ export default function AdminPage() {
         job.id === id
           ? {
               ...job,
-              quoted_price: typeof data?.quoted_price === 'number' ? data.quoted_price : null,
+              quoted_price:
+                typeof data?.quoted_price === 'number' ? data.quoted_price : null,
             }
           : job
       )
@@ -700,7 +523,8 @@ export default function AdminPage() {
         job.id === id
           ? {
               ...job,
-              quoted_price: typeof data?.quoted_price === 'number' ? data.quoted_price : null,
+              quoted_price:
+                typeof data?.quoted_price === 'number' ? data.quoted_price : null,
             }
           : job
       )
@@ -730,7 +554,8 @@ export default function AdminPage() {
         job.id === id
           ? {
               ...job,
-              parts_cost: typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+              parts_cost:
+                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
             }
           : job
       )
@@ -741,7 +566,8 @@ export default function AdminPage() {
         job.id === id
           ? {
               ...job,
-              parts_cost: typeof data?.parts_cost === 'number' ? data.parts_cost : null,
+              parts_cost:
+                typeof data?.parts_cost === 'number' ? data.parts_cost : null,
             }
           : job
       )
@@ -838,7 +664,9 @@ export default function AdminPage() {
     }
 
     setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
-    setHiddenJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
+    setHiddenJobs((prev) =>
+      prev.map((job) => (job.id === id ? { ...job, ...patch } : job))
+    )
 
     setFieldSaved(id, field)
     return true
@@ -860,84 +688,31 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (loading) return
-    if (hasRestoredReturnContextRef.current) return
 
     const params = new URLSearchParams(window.location.search)
-    const highlightJobFromUrl = params.get('highlightJob')
+    const highlightJob = params.get('highlightJob')
+    if (!highlightJob) return
 
-    if (highlightJobFromUrl) {
-      hasRestoredReturnContextRef.current = true
-
-      setHighlightedJobId(highlightJobFromUrl)
-      setExpandedJobs((prev) => ({
-        ...prev,
-        [highlightJobFromUrl]: true,
-      }))
-
-      window.setTimeout(() => {
-        const el = jobRefs.current[highlightJobFromUrl]
-        if (el) {
-          el.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-          })
-        }
-      }, 180)
-
-      const nextUrl = new URL(window.location.href)
-      nextUrl.searchParams.delete('highlightJob')
-      window.history.replaceState({}, '', nextUrl.toString())
-      return
-    }
-
-    const context = loadDashboardReturnContext()
-    if (!context) {
-      hasRestoredReturnContextRef.current = true
-      return
-    }
-
-    const allJobIds = new Set([...jobs.map((job) => job.id), ...hiddenJobs.map((job) => job.id)])
-
-    if (context.highlightedJobId && !allJobIds.has(context.highlightedJobId)) {
-      clearDashboardReturnContext()
-      hasRestoredReturnContextRef.current = true
-      return
-    }
-
-    if (context.expandedJobIds.length > 0) {
-      setExpandedJobs((prev) => {
-        const next = { ...prev }
-        for (const jobId of context.expandedJobIds) {
-          if (allJobIds.has(jobId)) next[jobId] = true
-        }
-        return next
-      })
-    }
-
-    if (context.highlightedJobId) {
-      setHighlightedJobId(context.highlightedJobId)
-    }
-
-    hasRestoredReturnContextRef.current = true
+    setHighlightedJobId(highlightJob)
+    setExpandedJobs((prev) => ({
+      ...prev,
+      [highlightJob]: true,
+    }))
 
     window.setTimeout(() => {
-      if (context.highlightedJobId) {
-        const el = jobRefs.current[context.highlightedJobId]
-        if (el) {
-          el.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-          })
-          return
-        }
+      const el = jobRefs.current[highlightJob]
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
       }
+    }, 150)
 
-      window.scrollTo({
-        top: context.scrollY || 0,
-        behavior: 'smooth',
-      })
-    }, 180)
-  }, [loading, jobs, hiddenJobs])
+    const nextUrl = new URL(window.location.href)
+    nextUrl.searchParams.delete('highlightJob')
+    window.history.replaceState({}, '', nextUrl.toString())
+  }, [loading])
 
   if (!authChecked) {
     return (
@@ -976,26 +751,17 @@ export default function AdminPage() {
               alignItems: 'center',
             }}
           >
-            <Link
-              href="/admin/jobs/new"
-              className={styles.viewButton}
-              onClick={rememberDashboardContextBeforeLeave}
-            >
+            <Link href="/admin/jobs/new" className={styles.viewButton}>
               New Job
             </Link>
-            <Link
-              href="/admin/invoices"
-              className={styles.viewButton}
-              onClick={rememberDashboardContextBeforeLeave}
-            >
+            <Link href="/admin/invoices" className={styles.viewButton}>
               View Invoices
             </Link>
-            <Link
-              href="/admin/customers"
-              className={styles.viewButton}
-              onClick={rememberDashboardContextBeforeLeave}
-            >
+            <Link href="/admin/customers" className={styles.viewButton}>
               Customers
+            </Link>
+            <Link href="/admin/stats" className={styles.viewButton}>
+              Stats
             </Link>
           </div>
 
@@ -1035,15 +801,10 @@ export default function AdminPage() {
               Refresh
             </button>
 
-            <button type="button" onClick={resetDashboardLayout} className={styles.viewButton}>
-              Reset Layout
-            </button>
-
             <button
               type="button"
               className={styles.viewButton}
               onClick={async () => {
-                clearDashboardReturnContext()
                 await supabase.auth.signOut()
                 window.location.href = '/admin/login'
               }}
@@ -1076,8 +837,8 @@ export default function AdminPage() {
       </div>
 
       <div className={styles.statsBar}>
-        Showing <strong>{filteredJobs.length}</strong> visible jobs of <strong>{jobs.length}</strong>{' '}
-        active records
+        Showing <strong>{filteredJobs.length}</strong> visible jobs of{' '}
+        <strong>{jobs.length}</strong> active records
       </div>
 
       {loading && <p className={styles.message}>Loading jobs...</p>}
@@ -1106,7 +867,9 @@ export default function AdminPage() {
                     </span>
 
                     <div className={styles.columnHeaderActions}>
-                      <span className={styles.columnCount}>{jobsByStatus[status]?.length || 0}</span>
+                      <span className={styles.columnCount}>
+                        {jobsByStatus[status]?.length || 0}
+                      </span>
                       <button
                         type="button"
                         className={styles.columnToggleButton}
@@ -1125,7 +888,9 @@ export default function AdminPage() {
                     ) : (
                       (jobsByStatus[status] || []).map((job) => {
                         const invoice = invoicesByJobId[job.id] ?? null
-                        const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
+                        const invoiceItems = invoice
+                          ? invoiceItemsByInvoiceId[invoice.id] || []
+                          : []
 
                         return (
                           <JobCard
@@ -1174,6 +939,7 @@ export default function AdminPage() {
                             onDuplicateJob={duplicateJob}
                             onHideJob={hideJob}
                             onUnhideJob={unhideJob}
+                            onDeleteJob={deleteJob}
                           />
                         )
                       })
@@ -1210,7 +976,9 @@ export default function AdminPage() {
               <div className={styles.bulkBarActions}>
                 <button
                   type="button"
-                  className={`${styles.actionButton} ${showHidden ? styles.viewButtonActive : ''}`}
+                  className={`${styles.actionButton} ${
+                    showHidden ? styles.viewButtonActive : ''
+                  }`}
                   onClick={() => setShowHidden((prev) => !prev)}
                 >
                   {showHidden ? 'Hide Hidden Jobs' : 'Show Hidden Jobs'}
@@ -1319,7 +1087,9 @@ export default function AdminPage() {
                       ) : (
                         (sortedArchiveJobsByStatus[status] || []).map((job) => {
                           const invoice = invoicesByJobId[job.id] ?? null
-                          const invoiceItems = invoice ? invoiceItemsByInvoiceId[invoice.id] || [] : []
+                          const invoiceItems = invoice
+                            ? invoiceItemsByInvoiceId[invoice.id] || []
+                            : []
 
                           return (
                             <JobCard
@@ -1368,6 +1138,7 @@ export default function AdminPage() {
                               onToggleSelected={toggleArchiveSelected}
                               onHideJob={hideJob}
                               onUnhideJob={unhideJob}
+                              onDeleteJob={deleteJob}
                             />
                           )
                         })
@@ -1411,11 +1182,24 @@ export default function AdminPage() {
                 <strong>Quote:</strong> {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
               </p>
               <p className={styles.tileText}>
-                <strong>Parts Cost:</strong> {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
+                <strong>Parts:</strong> {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
               </p>
               <p className={styles.tileText}>
                 <strong>Invoice:</strong> {invoicesByJobId[job.id]?.invoice_number || '-'}
               </p>
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  disabled={deletingJobs}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void deleteJob(job.id)
+                  }}
+                >
+                  {deletingJobs ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1432,9 +1216,10 @@ export default function AdminPage() {
                 <th>Device</th>
                 <th>Status</th>
                 <th>Quote</th>
-                <th>Parts Cost</th>
+                <th>Parts</th>
                 <th>Invoice</th>
                 <th>Booked In</th>
+                <th>Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -1459,6 +1244,19 @@ export default function AdminPage() {
                   <td>{job.parts_cost != null ? `$${job.parts_cost}` : '-'}</td>
                   <td>{invoicesByJobId[job.id]?.invoice_number || '-'}</td>
                   <td>{formatDateTime(job.created_at)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      disabled={deletingJobs}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void deleteJob(job.id)
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1513,6 +1311,7 @@ export default function AdminPage() {
                 onDuplicateJob={duplicateJob}
                 onHideJob={hideJob}
                 onUnhideJob={unhideJob}
+                onDeleteJob={deleteJob}
               />
             )
           })}
@@ -1627,7 +1426,7 @@ export default function AdminPage() {
                     onDuplicateJob={duplicateJob}
                     onHideJob={hideJob}
                     onUnhideJob={unhideJob}
-                    onDeleteJob={deleteSingleJob}
+                    onDeleteJob={deleteJob}
                   />
                 )
               })}

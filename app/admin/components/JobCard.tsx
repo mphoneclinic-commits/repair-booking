@@ -1,14 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import styles from '../admin.module.css'
 import type {
   Invoice,
   InvoiceItem,
   InvoiceStatus,
   RepairRequest,
-  RepairRequestPhoto,
   RepairStatus,
   SaveField,
   SaveState,
@@ -16,26 +14,9 @@ import type {
 import {
   formatDateTime,
   getStatusLabel,
-  normalizePhone,
-  normalizeQuoteInput,
+  normalizeMoneyValue,
 } from '../utils'
 import SaveIndicator from './SaveIndicator'
-import InvoicePanel from './InvoicePanel'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-const MAX_PHOTOS = 10
-const MAX_PHOTO_SIZE_MB = 8
-const ALLOWED_IMAGE_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-]
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
 type InvoiceItemsActionState = 'idle' | 'saving' | 'error'
@@ -44,11 +25,11 @@ type Props = {
   job: RepairRequest
   expanded: boolean
   toggleExpanded: (jobId: string) => void
-  updateStatus: (id: string, newStatus: RepairStatus) => Promise<void>
-  updateQuote: (id: string, price: number | null) => Promise<boolean>
-  updatePartsCost: (id: string, cost: number | null) => Promise<boolean>
-  updateNotes: (id: string, notes: string) => Promise<boolean>
-  updateRepairPerformed: (id: string, value: string) => Promise<boolean>
+  updateStatus: (id: string, newStatus: RepairStatus) => Promise<void> | void
+  updateQuote: (id: string, price: number | null) => Promise<boolean> | boolean
+  updatePartsCost: (id: string, cost: number | null) => Promise<boolean> | boolean
+  updateNotes: (id: string, notes: string) => Promise<boolean> | boolean
+  updateRepairPerformed: (id: string, repairPerformed: string) => Promise<boolean> | boolean
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -66,46 +47,73 @@ type Props = {
       >
     >,
     field: 'job_number' | 'customer' | 'device'
-  ) => Promise<boolean>
+  ) => Promise<boolean> | boolean
+  setFieldState: (jobId: string, field: SaveField, state: SaveState) => void
+
+  repairPerformedSaveState: SaveState
   statusSaveState: SaveState
   quoteSaveState: SaveState
   partsCostSaveState: SaveState
   notesSaveState: SaveState
-  repairPerformedSaveState: SaveState
   jobNumberSaveState: SaveState
   customerSaveState: SaveState
   deviceSaveState: SaveState
-  setFieldState: (jobId: string, field: SaveField, state: SaveState) => void
-  draggableEnabled?: boolean
-  isDragging?: boolean
-  onDragStart?: (jobId: string) => void
-  onDragEnd?: () => void
-  invoice: Invoice | null
-  invoiceItems: InvoiceItem[]
-  invoiceActionState: InvoiceActionState
-  invoiceItemsActionState: InvoiceItemsActionState
-  createInvoiceForJob: (job: RepairRequest) => Promise<void>
-  updateInvoiceStatusForJob: (invoiceId: string, status: InvoiceStatus) => Promise<void>
-  addInvoiceItemForInvoice: (invoiceId: string) => Promise<void>
-  updateInvoiceItemForInvoice: (
+
+  invoice?: Invoice | null
+  invoiceItems?: InvoiceItem[]
+  invoiceActionState?: InvoiceActionState
+  invoiceItemsActionState?: InvoiceItemsActionState
+  createInvoiceForJob?: (job: RepairRequest) => Promise<void> | void
+  updateInvoiceStatusForJob?: (
+    jobId: string,
+    status: InvoiceStatus
+  ) => Promise<void> | void
+  addInvoiceItemForInvoice?: (
+    invoiceId: string,
+    payload?: Partial<InvoiceItem>
+  ) => Promise<void> | void
+  updateInvoiceItemForInvoice?: (
     invoiceId: string,
     itemId: string,
-    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
-  ) => Promise<void>
-  deleteInvoiceItemForInvoice: (invoiceId: string, itemId: string) => Promise<void>
-  removeInvoiceForJob: (job: RepairRequest) => Promise<void>
-  highlighted?: boolean
-  cardRef?: (el: HTMLDivElement | null) => void
-  onSelectCard?: (jobId: string) => void
+    patch: Partial<InvoiceItem>
+  ) => Promise<void> | void
+  deleteInvoiceItemForInvoice?: (
+    invoiceId: string,
+    itemId: string
+  ) => Promise<void> | void
+  removeInvoiceForJob?: (jobId: string) => Promise<void> | void
+
   compact?: boolean
-  onDuplicateJob?: (job: RepairRequest) => Promise<void>
   selectable?: boolean
   selected?: boolean
   onToggleSelected?: (jobId: string) => void
-  onHideJob?: (jobId: string) => Promise<void>
-  onUnhideJob?: (jobId: string) => Promise<void>
-  onDeleteJob?: (jobId: string) => Promise<void>
+
+  highlighted?: boolean
+  cardRef?: (el: HTMLDivElement | null) => void
+  onSelectCard?: (jobId: string) => void
+
+  draggableEnabled?: boolean
+  isDragging?: boolean
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>, jobId: string) => void
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
+
+  onDuplicateJob?: (job: RepairRequest) => Promise<void> | void
+  onHideJob?: (jobId: string) => Promise<void> | void
+  onUnhideJob?: (jobId: string) => Promise<void> | void
+  onDeleteJob?: (jobId: string) => Promise<void> | void
 }
+
+const STATUS_OPTIONS: RepairStatus[] = [
+  'new',
+  'quoted',
+  'approved',
+  'in_progress',
+  'ready',
+  'closed',
+  'rejected',
+  'cancelled',
+]
+
 export default function JobCard({
   job,
   expanded,
@@ -113,1472 +121,948 @@ export default function JobCard({
   updateStatus,
   updateQuote,
   updatePartsCost,
-  partsCostSaveState,
   updateNotes,
   updateRepairPerformed,
   updateJobBasics,
+  setFieldState,
+  repairPerformedSaveState,
   statusSaveState,
   quoteSaveState,
+  partsCostSaveState,
   notesSaveState,
-  repairPerformedSaveState,
   jobNumberSaveState,
   customerSaveState,
   deviceSaveState,
-  setFieldState,
-  draggableEnabled = false,
-  isDragging = false,
-  onDragStart,
-  onDragEnd,
-  invoice,
-  invoiceItems,
-  invoiceActionState,
-  invoiceItemsActionState,
+  invoice = null,
+  invoiceItems = [],
+  invoiceActionState = 'idle',
+  invoiceItemsActionState = 'idle',
   createInvoiceForJob,
   updateInvoiceStatusForJob,
   addInvoiceItemForInvoice,
   updateInvoiceItemForInvoice,
   deleteInvoiceItemForInvoice,
   removeInvoiceForJob,
-  highlighted = false,
-  cardRef,
-  onSelectCard,
   compact = false,
-  onDuplicateJob,
   selectable = false,
   selected = false,
   onToggleSelected,
+  highlighted = false,
+  cardRef,
+  onSelectCard,
+  draggableEnabled = false,
+  isDragging = false,
+  onDragStart,
+  onDragEnd,
+  onDuplicateJob,
   onHideJob,
   onUnhideJob,
-onDeleteJob,
+  onDeleteJob,
 }: Props) {
-  const [localQuote, setLocalQuote] = useState(job.quoted_price?.toString() ?? '')
-  const [localPartsCost, setLocalPartsCost] = useState(job.parts_cost?.toString() ?? '')
-  const [localNotes, setLocalNotes] = useState(job.internal_notes ?? '')
-  const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed ?? '')
-  const [localJobNumber, setLocalJobNumber] = useState(job.job_number ?? '')
-  const [customerDraft, setCustomerDraft] = useState({
-    full_name: job.full_name,
-    phone: job.phone,
-    email: job.email ?? '',
-  })
-  const [deviceDraft, setDeviceDraft] = useState({
-    brand: job.brand,
-    model: job.model,
-    device_type: job.device_type ?? '',
-    serial_imei: job.serial_imei ?? '',
-    fault_description: job.fault_description,
-  })
-
-  const [invoicePanelOpen, setInvoicePanelOpen] = useState(false)
-  const [jobPhotos, setJobPhotos] = useState<RepairRequestPhoto[]>([])
-  const [loadingPhotos, setLoadingPhotos] = useState(false)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const [uploadError, setUploadError] = useState('')
-  const [photoSuccess, setPhotoSuccess] = useState('')
-  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null)
-
-  const [smsTargetPhone, setSmsTargetPhone] = useState(normalizePhone(job.phone))
-  const [smsMessage, setSmsMessage] = useState('')
-  const [sendingSms, setSendingSms] = useState(false)
-  const [smsError, setSmsError] = useState('')
-  const [smsSuccess, setSmsSuccess] = useState('')
+  const [localJobNumber, setLocalJobNumber] = useState(job.job_number || '')
+  const [localFullName, setLocalFullName] = useState(job.full_name || '')
+  const [localPhone, setLocalPhone] = useState(job.phone || '')
+  const [localEmail, setLocalEmail] = useState(job.email || '')
+  const [localBrand, setLocalBrand] = useState(job.brand || '')
+  const [localModel, setLocalModel] = useState(job.model || '')
+  const [localDeviceType, setLocalDeviceType] = useState(job.device_type || '')
+  const [localSerialImei, setLocalSerialImei] = useState(job.serial_imei || '')
+  const [localFaultDescription, setLocalFaultDescription] = useState(job.fault_description || '')
+  const [localQuote, setLocalQuote] = useState(
+    job.quoted_price != null ? String(job.quoted_price) : ''
+  )
+  const [localPartsCost, setLocalPartsCost] = useState(
+    job.parts_cost != null ? String(job.parts_cost) : ''
+  )
+  const [localNotes, setLocalNotes] = useState(job.internal_notes || '')
+  const [localRepairPerformed, setLocalRepairPerformed] = useState(job.repair_performed || '')
 
   const quoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const partsCostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const partsCostFocusedRef = useRef(false)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repairPerformedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const jobNumberTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const customerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const deviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const quoteFocusedRef = useRef(false)
-  const notesFocusedRef = useRef(false)
-  const repairPerformedFocusedRef = useRef(false)
-  const jobNumberFocusedRef = useRef(false)
-  const customerFocusedRef = useRef(false)
-  const deviceFocusedRef = useRef(false)
 
   useEffect(() => {
-    if (invoice) {
-      setInvoicePanelOpen(true)
-    }
-  }, [invoice])
-
-  useEffect(() => {
-    setSmsTargetPhone(normalizePhone(job.phone))
-  }, [job.phone])
-
-  useEffect(() => {
-    if (!quoteFocusedRef.current) setLocalQuote(job.quoted_price?.toString() ?? '')
-  }, [job.quoted_price])
-
-  useEffect(() => {
-    if (!partsCostFocusedRef.current) setLocalPartsCost(job.parts_cost?.toString() ?? '')
-  }, [job.parts_cost])
-
-  useEffect(() => {
-    if (!notesFocusedRef.current) setLocalNotes(job.internal_notes ?? '')
-  }, [job.internal_notes])
-
-  useEffect(() => {
-    if (!repairPerformedFocusedRef.current) {
-      setLocalRepairPerformed(job.repair_performed ?? '')
-    }
-  }, [job.repair_performed])
-
-  useEffect(() => {
-    if (!jobNumberFocusedRef.current) setLocalJobNumber(job.job_number ?? '')
+    setLocalJobNumber(job.job_number || '')
   }, [job.job_number])
 
   useEffect(() => {
-    if (!customerFocusedRef.current) {
-      setCustomerDraft({
-        full_name: job.full_name,
-        phone: job.phone,
-        email: job.email ?? '',
-      })
-    }
-  }, [job.full_name, job.phone, job.email])
+    setLocalFullName(job.full_name || '')
+  }, [job.full_name])
 
   useEffect(() => {
-    if (!deviceFocusedRef.current) {
-      setDeviceDraft({
-        brand: job.brand,
-        model: job.model,
-        device_type: job.device_type ?? '',
-        serial_imei: job.serial_imei ?? '',
-        fault_description: job.fault_description,
-      })
-    }
-  }, [job.brand, job.model, job.device_type, job.serial_imei, job.fault_description])
+    setLocalPhone(job.phone || '')
+  }, [job.phone])
+
+  useEffect(() => {
+    setLocalEmail(job.email || '')
+  }, [job.email])
+
+  useEffect(() => {
+    setLocalBrand(job.brand || '')
+  }, [job.brand])
+
+  useEffect(() => {
+    setLocalModel(job.model || '')
+  }, [job.model])
+
+  useEffect(() => {
+    setLocalDeviceType(job.device_type || '')
+  }, [job.device_type])
+
+  useEffect(() => {
+    setLocalSerialImei(job.serial_imei || '')
+  }, [job.serial_imei])
+
+  useEffect(() => {
+    setLocalFaultDescription(job.fault_description || '')
+  }, [job.fault_description])
+
+  useEffect(() => {
+    setLocalQuote(job.quoted_price != null ? String(job.quoted_price) : '')
+  }, [job.quoted_price])
+
+  useEffect(() => {
+    setLocalPartsCost(job.parts_cost != null ? String(job.parts_cost) : '')
+  }, [job.parts_cost])
+
+  useEffect(() => {
+    setLocalNotes(job.internal_notes || '')
+  }, [job.internal_notes])
+
+  useEffect(() => {
+    setLocalRepairPerformed(job.repair_performed || '')
+  }, [job.repair_performed])
 
   useEffect(() => {
     return () => {
       if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
+      if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
       if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
       if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
-      if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
-      if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
-      if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
-if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
     }
   }, [])
 
-  useEffect(() => {
-    if (!expanded) return
-    void loadJobPhotos()
-  }, [expanded, job.id])
+  const isArchived =
+    job.status === 'closed' || job.status === 'rejected' || job.status === 'cancelled'
 
-  async function loadJobPhotos() {
-    setLoadingPhotos(true)
-    setUploadError('')
+  const totalInvoiceQty = useMemo(() => {
+    return invoiceItems.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)
+  }, [invoiceItems])
 
-    const { data, error } = await supabase
-      .from('repair_request_photos')
-      .select(`
-        id,
-        repair_request_id,
-        photo_url,
-        storage_path,
-        sort_order,
-        created_at
-      `)
-      .eq('repair_request_id', job.id)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      setUploadError('Failed to load photos: ' + error.message)
-      setLoadingPhotos(false)
-      return
-    }
-
-    const normalized = ((data || []) as RepairRequestPhoto[]).map((photo) => ({
-      ...photo,
-      sort_order: Number(photo.sort_order ?? 0),
-      storage_path: photo.storage_path ?? null,
-    }))
-
-    setJobPhotos(normalized)
-    setLoadingPhotos(false)
+  async function flushQuote(nextValue?: string) {
+    const raw = nextValue ?? localQuote
+    const normalized = normalizeMoneyValue(raw)
+    await updateQuote(job.id, normalized)
   }
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] || null
-
-    if (!file) {
-      setPhotoFile(null)
-      return
-    }
-
-    const maxBytes = MAX_PHOTO_SIZE_MB * 1024 * 1024
-
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setUploadError('Photo must be JPG, PNG, WEBP, HEIC or HEIF.')
-      setPhotoFile(null)
-      return
-    }
-
-    if (file.size > maxBytes) {
-      setUploadError(`Photo must be smaller than ${MAX_PHOTO_SIZE_MB}MB.`)
-      setPhotoFile(null)
-      return
-    }
-
-    if (jobPhotos.length >= MAX_PHOTOS) {
-      setUploadError(`Maximum ${MAX_PHOTOS} photos allowed for one job.`)
-      setPhotoFile(null)
-      return
-    }
-
-    setUploadError('')
-    setPhotoSuccess('')
-    setPhotoFile(file)
+  async function flushPartsCost(nextValue?: string) {
+    const raw = nextValue ?? localPartsCost
+    const normalized = normalizeMoneyValue(raw)
+    await updatePartsCost(job.id, normalized)
   }
 
-  async function handlePhotoUpload() {
-    if (!photoFile) return
-
-    if (jobPhotos.length >= MAX_PHOTOS) {
-      setUploadError(`Maximum ${MAX_PHOTOS} photos allowed for one job.`)
-      return
-    }
-
-    setUploadingPhoto(true)
-    setUploadError('')
-    setPhotoSuccess('')
-
-    const fileExt = photoFile.name.split('.').pop() || 'jpg'
-    const fileName = `${job.id}-${Date.now()}.${fileExt}`
-    const filePath = `fault-photos/${fileName}`
-
-    const { error: storageUploadError } = await supabase.storage
-      .from('fault-photos')
-      .upload(filePath, photoFile)
-
-    if (storageUploadError) {
-      setUploadError('Photo upload failed: ' + storageUploadError.message)
-      setUploadingPhoto(false)
-      return
-    }
-
-    const { data: urlData } = supabase.storage.from('fault-photos').getPublicUrl(filePath)
-    const publicUrl = urlData.publicUrl
-    const nextSortOrder =
-      jobPhotos.length > 0 ? Math.max(...jobPhotos.map((photo) => photo.sort_order)) + 1 : 0
-
-    const { data: insertedPhoto, error: insertError } = await supabase
-      .from('repair_request_photos')
-      .insert({
-        repair_request_id: job.id,
-        photo_url: publicUrl,
-        storage_path: filePath,
-        sort_order: nextSortOrder,
-      })
-      .select(`
-        id,
-        repair_request_id,
-        photo_url,
-        storage_path,
-        sort_order,
-        created_at
-      `)
-      .single()
-
-    if (insertError || !insertedPhoto) {
-      setUploadError('Failed to save photo record: ' + (insertError?.message || 'Unknown error'))
-      setUploadingPhoto(false)
-      return
-    }
-
-    const normalizedPhoto: RepairRequestPhoto = {
-      ...(insertedPhoto as RepairRequestPhoto),
-      storage_path: insertedPhoto.storage_path ?? null,
-      sort_order: Number(insertedPhoto.sort_order ?? 0),
-    }
-
-    setJobPhotos((prev) => [...prev, normalizedPhoto])
-    setPhotoFile(null)
-    setUploadingPhoto(false)
-    setPhotoSuccess('Photo uploaded.')
+  async function flushNotes(nextValue?: string) {
+    await updateNotes(job.id, nextValue ?? localNotes)
   }
 
-  async function handleDeletePhoto(photo: RepairRequestPhoto) {
-    const confirmed = window.confirm('Delete this photo?')
-    if (!confirmed) return
-
-    setDeletingPhotoId(photo.id)
-    setUploadError('')
-    setPhotoSuccess('')
-
-    if (photo.storage_path) {
-      const { error: storageDeleteError } = await supabase.storage
-        .from('fault-photos')
-        .remove([photo.storage_path])
-
-      if (storageDeleteError) {
-        setUploadError('Failed to delete photo file: ' + storageDeleteError.message)
-        setDeletingPhotoId(null)
-        return
-      }
-    }
-
-    const { error: deleteRowError } = await supabase
-      .from('repair_request_photos')
-      .delete()
-      .eq('id', photo.id)
-
-    if (deleteRowError) {
-      setUploadError('Failed to delete photo record: ' + deleteRowError.message)
-      setDeletingPhotoId(null)
-      return
-    }
-
-    setJobPhotos((prev) => prev.filter((item) => item.id !== photo.id))
-    setDeletingPhotoId(null)
-    setPhotoSuccess('Photo deleted.')
+  async function flushRepairPerformed(nextValue?: string) {
+    await updateRepairPerformed(job.id, nextValue ?? localRepairPerformed)
   }
 
-  async function flushPartsCost(rawValue: string) {
-    const normalized = normalizeQuoteInput(rawValue).trim()
-    const nextValue = normalized === '' ? null : Number(normalized)
-    const currentDbValue = job.parts_cost ?? null
-
-    if (nextValue === currentDbValue) {
-      setFieldState(job.id, 'parts_cost' as SaveField, 'idle')
-      return
-    }
-
-    setFieldState(job.id, 'parts_cost' as SaveField, 'saving')
-    const success = await updatePartsCost(job.id, nextValue)
-
-    if (!success) {
-      setFieldState(job.id, 'parts_cost' as SaveField, 'error')
-    } else {
-      setFieldState(job.id, 'parts_cost' as SaveField, 'saved')
-      setTimeout(() => setFieldState(job.id, 'parts_cost' as SaveField, 'idle'), 1300)
-    }
-  }
-
-
-  async function flushQuote(rawValue: string) {
-    const normalized = normalizeQuoteInput(rawValue).trim()
-    const nextValue = normalized === '' ? null : Number(normalized)
-    const currentDbValue = job.quoted_price ?? null
-
-    if (nextValue === currentDbValue) {
-      setFieldState(job.id, 'quote', 'idle')
-      return
-    }
-
-    setFieldState(job.id, 'quote', 'saving')
-    const success = await updateQuote(job.id, nextValue)
-
-    if (!success) {
-      setFieldState(job.id, 'quote', 'error')
-    } else {
-      setFieldState(job.id, 'quote', 'saved')
-      setTimeout(() => setFieldState(job.id, 'quote', 'idle'), 1300)
-    }
-  }
-
-  async function flushNotes(value: string) {
-    const currentDbValue = job.internal_notes ?? ''
-    if (value === currentDbValue) {
-      setFieldState(job.id, 'notes', 'idle')
-      return
-    }
-
-    setFieldState(job.id, 'notes', 'saving')
-    const success = await updateNotes(job.id, value)
-
-    if (!success) {
-      setFieldState(job.id, 'notes', 'error')
-    } else {
-      setFieldState(job.id, 'notes', 'saved')
-      setTimeout(() => setFieldState(job.id, 'notes', 'idle'), 1300)
-    }
-  }
-
-  async function flushRepairPerformed(value: string) {
-    const currentDbValue = job.repair_performed ?? ''
-    if (value === currentDbValue) {
-      setFieldState(job.id, 'repair_performed', 'idle')
-      return
-    }
-
-    setFieldState(job.id, 'repair_performed', 'saving')
-    const success = await updateRepairPerformed(job.id, value)
-
-    if (!success) {
-      setFieldState(job.id, 'repair_performed', 'error')
-    } else {
-      setFieldState(job.id, 'repair_performed', 'saved')
-      setTimeout(() => setFieldState(job.id, 'repair_performed', 'idle'), 1300)
-    }
-  }
-
-  async function flushJobNumber(value: string) {
-    const trimmed = value.trim()
-    const currentDbValue = job.job_number ?? ''
-
-    if (trimmed === currentDbValue) {
-      setFieldState(job.id, 'job_number', 'idle')
-      return
-    }
-
-    setFieldState(job.id, 'job_number', 'saving')
-    const success = await updateJobBasics(job.id, { job_number: trimmed || null }, 'job_number')
-
-    if (!success) {
-      setFieldState(job.id, 'job_number', 'error')
-    } else {
-      setFieldState(job.id, 'job_number', 'saved')
-      setTimeout(() => setFieldState(job.id, 'job_number', 'idle'), 1300)
-    }
-  }
-
-  async function flushCustomer(nextDraft: { full_name: string; phone: string; email: string }) {
-    const fullName = nextDraft.full_name.trim()
-    const phone = normalizePhone(nextDraft.phone)
-    const email = nextDraft.email.trim()
-
-    const currentName = job.full_name
-    const currentPhone = job.phone
-    const currentEmail = job.email ?? ''
-
-    if (fullName === currentName && phone === currentPhone && email === currentEmail) {
-      setFieldState(job.id, 'customer', 'idle')
-      return
-    }
-
-    if (!fullName || phone.length < 8) {
-      setFieldState(job.id, 'customer', 'error')
-      return
-    }
-
-    setFieldState(job.id, 'customer', 'saving')
-    const success = await updateJobBasics(
-      job.id,
-      { full_name: fullName, phone, email: email || null },
-      'customer'
-    )
-
-    if (!success) {
-      setFieldState(job.id, 'customer', 'error')
-    } else {
-      setFieldState(job.id, 'customer', 'saved')
-      setTimeout(() => setFieldState(job.id, 'customer', 'idle'), 1300)
-    }
-  }
-
-  async function flushDevice(nextDraft: {
-    brand: string
-    model: string
-    device_type: string
-    serial_imei: string
-    fault_description: string
-  }) {
-    const brand = nextDraft.brand.trim()
-    const model = nextDraft.model.trim()
-    const deviceType = nextDraft.device_type.trim()
-    const serialImei = nextDraft.serial_imei.trim()
-    const fault = nextDraft.fault_description.trim()
-
-    const currentBrand = job.brand
-    const currentModel = job.model
-    const currentType = job.device_type ?? ''
-    const currentSerialImei = job.serial_imei ?? ''
-    const currentFault = job.fault_description
-
-    if (
-      brand === currentBrand &&
-      model === currentModel &&
-      deviceType === currentType &&
-      serialImei === currentSerialImei &&
-      fault === currentFault
-    ) {
-      setFieldState(job.id, 'device', 'idle')
-      return
-    }
-
-    if (!brand || !model || fault.length < 3) {
-      setFieldState(job.id, 'device', 'error')
-      return
-    }
-
-    setFieldState(job.id, 'device', 'saving')
-    const success = await updateJobBasics(
+  async function saveJobNumber() {
+    await updateJobBasics(
       job.id,
       {
-        brand,
-        model,
-        device_type: deviceType || null,
-        serial_imei: serialImei || null,
-        fault_description: fault,
+        job_number: localJobNumber.trim() || null,
+      },
+      'job_number'
+    )
+  }
+
+  async function saveCustomerFields() {
+    await updateJobBasics(
+      job.id,
+      {
+        full_name: localFullName.trim(),
+        phone: localPhone.trim(),
+        email: localEmail.trim() || null,
+      },
+      'customer'
+    )
+  }
+
+  async function saveDeviceFields() {
+    await updateJobBasics(
+      job.id,
+      {
+        brand: localBrand.trim(),
+        model: localModel.trim(),
+        device_type: localDeviceType.trim() || null,
+        serial_imei: localSerialImei.trim() || null,
+        fault_description: localFaultDescription.trim(),
       },
       'device'
     )
-
-    if (!success) {
-      setFieldState(job.id, 'device', 'error')
-    } else {
-      setFieldState(job.id, 'device', 'saved')
-      setTimeout(() => setFieldState(job.id, 'device', 'idle'), 1300)
-    }
   }
 
-  function handleQuoteChange(value: string) {
-    const normalized = normalizeQuoteInput(value)
-    setLocalQuote(normalized)
-    setFieldState(job.id, 'quote', 'dirty')
-
-    if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
-    quoteTimerRef.current = setTimeout(() => void flushQuote(normalized), 700)
-  }
-
-  function handlePartsCostChange(value: string) {
-    const normalized = normalizeQuoteInput(value)
-    setLocalPartsCost(normalized)
-    setFieldState(job.id, 'parts_cost' as SaveField, 'dirty')
-
-    if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
-    partsCostTimerRef.current = setTimeout(() => void flushPartsCost(normalized), 700)
-  }
-
-  function handleNotesChange(value: string) {
-    setLocalNotes(value)
-    setFieldState(job.id, 'notes', 'dirty')
-
-    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    notesTimerRef.current = setTimeout(() => void flushNotes(value), 900)
-  }
-
-  function handleRepairPerformedChange(value: string) {
-    setLocalRepairPerformed(value)
-    setFieldState(job.id, 'repair_performed', 'dirty')
-
-    if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
-    repairPerformedTimerRef.current = setTimeout(() => void flushRepairPerformed(value), 900)
-  }
-
-  function handleJobNumberChange(value: string) {
-    setLocalJobNumber(value)
-    setFieldState(job.id, 'job_number', 'dirty')
-
-    if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
-    jobNumberTimerRef.current = setTimeout(() => void flushJobNumber(value), 700)
-  }
-
-  function handleCustomerDraftChange(key: 'full_name' | 'phone' | 'email', value: string) {
-    const next = {
-      ...customerDraft,
-      [key]: key === 'phone' ? normalizePhone(value) : value,
-    }
-
-    setCustomerDraft(next)
-    setFieldState(job.id, 'customer', 'dirty')
-
-    if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
-    customerTimerRef.current = setTimeout(() => void flushCustomer(next), 900)
-  }
-
-  function handleDeviceDraftChange(
-    key: 'brand' | 'model' | 'device_type' | 'serial_imei' | 'fault_description',
-    value: string
-  ) {
-    const next = {
-      ...deviceDraft,
-      [key]: value,
-    }
-
-    setDeviceDraft(next)
-    setFieldState(job.id, 'device', 'dirty')
-
-    if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
-    deviceTimerRef.current = setTimeout(() => void flushDevice(next), 900)
-  }
-
-  async function handleQuoteBlur() {
-    quoteFocusedRef.current = false
-    if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
-    await flushQuote(localQuote)
-  }
-
-  async function handlePartsCostBlur() {
-    partsCostFocusedRef.current = false
-    if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
-    await flushPartsCost(localPartsCost)
-  }
-
-  async function handleNotesBlur() {
-    notesFocusedRef.current = false
-    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    await flushNotes(localNotes)
-  }
-
-  async function handleRepairPerformedBlur() {
-    repairPerformedFocusedRef.current = false
-    if (repairPerformedTimerRef.current) clearTimeout(repairPerformedTimerRef.current)
-    await flushRepairPerformed(localRepairPerformed)
-  }
-
-  async function handleJobNumberBlur() {
-    jobNumberFocusedRef.current = false
-    if (jobNumberTimerRef.current) clearTimeout(jobNumberTimerRef.current)
-    await flushJobNumber(localJobNumber)
-  }
-
-  async function handleCustomerBlur() {
-    customerFocusedRef.current = false
-    if (customerTimerRef.current) clearTimeout(customerTimerRef.current)
-    await flushCustomer(customerDraft)
-  }
-
-  async function handleDeviceBlur() {
-    deviceFocusedRef.current = false
-    if (deviceTimerRef.current) clearTimeout(deviceTimerRef.current)
-    await flushDevice(deviceDraft)
-  }
-
-  function buildQuoteSms() {
-    const customerName = job.full_name.split(' ')[0] || job.full_name
-    const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-    return `<NO REPLY> Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}+GST. Please contact us back on 03 9547 9991 to approve. Thanks, The Mobile Phone Clinic`
-  }
-
-  function buildReadySms() {
-    const customerName = job.full_name.split(' ')[0] || job.full_name
-    return `<NO REPLY> Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup. Please contact us on 03 9547 9991 to arrange collection. Thanks, The Mobile Phone Clinic`
-  }
-
-  async function sendSms(messageOverride?: string) {
-    const to = normalizePhone(smsTargetPhone)
-    const message = (messageOverride ?? smsMessage).trim()
-
-    if (!to || to.length < 8) {
-      setSmsError('Valid phone number required.')
-      setSmsSuccess('')
-      return
-    }
-
-    if (!message) {
-      setSmsError('SMS message is empty.')
-      setSmsSuccess('')
-      return
-    }
-
-    setSendingSms(true)
-    setSmsError('')
-    setSmsSuccess('')
-
-    try {
-      const response = await fetch('/.netlify/functions/send-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, message }),
-      })
-
-      const rawText = await response.text()
-      let data: any = {}
-
-      try {
-        data = rawText ? JSON.parse(rawText) : {}
-      } catch {
-        throw new Error(rawText || 'Server returned invalid response')
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to send SMS')
-      }
-
-      const nowIso = new Date().toISOString()
-
-      const { error: logError } = await supabase
-        .from('repair_requests')
-        .update({
-          last_sms_sent_at: nowIso,
-          last_sms_to: to,
-          last_sms_message: message,
-        })
-        .eq('id', job.id)
-
-      if (logError) {
-        throw new Error(logError.message)
-      }
-
-      setSmsSuccess(`SMS sent to ${to}.`)
-    } catch (err) {
-      setSmsError(err instanceof Error ? err.message : 'Failed to send SMS')
-      setSmsSuccess('')
-    } finally {
-      setSendingSms(false)
-    }
-  }
-
-  function handleCardDragStart(event: React.DragEvent<HTMLDivElement>) {
-    if (!draggableEnabled) return
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', job.id)
-    onDragStart?.(job.id)
-  }
-
-  function handleCardDragEnd() {
-    if (!draggableEnabled) return
-    onDragEnd?.()
-  }
-
-  function handleSelectCard() {
+  function handleCardClick() {
     onSelectCard?.(job.id)
   }
 
-  const compactSummary = (
-    <div className={`${styles.collapsedBlock} ${compact ? styles.collapsedBlockCompact : ''}`}>
-      {selectable ? (
-        <div className={styles.archiveSelectRow}>
-          <label className={styles.archiveCheckboxLabel}>
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => onToggleSelected?.(job.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <span>Select</span>
-          </label>
-        </div>
-      ) : null}
+  function handleDragStartInternal(e: React.DragEvent<HTMLDivElement>) {
+    if (!draggableEnabled || !onDragStart) return
+    onDragStart(e, job.id)
+  }
 
-      <div>
-        <div className={styles.sectionLabel}>Customer</div>
-        <p className={styles.customerName}>{job.full_name}</p>
-      </div>
+  function handleDragEndInternal(e: React.DragEvent<HTMLDivElement>) {
+    if (!draggableEnabled || !onDragEnd) return
+    onDragEnd(e)
+  }
 
-      <div>
-        <div className={styles.sectionLabel}>Device</div>
-        <p className={styles.deviceTitle}>
-          {job.brand} {job.model}
-          {job.device_type ? ` • ${job.device_type}` : ''}
-        </p>
-      </div>
-
-      <div className={styles.compactMetaRow}>
-        <div>
-          <div className={styles.sectionLabel}>Job</div>
-          <p className={styles.metaText}>{job.job_number || 'Pending'}</p>
-        </div>
-        <div>
-          <div className={styles.sectionLabel}>Quote</div>
-          <p className={styles.metaText}>
-            {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-          </p>
-        </div>
-      <div>
-          <div className={styles.sectionLabel}>Parts Cost</div>
-          <p className={styles.metaText}>
-            {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
-          </p>
-</div>
-</div>
-      {job.serial_imei ? (
-        <div>
-          <div className={styles.sectionLabel}>Serial / IMEI</div>
-          <p className={styles.metaText}>{job.serial_imei}</p>
-        </div>
-      ) : null}
-
-      <div>
-        <div className={styles.sectionLabel}>Booked</div>
-        <p className={styles.metaText}>{formatDateTime(job.created_at)}</p>
-      </div>
-    </div>
-  )
-
-  const isArchiveStatus =
-    job.status === 'closed' || job.status === 'rejected' || job.status === 'cancelled'
+  const quoteNumber = normalizeMoneyValue(localQuote) ?? 0
+  const partsCostNumber = normalizeMoneyValue(localPartsCost) ?? 0
+  const margin = quoteNumber - partsCostNumber
 
   return (
-    <div	
+    <div
       ref={cardRef}
-      className={`${styles.jobCard} ${styles[`jobCard_${job.status}`]} ${
+      className={`${styles.jobCard} ${compact ? styles.jobCardCompact : ''} ${
         draggableEnabled ? styles.jobCardDraggable : ''
       } ${isDragging ? styles.jobCardDragging : ''} ${
-        highlighted ? styles.jobCardHighlighted : ''
-      } ${compact ? styles.jobCardCompact : ''} ${selected ? styles.jobCardSelected : ''}`}
+        selected ? styles.jobCardSelected : ''
+      } ${highlighted ? styles.jobCardHighlighted : ''}`}
+      onClick={handleCardClick}
       draggable={draggableEnabled}
-      onDragStart={handleCardDragStart}
-      onDragEnd={handleCardDragEnd}
-      onClick={handleSelectCard}
+      onDragStart={handleDragStartInternal}
+      onDragEnd={handleDragEndInternal}
     >
       <div className={`${styles.cardTopRow} ${compact ? styles.cardTopRowCompact : ''}`}>
         <div className={styles.cardTopLeft}>
-          <div className={styles.sectionLabel}>Job Number</div>
+          <div className={styles.sectionLabel}>Job</div>
           <div className={styles.jobNumberDisplay}>{job.job_number || 'Pending Job Number'}</div>
+          <p className={styles.customerName}>{job.full_name}</p>
+          <p className={styles.phoneText}>{job.phone}</p>
+          <p className={styles.deviceTitle}>
+            {job.brand} {job.model}
+            {job.device_type ? ` • ${job.device_type}` : ''}
+          </p>
         </div>
 
         <div className={styles.cardActions}>
+          {selectable && (
+            <label className={styles.archiveCheckboxLabel}>
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  onToggleSelected?.(job.id)
+                }}
+              />
+              <span>Select</span>
+            </label>
+          )}
+
           <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
             {getStatusLabel(job.status)}
           </span>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleExpanded(job.id)
-              onSelectCard?.(job.id)
-            }}
-            className={styles.miniButton}
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-      </div>
-
-      <div className={styles.quickActionBar}>
-        <div className={styles.inputTopRow}>
-          <label className={styles.smallLabel}>Status</label>
-          <SaveIndicator state={statusSaveState} />
-        </div>
-
-        <div className={styles.statusButtonsWrap}>
-          {(
-            [
-              ['new', 'New'],
-              ['quoted', 'Quoted'],
-              ['approved', 'Approved'],
-              ['in_progress', 'In Progress'],
-              ['ready', 'Ready'],
-              ['closed', 'Closed'],
-              ['rejected', 'Reject'],
-              ['cancelled', 'Cancel'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelectCard?.(job.id)
-                void updateStatus(job.id, value)
-              }}
-              className={`${styles.statusButton} ${
-                job.status === value ? styles.statusButtonActive : ''
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <SaveIndicator state={statusSaveState} compact />
         </div>
       </div>
 
       {!expanded ? (
-        compact ? (
-          compactSummary
-        ) : (
-          <div className={styles.collapsedBlock}>
-            <div>
-              <div className={styles.sectionLabel}>Customer</div>
-              <p className={styles.customerName}>{job.full_name}</p>
+        <div className={`${styles.collapsedBlock} ${compact ? styles.collapsedBlockCompact : ''}`}>
+          <p className={styles.collapsedFault}>{job.fault_description}</p>
+
+          <p className={styles.summaryRow}>
+            <strong>Quote:</strong>{' '}
+            {job.quoted_price != null ? `$${Number(job.quoted_price).toFixed(2)}` : '-'}
+          </p>
+
+          <p className={styles.summaryRow}>
+            <strong>Parts:</strong>{' '}
+            {job.parts_cost != null ? `$${Number(job.parts_cost).toFixed(2)}` : '-'}
+          </p>
+
+          <p className={styles.summaryRow}>
+            <strong>Margin:</strong> ${margin.toFixed(2)}
+          </p>
+
+          <p className={styles.summaryRow}>
+            <strong>Booked:</strong> {formatDateTime(job.created_at)}
+          </p>
+
+          {invoice ? (
+            <p className={styles.summaryRow}>
+              <strong>Invoice:</strong> {invoice.invoice_number} • {invoice.status.toUpperCase()}
+            </p>
+          ) : (
+            <p className={styles.summaryRow}>
+              <strong>Invoice:</strong> -
+            </p>
+          )}
+
+          <div className={styles.buttonRow}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpanded(job.id)
+              }}
+            >
+              Expand
+            </button>
+
+            {onDuplicateJob && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onDuplicateJob(job)
+                }}
+              >
+                Duplicate
+              </button>
+            )}
+
+            {!job.is_hidden && onHideJob ? (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onHideJob(job.id)
+                }}
+              >
+                Hide
+              </button>
+            ) : null}
+
+            {job.is_hidden && onUnhideJob ? (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onUnhideJob(job.id)
+                }}
+              >
+                Unhide
+              </button>
+            ) : null}
+
+            {onDeleteJob ? (
+              <button
+                type="button"
+                className={styles.deleteButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onDeleteJob(job.id)
+                }}
+              >
+                Delete Job
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className={styles.expandedBlock}>
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Status</div>
+              <SaveIndicator state={statusSaveState} compact />
             </div>
 
-            <div>
-              <div className={styles.sectionLabel}>Phone</div>
-              <p className={styles.phoneText}>{job.phone}</p>
-            </div>
-
-            <div>
-              <div className={styles.sectionLabel}>Device</div>
-              <p className={styles.deviceTitle}>
-                {job.brand} {job.model}
-                {job.device_type ? ` • ${job.device_type}` : ''}
-              </p>
-            </div>
-
-            <div>
-              <div className={styles.sectionLabel}>Fault</div>
-              <p className={styles.collapsedFault}>{job.fault_description}</p>
-            </div>
-
-            <div>
-              <div className={styles.sectionLabel}>Quote</div>
-              <p className={styles.metaText}>
-                {job.quoted_price != null ? `$${job.quoted_price}` : '-'}
-              </p>
-            </div>
-
-            <div>
-              <div className={styles.sectionLabel}>Parts Cost</div>
-              <p className={styles.metaText}>
-                {job.parts_cost != null ? `$${job.parts_cost}` : '-'}
-              </p>
+            <div className={styles.statusButtonsWrap}>
+              {STATUS_OPTIONS.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  className={`${styles.statusButton} ${
+                    job.status === status ? styles.statusButtonActive : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void updateStatus(job.id, status)
+                  }}
+                >
+                  {getStatusLabel(status)}
+                </button>
+              ))}
             </div>
           </div>
-        )
-      ) : (
-        <>
-          <div className={styles.expandedBlock}>
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>Job Details</div>
-                <SaveIndicator state={jobNumberSaveState} />
-              </div>
 
-              <div className={styles.mt10}>
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Job Basics</div>
+              <SaveIndicator state={jobNumberSaveState} compact />
+            </div>
+
+            <div className={styles.formGrid}>
+              <div>
                 <label className={styles.smallLabel}>Job Number</label>
                 <input
-                  value={localJobNumber}
-                  placeholder="Enter job number"
                   className={styles.smallField}
-                  onFocus={() => {
-                    jobNumberFocusedRef.current = true
-                    onSelectCard?.(job.id)
-                  }}
-                  onBlur={() => void handleJobNumberBlur()}
-                  onChange={(e) => handleJobNumberChange(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
+                  value={localJobNumber}
+                  onChange={(e) => setLocalJobNumber(e.target.value)}
+                  onBlur={() => void saveJobNumber()}
+                  placeholder="Job number"
                 />
               </div>
             </div>
+          </div>
 
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>Customer Details</div>
-                <SaveIndicator state={customerSaveState} />
-              </div>
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Customer</div>
+              <SaveIndicator state={customerSaveState} compact />
+            </div>
 
-              <div className={styles.formGrid}>
+            <div className={styles.formGrid}>
+              <div className={styles.twoCol}>
                 <div>
                   <label className={styles.smallLabel}>Full Name</label>
                   <input
-                    value={customerDraft.full_name}
                     className={styles.smallField}
-                    onFocus={() => {
-                      customerFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleCustomerBlur()}
-                    onChange={(e) => handleCustomerDraftChange('full_name', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
+                    value={localFullName}
+                    onChange={(e) => setLocalFullName(e.target.value)}
+                    onBlur={() => void saveCustomerFields()}
                   />
                 </div>
 
                 <div>
                   <label className={styles.smallLabel}>Phone</label>
                   <input
-                    value={customerDraft.phone}
-                    inputMode="numeric"
-                    maxLength={10}
                     className={styles.smallField}
-                    onFocus={() => {
-                      customerFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleCustomerBlur()}
-                    onChange={(e) => handleCustomerDraftChange('phone', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
+                    value={localPhone}
+                    onChange={(e) => setLocalPhone(e.target.value)}
+                    onBlur={() => void saveCustomerFields()}
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className={styles.smallLabel}>Email</label>
-                  <input
-                    value={customerDraft.email}
-                    className={styles.smallField}
-                    onFocus={() => {
-                      customerFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleCustomerBlur()}
-                    onChange={(e) => handleCustomerDraftChange('email', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.smallLabel}>Preferred Contact</label>
-                  <div className={styles.readOnlyValue}>{job.preferred_contact || '-'}</div>
-                </div>
+              <div>
+                <label className={styles.smallLabel}>Email</label>
+                <input
+                  className={styles.smallField}
+                  value={localEmail}
+                  onChange={(e) => setLocalEmail(e.target.value)}
+                  onBlur={() => void saveCustomerFields()}
+                />
               </div>
             </div>
+          </div>
 
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>Device Details</div>
-                <SaveIndicator state={deviceSaveState} />
-              </div>
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Device</div>
+              <SaveIndicator state={deviceSaveState} compact />
+            </div>
 
-              <div className={styles.formGrid}>
-                <div className={styles.twoCol}>
-                  <div>
-                    <label className={styles.smallLabel}>Brand</label>
-                    <input
-                      value={deviceDraft.brand}
-                      className={styles.smallField}
-                      onFocus={() => {
-                        deviceFocusedRef.current = true
-                        onSelectCard?.(job.id)
-                      }}
-                      onBlur={() => void handleDeviceBlur()}
-                      onChange={(e) => handleDeviceDraftChange('brand', e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={styles.smallLabel}>Model</label>
-                    <input
-                      value={deviceDraft.model}
-                      className={styles.smallField}
-                      onFocus={() => {
-                        deviceFocusedRef.current = true
-                        onSelectCard?.(job.id)
-                      }}
-                      onBlur={() => void handleDeviceBlur()}
-                      onChange={(e) => handleDeviceDraftChange('model', e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
+            <div className={styles.formGrid}>
+              <div className={styles.twoCol}>
+                <div>
+                  <label className={styles.smallLabel}>Brand</label>
+                  <input
+                    className={styles.smallField}
+                    value={localBrand}
+                    onChange={(e) => setLocalBrand(e.target.value)}
+                    onBlur={() => void saveDeviceFields()}
+                  />
                 </div>
 
+                <div>
+                  <label className={styles.smallLabel}>Model</label>
+                  <input
+                    className={styles.smallField}
+                    value={localModel}
+                    onChange={(e) => setLocalModel(e.target.value)}
+                    onBlur={() => void saveDeviceFields()}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.twoCol}>
                 <div>
                   <label className={styles.smallLabel}>Device Type</label>
                   <input
-                    value={deviceDraft.device_type}
-                    placeholder="Phone, tablet, laptop..."
                     className={styles.smallField}
-                    onFocus={() => {
-                      deviceFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleDeviceBlur()}
-                    onChange={(e) => handleDeviceDraftChange('device_type', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
+                    value={localDeviceType}
+                    onChange={(e) => setLocalDeviceType(e.target.value)}
+                    onBlur={() => void saveDeviceFields()}
                   />
                 </div>
 
                 <div>
                   <label className={styles.smallLabel}>Serial / IMEI</label>
                   <input
-                    value={deviceDraft.serial_imei}
-                    placeholder="Serial number or IMEI"
                     className={styles.smallField}
-                    onFocus={() => {
-                      deviceFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleDeviceBlur()}
-                    onChange={(e) => handleDeviceDraftChange('serial_imei', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.smallLabel}>Fault Description</label>
-                  <textarea
-                    value={deviceDraft.fault_description}
-                    className={styles.notesField}
-                    onFocus={() => {
-                      deviceFocusedRef.current = true
-                      onSelectCard?.(job.id)
-                    }}
-                    onBlur={() => void handleDeviceBlur()}
-                    onChange={(e) => handleDeviceDraftChange('fault_description', e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <label className={styles.expandedSectionTitle}>Repair Performed</label>
-                <SaveIndicator state={repairPerformedSaveState} />
-              </div>
-
-              <textarea
-                value={localRepairPerformed}
-                placeholder="Screen replacement, battery replacement, charging port repair, housing swap..."
-                className={styles.notesField}
-                onFocus={() => {
-                  repairPerformedFocusedRef.current = true
-                  onSelectCard?.(job.id)
-                }}
-                onBlur={() => void handleRepairPerformedBlur()}
-                onChange={(e) => handleRepairPerformedChange(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <label className={styles.expandedSectionTitle}>Quote</label>
-                <SaveIndicator state={quoteSaveState} />
-              </div>
-
-              <input
-                inputMode="decimal"
-                value={localQuote}
-                placeholder="Enter quote"
-                className={styles.smallField}
-                onFocus={() => {
-                  quoteFocusedRef.current = true
-                  onSelectCard?.(job.id)
-                }}
-                onBlur={() => void handleQuoteBlur()}
-                onChange={(e) => handleQuoteChange(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-
-<div className={styles.expandedSectionCard}>
-  <div className={styles.inputTopRow}>
-    <label className={styles.expandedSectionTitle}>Parts Cost</label>
-    <SaveIndicator state={partsCostSaveState} />
-  </div>
-
-  <input
-    inputMode="decimal"
-    value={localPartsCost}
-    placeholder="Enter parts cost"
-    className={styles.smallField}
-    onFocus={() => {
-      partsCostFocusedRef.current = true
-      onSelectCard?.(job.id)
-    }}
-    onBlur={() => void handlePartsCostBlur()}
-    onChange={(e) => handlePartsCostChange(e.target.value)}
-    onClick={(e) => e.stopPropagation()}
-  />
-</div>
-
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <label className={styles.expandedSectionTitle}>Internal Notes</label>
-                <SaveIndicator state={notesSaveState} />
-              </div>
-
-              <textarea
-                value={localNotes}
-                placeholder="Diagnostics, parts ordered, supplier info, reminders, private workshop notes..."
-                className={styles.notesField}
-                onFocus={() => {
-                  notesFocusedRef.current = true
-                  onSelectCard?.(job.id)
-                }}
-                onBlur={() => void handleNotesBlur()}
-                onChange={(e) => handleNotesChange(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-              />
-
-              <div className={styles.buttonRow}>
-                {onDuplicateJob ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onDuplicateJob(job)
-                    }}
-                  >
-                    Duplicate Job
-                  </button>
-                ) : null}
-
-                {isArchiveStatus && !job.is_hidden ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onHideJob?.(job.id)
-                    }}
-                  >
-                    Hide Job
-                  </button>
-                ) : null}
-
-                {job.is_hidden ? (
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectCard?.(job.id)
-                      void onUnhideJob?.(job.id)
-                    }}
-                  >
-                    Unhide Job
-                  </button>
-                ) : null}
-
-{job.is_hidden ? (
-  <button
-    type="button"
-    className={styles.miniDangerButton}
-    onClick={(e) => {
-      e.stopPropagation()
-
-      if (!onDeleteJob) {
-        console.error('onDeleteJob prop is missing for job', job.id)
-        window.alert('Delete handler is missing for this card.')
-        return
-      }
-
-      void onDeleteJob(job.id)
-    }}
-  >
-    Delete Job
-  </button>
-) : null}
-
-              </div>
-            </div>
-
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>SMS</div>
-                <div className={styles.readOnlyValue}>
-                  {sendingSms ? 'Sending...' : smsSuccess ? 'Sent' : smsError ? 'Error' : 'Ready'}
-                </div>
-              </div>
-
-              <div className={styles.formGrid}>
-                <div>
-                  <label className={styles.smallLabel}>Send To</label>
-                  <input
-                    value={smsTargetPhone}
-                    inputMode="numeric"
-                    maxLength={15}
-                    className={styles.smallField}
-                    onChange={(e) => setSmsTargetPhone(normalizePhone(e.target.value))}
-                    onClick={(e) => e.stopPropagation()}
+                    value={localSerialImei}
+                    onChange={(e) => setLocalSerialImei(e.target.value)}
+                    onBlur={() => void saveDeviceFields()}
                   />
                 </div>
               </div>
 
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setSmsMessage(buildQuoteSms())
-                    setSmsError('')
-                    setSmsSuccess('')
-                  }}
-                >
-                  Load Quote Template
-                </button>
-
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setSmsMessage(buildReadySms())
-                    setSmsError('')
-                    setSmsSuccess('')
-                  }}
-                >
-                  Load Ready Template
-                </button>
-              </div>
-
-              <div className={styles.mt12}>
-                <label className={styles.smallLabel}>Message</label>
+              <div>
+                <label className={styles.smallLabel}>Fault Description</label>
                 <textarea
-                  value={smsMessage}
                   className={styles.notesField}
-                  placeholder="Type SMS message here..."
-                  onChange={(e) => {
-                    setSmsMessage(e.target.value)
-                    setSmsError('')
-                    setSmsSuccess('')
-                  }}
-                  onClick={(e) => e.stopPropagation()}
+                  value={localFaultDescription}
+                  onChange={(e) => setLocalFaultDescription(e.target.value)}
+                  onBlur={() => void saveDeviceFields()}
                 />
               </div>
+            </div>
+          </div>
 
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  disabled={sendingSms}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void sendSms()
-                  }}
-                >
-                  {sendingSms ? 'Sending SMS...' : 'Send SMS'}
-                </button>
-              </div>
-
-              {'last_sms_sent_at' in job && (job as any).last_sms_sent_at ? (
-                <p className={styles.summaryRow}>
-                  <strong>Last SMS:</strong> {formatDateTime((job as any).last_sms_sent_at)}
-                  {(job as any).last_sms_to ? ` • ${(job as any).last_sms_to}` : ''}
-                </p>
-              ) : null}
-
-              {smsSuccess ? <p className={styles.successText}>{smsSuccess}</p> : null}
-              {smsError ? <p className={styles.errorText}>{smsError}</p> : null}
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Quote & Costing</div>
             </div>
 
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>
-                  Fault Photos ({jobPhotos.length}/{MAX_PHOTOS})
-                </div>
-                {loadingPhotos ? <span className={styles.uploadingText}>Loading...</span> : null}
-              </div>
-
-              {jobPhotos.length > 0 ? (
-                <div className={styles.faultPhotoGallery}>
-                  {jobPhotos.slice(0, 4).map((photo) => (
-                    <div key={photo.id} className={styles.faultPhotoThumbCard}>
-                      <a
-                        href={photo.photo_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={styles.button}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <img
-                          src={photo.photo_url}
-                          alt="Fault photo"
-                          className={styles.faultPhotoThumbnail}
-                        />
-                      </a>
-
-                      <div className={styles.faultPhotoThumbActions}>
-                        <a
-                          href={photo.photo_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={styles.photoActionButton}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Open
-                        </a>
-
-                        <button
-                          type="button"
-                          className={styles.miniDangerButton}
-                          disabled={deletingPhotoId === photo.id}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void handleDeletePhoto(photo)
-                          }}
-                        >
-                          {deletingPhotoId === photo.id ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {jobPhotos.length > 4 ? (
-                    <div className={styles.morePhotosBadge}>+{jobPhotos.length - 4} more</div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className={styles.noPhotoText}>No photos uploaded yet</p>
-              )}
-
-              <div className={styles.faultPhotoUploadArea}>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                  onChange={handlePhotoChange}
-                  disabled={uploadingPhoto || jobPhotos.length >= MAX_PHOTOS}
-                  className={styles.faultPhotoInput}
-                />
-
-                {photoFile ? (
-                  <div className={styles.faultPhotoSelectedRow}>
-                    <span className={styles.faultPhotoSelectedName}>Selected: {photoFile.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => void handlePhotoUpload()}
-                      disabled={uploadingPhoto}
-                      className={styles.actionButton}
-                    >
-                      {uploadingPhoto ? 'Uploading...' : 'Upload Photo'}
-                    </button>
+            <div className={styles.formGrid}>
+              <div className={styles.twoCol}>
+                <div>
+                  <div className={styles.inputTopRow}>
+                    <label className={styles.smallLabel}>Quoted Price</label>
+                    <SaveIndicator state={quoteSaveState} compact />
                   </div>
-                ) : null}
-
-                <p className={styles.helperText}>
-                  JPG, PNG, WEBP, HEIC, HEIF. Max {MAX_PHOTO_SIZE_MB}MB each. Up to {MAX_PHOTOS}{' '}
-                  photos.
-                </p>
-
-                {photoSuccess ? <p className={styles.successText}>{photoSuccess}</p> : null}
-                {uploadError ? <p className={styles.errorText}>{uploadError}</p> : null}
-              </div>
-            </div>
-
-            <div className={styles.expandedSectionCard}>
-              <div className={styles.inputTopRow}>
-                <div className={styles.expandedSectionTitle}>Invoice</div>
-
-                <div className={styles.buttonRow}>
-                  <div className={styles.readOnlyValue}>
-                    {invoice
-                      ? `${invoice.invoice_number} • ${invoice.status.toUpperCase()}`
-                      : 'No invoice'}
-                  </div>
-
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setInvoicePanelOpen((prev) => !prev)
+                  <input
+                    className={styles.smallField}
+                    value={localQuote}
+                    onChange={(e) => {
+                      setLocalQuote(e.target.value)
+                      if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current)
+                      quoteTimerRef.current = setTimeout(() => {
+                        void flushQuote(e.target.value)
+                      }, 700)
                     }}
-                  >
-                    {invoicePanelOpen ? 'Hide Invoice' : 'Show Invoice'}
-                  </button>
+                    onBlur={() => void flushQuote(localQuote)}
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <div className={styles.inputTopRow}>
+                    <label className={styles.smallLabel}>Parts Cost</label>
+                    <SaveIndicator state={partsCostSaveState} compact />
+                  </div>
+                  <input
+                    className={styles.smallField}
+                    value={localPartsCost}
+                    onChange={(e) => {
+                      setLocalPartsCost(e.target.value)
+                      if (partsCostTimerRef.current) clearTimeout(partsCostTimerRef.current)
+                      partsCostTimerRef.current = setTimeout(() => {
+                        void flushPartsCost(e.target.value)
+                      }, 700)
+                    }}
+                    onBlur={() => void flushPartsCost(localPartsCost)}
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
 
-              {invoicePanelOpen ? (
-                <InvoicePanel
-                  invoice={invoice}
-                  items={invoiceItems}
-                  actionState={invoiceActionState}
-                  itemsActionState={invoiceItemsActionState}
-                  onCreateInvoice={() => createInvoiceForJob(job)}
-                  onUpdateInvoiceStatus={(status) =>
-                    invoice ? updateInvoiceStatusForJob(invoice.id, status) : Promise.resolve()
-                  }
-                  onAddInvoiceItem={() =>
-                    invoice ? addInvoiceItemForInvoice(invoice.id) : Promise.resolve()
-                  }
-                  onUpdateInvoiceItem={(itemId, updates) =>
-                    invoice
-                      ? updateInvoiceItemForInvoice(invoice.id, itemId, updates)
-                      : Promise.resolve()
-                  }
-                  onDeleteInvoiceItem={(itemId) =>
-                    invoice ? deleteInvoiceItemForInvoice(invoice.id, itemId) : Promise.resolve()
-                  }
-                  onRemoveInvoice={() => removeInvoiceForJob(job)}
-                />
-              ) : null}
-            </div>
-
-            <div className={styles.mt12}>
               <p className={styles.summaryRow}>
-                <strong>Booked in:</strong> {formatDateTime(job.created_at)}
+                <strong>Estimated Margin:</strong> ${margin.toFixed(2)}
               </p>
             </div>
           </div>
-        </>
+
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Repair Performed</div>
+              <SaveIndicator state={repairPerformedSaveState} compact />
+            </div>
+
+            <textarea
+              className={styles.notesField}
+              value={localRepairPerformed}
+              onChange={(e) => {
+                setLocalRepairPerformed(e.target.value)
+                if (repairPerformedTimerRef.current) {
+                  clearTimeout(repairPerformedTimerRef.current)
+                }
+                repairPerformedTimerRef.current = setTimeout(() => {
+                  void flushRepairPerformed(e.target.value)
+                }, 700)
+              }}
+              onBlur={() => void flushRepairPerformed(localRepairPerformed)}
+              placeholder="What repair was actually done?"
+            />
+          </div>
+
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Internal Notes</div>
+              <SaveIndicator state={notesSaveState} compact />
+            </div>
+
+            <textarea
+              className={styles.notesField}
+              value={localNotes}
+              onChange={(e) => {
+                setLocalNotes(e.target.value)
+                if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
+                notesTimerRef.current = setTimeout(() => {
+                  void flushNotes(e.target.value)
+                }, 700)
+              }}
+              onBlur={() => void flushNotes(localNotes)}
+              placeholder="Internal notes"
+            />
+          </div>
+
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Invoice</div>
+              <SaveIndicator
+                state={
+                  invoiceActionState === 'saving'
+                    ? 'saving'
+                    : invoiceActionState === 'error'
+                      ? 'error'
+                      : 'idle'
+                }
+                compact
+              />
+            </div>
+
+            {!invoice ? (
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void createInvoiceForJob?.(job)
+                  }}
+                >
+                  Create Invoice
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={styles.invoiceSummaryGrid}>
+                  <div>
+                    <div className={styles.sectionLabel}>Invoice Number</div>
+                    <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Status</div>
+                    <div>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
+                      >
+                        {invoice.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Total Qty</div>
+                    <div className={styles.invoiceValue}>{totalInvoiceQty.toFixed(2)}</div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Total</div>
+                    <div className={styles.invoiceValue}>
+                      ${Number(invoice.total ?? 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.buttonRow}>
+                  {invoice.status !== 'draft' ? null : (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'issued')
+                      }}
+                    >
+                      Mark Issued
+                    </button>
+                  )}
+
+                  {(invoice.status === 'draft' || invoice.status === 'issued') && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'paid')
+                      }}
+                    >
+                      Mark Paid
+                    </button>
+                  )}
+
+                  {invoice.status === 'paid' && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'issued')
+                      }}
+                    >
+                      Mark Unpaid
+                    </button>
+                  )}
+
+                  {invoice.status !== 'void' && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'void')
+                      }}
+                    >
+                      Mark Void
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void addInvoiceItemForInvoice?.(invoice.id, {})
+                    }}
+                  >
+                    Add Item
+                  </button>
+
+                  <button
+                    type="button"
+                    className={styles.deleteButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void removeInvoiceForJob?.(job.id)
+                    }}
+                  >
+                    Delete Invoice
+                  </button>
+
+                  <a
+                    href={`/admin/invoice?id=${invoice.id}`}
+                    className={styles.actionButton}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Open Invoice
+                  </a>
+                </div>
+
+                <div className={styles.invoiceItemsWrap}>
+                  {invoiceItems.length === 0 ? (
+                    <div className={styles.invoiceItemsEmpty}>No invoice items yet.</div>
+                  ) : (
+                    invoiceItems.map((item) => (
+                      <InvoiceItemEditor
+                        key={item.id}
+                        invoiceId={invoice.id}
+                        item={item}
+                        busy={invoiceItemsActionState === 'saving'}
+                        updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                        deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                      />
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className={styles.buttonRow}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpanded(job.id)
+              }}
+            >
+              Collapse
+            </button>
+
+            {onDuplicateJob && (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onDuplicateJob(job)
+                }}
+              >
+                Duplicate Job
+              </button>
+            )}
+
+            {!job.is_hidden && onHideJob ? (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onHideJob(job.id)
+                }}
+              >
+                Hide Job
+              </button>
+            ) : null}
+
+            {job.is_hidden && onUnhideJob ? (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onUnhideJob(job.id)
+                }}
+              >
+                Unhide Job
+              </button>
+            ) : null}
+
+            {onDeleteJob ? (
+              <button
+                type="button"
+                className={styles.deleteButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onDeleteJob(job.id)
+                }}
+              >
+                Delete Job
+              </button>
+            ) : null}
+          </div>
+
+          {isArchived ? (
+            <p className={styles.helperText}>
+              Archived job • created {formatDateTime(job.created_at)}
+            </p>
+          ) : null}
+        </div>
       )}
+    </div>
+  )
+}
+
+type InvoiceItemEditorProps = {
+  invoiceId: string
+  item: InvoiceItem
+  busy: boolean
+  updateInvoiceItemForInvoice?: (
+    invoiceId: string,
+    itemId: string,
+    patch: Partial<InvoiceItem>
+  ) => Promise<void> | void
+  deleteInvoiceItemForInvoice?: (
+    invoiceId: string,
+    itemId: string
+  ) => Promise<void> | void
+}
+
+function InvoiceItemEditor({
+  invoiceId,
+  item,
+  busy,
+  updateInvoiceItemForInvoice,
+  deleteInvoiceItemForInvoice,
+}: InvoiceItemEditorProps) {
+  const [description, setDescription] = useState(item.description || '')
+  const [qty, setQty] = useState(String(item.qty ?? 1))
+  const [unitPrice, setUnitPrice] = useState(String(item.unit_price ?? 0))
+
+  useEffect(() => {
+    setDescription(item.description || '')
+  }, [item.description])
+
+  useEffect(() => {
+    setQty(String(item.qty ?? 1))
+  }, [item.qty])
+
+  useEffect(() => {
+    setUnitPrice(String(item.unit_price ?? 0))
+  }, [item.unit_price])
+
+  async function flush() {
+    const normalizedQty = Number(qty || 0)
+    const normalizedUnitPrice = Number(unitPrice || 0)
+
+    await updateInvoiceItemForInvoice?.(invoiceId, item.id, {
+      description: description.trim(),
+      qty: Number.isFinite(normalizedQty) ? normalizedQty : 0,
+      unit_price: Number.isFinite(normalizedUnitPrice) ? normalizedUnitPrice : 0,
+    })
+  }
+
+  return (
+    <div className={styles.invoiceItemCard}>
+      <div className={styles.invoiceItemGrid}>
+        <div className={styles.invoiceItemDescriptionCol}>
+          <label className={styles.smallLabel}>Description</label>
+          <input
+            className={styles.smallField}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => void flush()}
+            disabled={busy}
+          />
+        </div>
+
+        <div>
+          <label className={styles.smallLabel}>Qty</label>
+          <input
+            className={styles.smallField}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            onBlur={() => void flush()}
+            disabled={busy}
+          />
+        </div>
+
+        <div>
+          <label className={styles.smallLabel}>Unit Price</label>
+          <input
+            className={styles.smallField}
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(e.target.value)}
+            onBlur={() => void flush()}
+            disabled={busy}
+          />
+        </div>
+      </div>
+
+      <div className={styles.buttonRow}>
+        <button
+          type="button"
+          className={styles.miniButton}
+          onClick={() => void flush()}
+          disabled={busy}
+        >
+          Save Item
+        </button>
+
+        <button
+          type="button"
+          className={styles.deleteButton}
+          onClick={() => void deleteInvoiceItemForInvoice?.(invoiceId, item.id)}
+          disabled={busy}
+        >
+          Delete Item
+        </button>
+      </div>
     </div>
   )
 }
