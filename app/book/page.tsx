@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 
@@ -27,6 +27,19 @@ type ErrorState = {
   form: string
 }
 
+type CustomerRow = {
+  id: string
+  full_name: string
+  phone: string | null
+  email: string | null
+  preferred_contact: string | null
+  billing_address: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 const initialForm: FormState = {
   fullName: '',
   phone: '',
@@ -45,13 +58,25 @@ const initialErrors: ErrorState = {
   form: '',
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, '').slice(0, 10)
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
 export default function BookingPage() {
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<FormState>(initialForm)
   const [errors, setErrors] = useState<ErrorState>(initialErrors)
 
-  const cleanedPhone = useMemo(() => form.phone.replace(/\D/g, ''), [form.phone])
+  const cleanedPhone = useMemo(() => normalizePhone(form.phone), [form.phone])
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -74,7 +99,7 @@ export default function BookingPage() {
   }
 
   function validatePhone(phone: string) {
-    const digits = phone.replace(/\D/g, '')
+    const digits = normalizePhone(phone)
 
     if (digits.length < 8 || digits.length > 10) {
       return 'Phone number must be between 8 and 10 digits.'
@@ -102,7 +127,137 @@ export default function BookingPage() {
     return ''
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function findExistingCustomer(params: {
+    fullName: string
+    phone: string
+    email: string
+  }): Promise<CustomerRow | null> {
+    const normalizedName = normalizeName(params.fullName)
+    const normalizedPhoneValue = normalizePhone(params.phone)
+    const normalizedEmailValue = normalizeEmail(params.email)
+
+    if (normalizedPhoneValue) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('phone', normalizedPhoneValue)
+        .limit(1)
+
+      if (error) throw error
+      if (data?.[0]) return data[0] as CustomerRow
+    }
+
+    if (normalizedEmailValue) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('email', normalizedEmailValue)
+        .limit(1)
+
+      if (error) throw error
+      if (data?.[0]) return data[0] as CustomerRow
+    }
+
+    if (normalizedName) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(`
+          id,
+          full_name,
+          phone,
+          email,
+          preferred_contact,
+          billing_address,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('full_name', normalizedName)
+        .limit(1)
+
+      if (error) throw error
+      if (data?.[0]) return data[0] as CustomerRow
+    }
+
+    return null
+  }
+
+  async function findOrCreateCustomer(params: {
+    fullName: string
+    phone: string
+    email: string
+    preferredContact: 'SMS' | 'Email'
+  }): Promise<CustomerRow> {
+    const normalizedName = normalizeName(params.fullName)
+    const normalizedPhoneValue = normalizePhone(params.phone)
+    const normalizedEmailValue = normalizeEmail(params.email)
+
+    const existingCustomer = await findExistingCustomer({
+      fullName: normalizedName,
+      phone: normalizedPhoneValue,
+      email: normalizedEmailValue,
+    })
+
+    if (existingCustomer) {
+      return existingCustomer
+    }
+
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({
+        full_name: normalizedName,
+        phone: normalizedPhoneValue || null,
+        email: normalizedEmailValue || null,
+        preferred_contact: params.preferredContact,
+        billing_address: null,
+        notes: null,
+        is_active: true,
+      })
+      .select(`
+        id,
+        full_name,
+        phone,
+        email,
+        preferred_contact,
+        billing_address,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      `)
+      .single()
+
+    if (error || !data) {
+      throw error || new Error('Failed to create customer')
+    }
+
+    return data as CustomerRow
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
     if (saving) return
@@ -134,31 +289,50 @@ export default function BookingPage() {
       return
     }
 
-    const payload = {
-      full_name: form.fullName.trim(),
-      phone: cleanedPhone,
-      email: form.email.trim() || null,
-      brand: form.brand.trim(),
-      model: form.model.trim(),
-      fault_description: form.fault.trim(),
-      preferred_contact: form.preferredContact,
-      status: 'new',
-    }
+    try {
+      const normalizedFullName = normalizeName(form.fullName)
+      const normalizedEmailValue = normalizeEmail(form.email)
 
-    const { error } = await supabase.from('repair_requests').insert(payload)
+      const customer = await findOrCreateCustomer({
+        fullName: normalizedFullName,
+        phone: cleanedPhone,
+        email: normalizedEmailValue,
+        preferredContact: form.preferredContact,
+      })
 
-    setSaving(false)
+      const payload = {
+        customer_id: customer.id,
+        full_name: normalizedFullName,
+        phone: cleanedPhone,
+        email: normalizedEmailValue || null,
+        brand: form.brand.trim(),
+        model: form.model.trim(),
+        fault_description: form.fault.trim(),
+        preferred_contact: form.preferredContact,
+        status: 'new',
+      }
 
-    if (error) {
+      const { error } = await supabase.from('repair_requests').insert(payload)
+
+      setSaving(false)
+
+      if (error) {
+        setErrors({
+          ...initialErrors,
+          form: error.message,
+        })
+        return
+      }
+
+      setSubmitted(true)
+      setForm(initialForm)
+    } catch (err) {
+      setSaving(false)
       setErrors({
         ...initialErrors,
-        form: error.message,
+        form: err instanceof Error ? err.message : 'Failed to submit request.',
       })
-      return
     }
-
-    setSubmitted(true)
-    setForm(initialForm)
   }
 
   if (submitted) {
@@ -343,17 +517,17 @@ export default function BookingPage() {
   )
 }
 
-const pageWrapStyle: React.CSSProperties = {
+const pageWrapStyle: CSSProperties = {
   maxWidth: 980,
   margin: '0 auto',
   padding: '32px 20px 48px',
 }
 
-const heroStyle: React.CSSProperties = {
+const heroStyle: CSSProperties = {
   marginBottom: 24,
 }
 
-const eyebrowStyle: React.CSSProperties = {
+const eyebrowStyle: CSSProperties = {
   fontSize: 12,
   textTransform: 'uppercase',
   letterSpacing: '0.18em',
@@ -361,21 +535,21 @@ const eyebrowStyle: React.CSSProperties = {
   fontWeight: 800,
 }
 
-const titleStyle: React.CSSProperties = {
+const titleStyle: CSSProperties = {
   fontSize: 38,
   lineHeight: 1.1,
   margin: '10px 0 10px',
   color: '#0f172a',
 }
 
-const subtitleStyle: React.CSSProperties = {
+const subtitleStyle: CSSProperties = {
   margin: 0,
   color: '#475569',
   fontSize: 16,
   lineHeight: 1.6,
 }
 
-const cardStyle: React.CSSProperties = {
+const cardStyle: CSSProperties = {
   display: 'grid',
   gap: 18,
   background: '#ffffff',
@@ -385,13 +559,13 @@ const cardStyle: React.CSSProperties = {
   boxShadow: '0 10px 30px rgba(15, 23, 42, 0.05)',
 }
 
-const gridTwoStyle: React.CSSProperties = {
+const gridTwoStyle: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
   gap: 16,
 }
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   display: 'block',
   marginBottom: 8,
   fontSize: 14,
@@ -399,7 +573,7 @@ const labelStyle: React.CSSProperties = {
   color: '#334155',
 }
 
-const fieldStyle: React.CSSProperties = {
+const fieldStyle: CSSProperties = {
   width: '100%',
   padding: '12px 14px',
   borderRadius: 12,
@@ -410,7 +584,7 @@ const fieldStyle: React.CSSProperties = {
   color: '#0f172a',
 }
 
-const submitButtonStyle: React.CSSProperties = {
+const submitButtonStyle: CSSProperties = {
   background: '#059669',
   color: 'white',
   border: 0,
@@ -420,7 +594,7 @@ const submitButtonStyle: React.CSSProperties = {
   fontSize: 15,
 }
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   padding: '12px 16px',
   borderRadius: 12,
   border: '1px solid #cbd5e1',
@@ -430,7 +604,7 @@ const secondaryButtonStyle: React.CSSProperties = {
   fontWeight: 700,
 }
 
-const primaryLinkStyle: React.CSSProperties = {
+const primaryLinkStyle: CSSProperties = {
   display: 'inline-block',
   padding: '12px 16px',
   borderRadius: 12,
@@ -440,7 +614,7 @@ const primaryLinkStyle: React.CSSProperties = {
   fontWeight: 700,
 }
 
-const errorTextStyle: React.CSSProperties = {
+const errorTextStyle: CSSProperties = {
   color: '#b91c1c',
   fontSize: 14,
   marginTop: 8,
