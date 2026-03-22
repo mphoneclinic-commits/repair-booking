@@ -899,6 +899,7 @@ export default function NewJobPage() {
                 <p className={styles.helperText}>Selected: {photoFile.name}</p>
               ) : null}
 
+\
               <p className={styles.helperText}>
                 Accepted: JPG, PNG, WEBP, HEIC, HEIF. Max {MAX_PHOTO_SIZE_MB}MB.
               </p>
