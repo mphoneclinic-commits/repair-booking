@@ -259,8 +259,6 @@ async function sendQuoteSms(job: RepairRequest, message: string) {
     setError(result.error)
     return
   }
-
-  setSuccessMessage(`Quote SMS sent to ${job.phone}.`)
 }
 
 async function sendReadySms(job: RepairRequest, message: string) {
@@ -273,8 +271,6 @@ async function sendReadySms(job: RepairRequest, message: string) {
     setError(result.error)
     return
   }
-
-  setSuccessMessage(`Ready SMS sent to ${job.phone}.`)
 }
 
 
@@ -936,8 +932,8 @@ async function sendReadySms(job: RepairRequest, message: string) {
                             toggleExpanded={toggleExpanded}
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
-sendQuoteSms={sendQuoteSms}
-sendReadySms={sendReadySms}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                             updatePartsCost={updatePartsCost}
                             updateNotes={updateNotes}
                             updateRepairPerformed={updateRepairPerformed}
@@ -1129,8 +1125,8 @@ onDragEnd={() => handleDragEnd()}
                               toggleExpanded={toggleExpanded}
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
-sendQuoteSms={sendQuoteSms}
-sendReadySms={sendReadySms}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                               updatePartsCost={updatePartsCost}
                               updateNotes={updateNotes}
                               updateRepairPerformed={updateRepairPerformed}
@@ -1310,8 +1306,8 @@ sendReadySms={sendReadySms}
                 toggleExpanded={toggleExpanded}
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
-sendQuoteSms={sendQuoteSms}
-sendReadySms={sendReadySms}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                 updatePartsCost={updatePartsCost}
                 updateNotes={updateNotes}
                 updateRepairPerformed={updateRepairPerformed}
@@ -1423,8 +1419,8 @@ sendReadySms={sendReadySms}
                     toggleExpanded={toggleExpanded}
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
-sendQuoteSms={sendQuoteSms}
-sendReadySms={sendReadySms}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                     updatePartsCost={updatePartsCost}
                     updateNotes={updateNotes}
                     updateRepairPerformed={updateRepairPerformed}

@@ -97,8 +97,7 @@ export default function InvoicePrintPage() {
     setSuccessMessage('')
     setEmailSendError('')
     setEmailSendSuccess('')
-    setSmsSendError('')
-    setSmsSendSuccess('')
+    resetSmsState()
 
     try {
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -886,8 +885,7 @@ async function sendInvoiceSms(messageOverride?: string) {
               className={ui.secondaryButton}
               onClick={() => {
                 setSmsMessage(buildInvoiceSms())
-                setSmsSendError('')
-                setSmsSendSuccess('')
+                resetSmsState()
               }}
             >
               Load Invoice Template
@@ -898,8 +896,7 @@ async function sendInvoiceSms(messageOverride?: string) {
               className={ui.secondaryButton}
               onClick={() => {
                 setSmsMessage(buildPaidReminderSms())
-                setSmsSendError('')
-                setSmsSendSuccess('')
+                resetSmsState()
               }}
             >
               Load Reminder Template
@@ -910,8 +907,7 @@ async function sendInvoiceSms(messageOverride?: string) {
             value={smsMessage}
             onChange={(e) => {
               setSmsMessage(e.target.value)
-              setSmsSendError('')
-              setSmsSendSuccess('')
+		resetSmsState()
             }}
             className={styles.notesInput}
             placeholder="Type SMS here..."
@@ -940,8 +936,6 @@ async function sendInvoiceSms(messageOverride?: string) {
         {successMessage ? <div className={ui.successBanner}>{successMessage}</div> : null}
         {emailSendSuccess ? <div className={ui.successBanner}>{emailSendSuccess}</div> : null}
         {emailSendError ? <p className={ui.errorText}>{emailSendError}</p> : null}
-        {smsSendSuccess ? <div className={ui.successBanner}>{smsSendSuccess}</div> : null}
-        {smsSendError ? <p className={ui.errorText}>{smsSendError}</p> : null}
         {error ? <p className={ui.errorText}>{error}</p> : null}
 
         <article className={styles.document}>
