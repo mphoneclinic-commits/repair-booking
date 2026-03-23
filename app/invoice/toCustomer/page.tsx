@@ -195,8 +195,7 @@ export default function PublicInvoicePage() {
 
 <button
   type="button"
-  className={`${styles.printButton} ${styles.actionButton}`}
-
+  className={ui.secondaryButton}	
   onClick={() =>
     generateInvoicePdf({
       invoice,
