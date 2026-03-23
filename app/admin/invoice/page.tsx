@@ -7,7 +7,7 @@ import { generateInvoicePdf } from '../lib/invoicePdf'
 import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../lib/invoicePdfConfig'
 import styles from './invoice.module.css'
 import ui from '../sharedAdminUi.module.css'
-import useSms from '../hooks/useSms'
+import useSms from '../hooks/useAdminSms'
 import type {
   Invoice,
   InvoiceItem,
