@@ -4,18 +4,14 @@ function normalizePhone(value: string) {
   return value.replace(/\D/g, '')
 }
 
-function toE164Australian(phone: string) {
+function toAustralianMobileOrLocal(phone: string) {
   const digits = normalizePhone(phone)
 
   if (digits.startsWith('61')) {
-    return `+${digits}`
+    return `0${digits.slice(2)}`
   }
 
-  if (digits.startsWith('0')) {
-    return `+61${digits.slice(1)}`
-  }
-
-  return `+${digits}`
+  return digits
 }
 
 export async function POST(request: NextRequest) {
@@ -37,42 +33,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const accountSid = process.env.CRAZYTEL_ACCOUNT_SID
-    const authToken = process.env.CRAZYTEL_AUTH_TOKEN
+    const apiKey = process.env.CRAZYTEL_API_KEY
     const fromNumber = process.env.CRAZYTEL_FROM_NUMBER
 
-    if (!accountSid || !authToken || !fromNumber) {
+    if (!apiKey || !fromNumber) {
       return NextResponse.json(
-        { error: 'Twilio env vars are missing' },
+        { error: 'SMS provider env vars are missing' },
         { status: 500 }
       )
     }
 
-    const smsBody = new URLSearchParams()
-    smsBody.set('To', toE164Australian(to))
-    smsBody.set('From', fromNumber)
-    smsBody.set('Body', message)
+    const response = await fetch('https://sms.crazytel.net.au/api/v1/sms/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: toAustralianMobileOrLocal(to),
+        from: fromNumber,
+        message,
+      }),
+    })
 
-    const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
-
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: smsBody.toString(),
-      }
-    )
-
-    const data = await response.json()
+    const data = await response.json().catch(() => null)
 
     if (!response.ok) {
       return NextResponse.json(
         {
-          error: data?.message || 'Failed to send SMS',
+          error: data?.message || data?.error || 'Failed to send SMS',
           details: data,
         },
         { status: 500 }
@@ -81,8 +70,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      sid: data.sid,
-      status: data.status,
+      data,
     })
   } catch (error) {
     return NextResponse.json(
