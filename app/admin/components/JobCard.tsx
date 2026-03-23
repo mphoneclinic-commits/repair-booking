@@ -349,27 +349,54 @@ export default function JobCard({
           </p>
         </div>
 
-        <div className={styles.cardActions}>
-          {selectable && (
-            <label className={styles.archiveCheckboxLabel}>
-              <input
-                type="checkbox"
-                checked={selected}
-                onChange={(e) => {
-                  e.stopPropagation()
-                  onToggleSelected?.(job.id)
-                }}
-              />
-              <span>Select</span>
-            </label>
-          )}
+<div className={styles.cardActions}>
+  {selectable && (
+    <label className={styles.archiveCheckboxLabel}>
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={(e) => {
+          e.stopPropagation()
+          onToggleSelected?.(job.id)
+        }}
+      />
+      <span>Select</span>
+    </label>
+  )}
 
-          <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
-            {getStatusLabel(job.status)}
-          </span>
+  <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
+    {getStatusLabel(job.status)}
+  </span>
 
-          <SaveIndicator state={statusSaveState} compact />
-        </div>
+  {!expanded && (
+    <button
+      type="button"
+      className={styles.columnToggleButton}
+      onClick={(e) => {
+        e.stopPropagation()
+        toggleExpanded(job.id)
+      }}
+    >
+      Expand
+    </button>
+  )}
+
+  {expanded && (
+    <button
+      type="button"
+      className={styles.columnToggleButton}
+
+      onClick={(e) => {
+        e.stopPropagation()
+        toggleExpanded(job.id)
+      }}
+    >
+      Collapse
+    </button>
+  )}
+
+  <SaveIndicator state={statusSaveState} compact />
+</div>
       </div>
 
       {!expanded ? (
