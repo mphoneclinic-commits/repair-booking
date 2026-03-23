@@ -31,8 +31,8 @@ type Props = {
   updateNotes: (id: string, notes: string) => Promise<boolean> | boolean
   updateRepairPerformed: (id: string, repairPerformed: string) => Promise<boolean> | boolean
   removeInvoiceForJob: (job: RepairRequest) => Promise<void> | void
-  onSendQuoteSms?: (job: RepairRequest, message: string) => Promise<void> | void
-  onSendReadySms?: (job: RepairRequest, message: string) => Promise<void> | void
+  sendQuoteSms?: (job: RepairRequest, message: string) => Promise<void> | void
+  sendReadySms?: (job: RepairRequest, message: string) => Promise<void> | void
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -122,8 +122,8 @@ export default function JobCard({
   toggleExpanded,
   updateStatus,
   updateQuote,
-  onSendQuoteSms,
-  onSendReadySms,
+  sendQuoteSms,
+  sendReadySms,
   updatePartsCost,
   updateNotes,
   updateRepairPerformed,
@@ -742,7 +742,7 @@ function buildReadySms() {
                   className={styles.actionButton}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void onSendQuoteSms?.(job, quoteSmsText)
+                    void sendQuoteSms?.(job, quoteSmsText)
                   }}
                 >
                   Send Quote SMS
