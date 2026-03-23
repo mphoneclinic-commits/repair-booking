@@ -48,9 +48,6 @@ export default function InvoicePrintPage() {
 
   const [sendToPhone, setSendToPhone] = useState('')
   const [smsMessage, setSmsMessage] = useState('')
-  const [sendingSms, setSendingSms] = useState(false)
-  const [smsSendError, setSmsSendError] = useState('')
-  const [smsSendSuccess, setSmsSendSuccess] = useState('')
 
   const customerNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const internalNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

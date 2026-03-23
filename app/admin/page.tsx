@@ -155,7 +155,7 @@ const {
   sendingSms,
   smsError,
   smsSuccess,
-} = useSms(''/.netlify/functions/send-sms'')
+} = useSms('/.netlify/functions/send-sms')
 
   const {
     filteredJobs,

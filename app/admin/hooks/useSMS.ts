@@ -1,100 +1,114 @@
- function buildInvoiceSms() {
-    if (!invoice) return ''
+'use client'
 
-    const customerName = invoice.customer_name.split(' ')[0] || invoice.customer_name
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || window.location.origin
-    const publicInvoiceUrl = `${baseUrl}/invoice/toCustomer?id=${invoice.id}`
+import { useCallback, useState } from 'react'
 
-    return `Hi ${customerName}, your invoice ${invoice.invoice_number} for ${formatCurrency(
-      invoice.total
-    )} is ready. View it here: ${publicInvoiceUrl}`
-  }
+type SendSmsArgs = {
+  to: string
+  message: string
+  endpoint?: string
+  onSuccess?: (meta: { to: string; message: string; nowIso: string }) => Promise<void> | void
+}
 
-  function buildPaidReminderSms() {
-    if (!invoice) return ''
+type SmsState = 'idle' | 'sending' | 'success' | 'error'
 
-    const customerName = invoice.customer_name.split(' ')[0] || invoice.customer_name
-    return `Hi ${customerName}, this is a reminder that invoice ${invoice.invoice_number} for ${formatCurrency(
-      invoice.total
-    )} is outstanding. Please contact The Mobile Phone Clinic if you have any questions.`
-  }
+function normalizePhone(value: string) {
+  return String(value || '').replace(/\D/g, '').trim()
+}
 
-  async function sendInvoiceSms(messageOverride?: string) {
-    if (!invoice) return
+export default function useSms(defaultEndpoint = '/api/admin/send-sms-status') {
+  const [smsState, setSmsState] = useState<SmsState>('idle')
+  const [sendingSms, setSendingSms] = useState(false)
+  const [smsError, setSmsError] = useState('')
+  const [smsSuccess, setSmsSuccess] = useState('')
 
-    const to = String(sendToPhone || '').replace(/\D/g, '').trim()
-    const message = (messageOverride ?? smsMessage).trim()
+  const resetSmsState = useCallback(() => {
+    setSmsState('idle')
+    setSendingSms(false)
+    setSmsError('')
+    setSmsSuccess('')
+  }, [])
 
-    if (!to) {
-      setSmsSendError('Please enter a phone number to send the SMS to.')
-      setSmsSendSuccess('')
-      return
-    }
+  const sendSms = useCallback(
+    async ({ to, message, endpoint, onSuccess }: SendSmsArgs) => {
+      const normalizedTo = normalizePhone(to)
+      const trimmedMessage = String(message || '').trim()
 
-    if (!message) {
-      setSmsSendError('Please enter an SMS message.')
-      setSmsSendSuccess('')
-      return
-    }
+      if (!normalizedTo) {
+        const error = 'Please enter a phone number to send the SMS to.'
+        setSmsState('error')
+        setSmsError(error)
+        setSmsSuccess('')
+        return { ok: false as const, error }
+      }
 
-    setSendingSms(true)
-    setSmsSendError('')
-    setSmsSendSuccess('')
-    setError('')
-    setSuccessMessage('')
+      if (!trimmedMessage) {
+        const error = 'Please enter an SMS message.'
+        setSmsState('error')
+        setSmsError(error)
+        setSmsSuccess('')
+        return { ok: false as const, error }
+      }
 
-    try {
-      const response = await fetch('/.netlify/functions/send-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, message }),
-      })
-
-      const rawText = await response.text()
-      let data: any = {}
+      setSendingSms(true)
+      setSmsState('sending')
+      setSmsError('')
+      setSmsSuccess('')
 
       try {
-        data = rawText ? JSON.parse(rawText) : {}
-      } catch {
-        throw new Error(rawText || 'Server returned invalid response')
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to send SMS')
-      }
-
-      const nowIso = new Date().toISOString()
-
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({
-          last_sms_sent_at: nowIso,
-          last_sms_to: to,
-          last_sms_message: message,
+        const response = await fetch(endpoint || defaultEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: normalizedTo,
+            message: trimmedMessage,
+          }),
         })
-        .eq('id', invoice.id)
 
-      if (updateError) {
-        throw new Error(updateError.message)
+        const rawText = await response.text()
+        let data: any = {}
+
+        try {
+          data = rawText ? JSON.parse(rawText) : {}
+        } catch {
+          throw new Error(rawText || 'Server returned invalid response')
+        }
+
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to send SMS')
+        }
+
+        const nowIso = new Date().toISOString()
+
+        if (onSuccess) {
+          await onSuccess({
+            to: normalizedTo,
+            message: trimmedMessage,
+            nowIso,
+          })
+        }
+
+        setSmsState('success')
+        setSmsSuccess(`SMS sent to ${normalizedTo}.`)
+        return { ok: true as const, data, nowIso }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Failed to send SMS'
+        setSmsState('error')
+        setSmsError(error)
+        setSmsSuccess('')
+        return { ok: false as const, error }
+      } finally {
+        setSendingSms(false)
       }
+    },
+    [defaultEndpoint]
+  )
 
-      setInvoice((prev) =>
-        prev
-          ? {
-              ...prev,
-              last_sms_sent_at: nowIso,
-              last_sms_to: to,
-              last_sms_message: message,
-            }
-          : null
-      )
-
-      setSmsSendSuccess(`SMS sent to ${to}.`)
-      setSuccessMessage(' SMS sent successfully.')
-    } catch (err) {
-      setSmsSendError(err instanceof Error ? err.message : 'Failed to send invoice SMS')
-    } finally {
-      setSendingSms(false)
-    }
+  return {
+    smsState,
+    sendingSms,
+    smsError,
+    smsSuccess,
+    resetSmsState,
+    sendSms,
   }
+}
