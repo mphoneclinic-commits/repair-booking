@@ -330,11 +330,7 @@ function buildReadySms() {
   return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us on 03 9547 9991 to arrange collection. Thanks.`
 }
 
-function openSms(message: string) {
-  const encoded = encodeURIComponent(message)
-  const digits = job.phone.replace(/\D/g, '')
-  window.open(`sms:${digits}?body=${encoded}`, '_self')
-}
+
   function handleCardClick() {
     onSelectCard?.(job.id)
   }

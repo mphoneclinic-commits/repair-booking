@@ -256,11 +256,14 @@ async function sendQuoteSms(job: RepairRequest, message: string) {
   })
 
   const result = await response.json().catch(() => null)
+  console.log('QUOTE SMS response', response.status, result)
 
   if (!response.ok) {
     setError(result?.error || 'Failed to send quote SMS.')
     return
   }
+
+  alert('Quote SMS sent successfully.')
 }
 
 async function sendReadySms(job: RepairRequest, message: string) {
@@ -278,11 +281,14 @@ async function sendReadySms(job: RepairRequest, message: string) {
   })
 
   const result = await response.json().catch(() => null)
+  console.log('READY SMS response', response.status, result)
 
   if (!response.ok) {
     setError(result?.error || 'Failed to send ready SMS.')
     return
   }
+
+  alert('Ready SMS sent successfully.')
 }
   async function duplicateJob(sourceJob: RepairRequest) {
     setError('')
@@ -942,6 +948,8 @@ async function sendReadySms(job: RepairRequest, message: string) {
                             toggleExpanded={toggleExpanded}
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                             updatePartsCost={updatePartsCost}
                             updateNotes={updateNotes}
                             updateRepairPerformed={updateRepairPerformed}
@@ -1133,6 +1141,8 @@ onDragEnd={() => handleDragEnd()}
                               toggleExpanded={toggleExpanded}
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                               updatePartsCost={updatePartsCost}
                               updateNotes={updateNotes}
                               updateRepairPerformed={updateRepairPerformed}
@@ -1312,6 +1322,8 @@ onDragEnd={() => handleDragEnd()}
                 toggleExpanded={toggleExpanded}
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                 updatePartsCost={updatePartsCost}
                 updateNotes={updateNotes}
                 updateRepairPerformed={updateRepairPerformed}
@@ -1423,6 +1435,8 @@ onDragEnd={() => handleDragEnd()}
                     toggleExpanded={toggleExpanded}
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
+onSendQuoteSms={sendQuoteSms}
+onSendReadySms={sendReadySms}
                     updatePartsCost={updatePartsCost}
                     updateNotes={updateNotes}
                     updateRepairPerformed={updateRepairPerformed}
