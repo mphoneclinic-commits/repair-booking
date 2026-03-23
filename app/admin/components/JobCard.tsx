@@ -808,7 +808,7 @@ function buildReadySms() {
                 className={styles.actionButton}
                 onClick={(e) => {
                   e.stopPropagation()
-                  void onSendReadySms?.(job, readySmsText)
+                  void sendReadySms?.(job, readySmsText)
                 }}
               >
                 Ready for Pickup SMS
