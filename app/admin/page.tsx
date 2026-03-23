@@ -24,7 +24,6 @@ import {
   formatDateTime,
   getStatusLabel,
 } from './utils'
-import SummaryCard from './components/SummaryCard'
 import JobCard from './components/JobCard'
 
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
@@ -50,7 +49,7 @@ export default function AdminPage() {
   const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
   const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
 
-const [successMessage, setSuccessMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
 
   const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
     new: false,
@@ -152,12 +151,8 @@ const [successMessage, setSuccessMessage] = useState('')
     setError,
     normalizeJob,
   })
-const {
-  sendSms,
-  sendingSms,
-  smsError,
-  smsSuccess,
-} = useSms('/.netlify/functions/send-sms')
+
+  const { sendSms } = useSms('/.netlify/functions/send-sms')
 
   const {
     filteredJobs,
@@ -203,6 +198,54 @@ const {
     void loadAllData()
   }, [authChecked, isAdminSignedIn, loadAllData])
 
+  useEffect(() => {
+    if (!successMessage) return
+    const timer = setTimeout(() => setSuccessMessage(''), 3000)
+    return () => clearTimeout(timer)
+  }, [successMessage])
+
+  useEffect(() => {
+    function handleScroll() {
+      setShowBackToTop(window.scrollY > 320)
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (loading) return
+
+    const params = new URLSearchParams(window.location.search)
+    const highlightJob = params.get('highlightJob')
+    if (!highlightJob) return
+
+    setHighlightedJobId(highlightJob)
+    setExpandedJobs((prev) => ({
+      ...prev,
+      [highlightJob]: true,
+    }))
+
+    window.setTimeout(() => {
+      const el = jobRefs.current[highlightJob]
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+      }
+    }, 150)
+
+    const nextUrl = new URL(window.location.href)
+    nextUrl.searchParams.delete('highlightJob')
+    window.history.replaceState({}, '', nextUrl.toString())
+  }, [loading])
+
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
       ...prev,
@@ -210,12 +253,6 @@ const {
     }))
     setHighlightedJobId(jobId)
   }
-
-useEffect(() => {
-  if (!successMessage) return
-  const timer = setTimeout(() => setSuccessMessage(''), 3000)
-  return () => clearTimeout(timer)
-}, [successMessage])
 
   function selectJobCard(jobId: string) {
     setHighlightedJobId(jobId)
@@ -257,40 +294,39 @@ useEffect(() => {
     })
   }
 
-async function sendQuoteSms(job: RepairRequest, message: string) {
-  setError('')
-  setSuccessMessage('')
+  async function sendQuoteSms(job: RepairRequest, message: string) {
+    setError('')
+    setSuccessMessage('')
 
-  const result = await sendSms({
-    to: job.phone,
-    message,
-  })
+    const result = await sendSms({
+      to: job.phone,
+      message,
+    })
 
-  if (!result.ok) {
-    setError(result.error)
-    return
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
+    setSuccessMessage(`Quote SMS sent to ${job.phone}.`)
   }
 
-  setSuccessMessage(`Quote SMS sent to ${job.phone}.`)
-}
+  async function sendReadySms(job: RepairRequest, message: string) {
+    setError('')
+    setSuccessMessage('')
 
-async function sendReadySms(job: RepairRequest, message: string) {
-  setError('')
-  setSuccessMessage('')
+    const result = await sendSms({
+      to: job.phone,
+      message,
+    })
 
-  const result = await sendSms({
-    to: job.phone,
-    message,
-  })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
 
-  if (!result.ok) {
-    setError(result.error)
-    return
+    setSuccessMessage(`Ready SMS sent to ${job.phone}.`)
   }
-
-  setSuccessMessage(`Ready SMS sent to ${job.phone}.`)
-}
-
 
   async function duplicateJob(sourceJob: RepairRequest) {
     setError('')
@@ -722,48 +758,6 @@ async function sendReadySms(job: RepairRequest, message: string) {
     return true
   }
 
-  useEffect(() => {
-    function handleScroll() {
-      setShowBackToTop(window.scrollY > 320)
-    }
-
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    handleScroll()
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (loading) return
-
-    const params = new URLSearchParams(window.location.search)
-    const highlightJob = params.get('highlightJob')
-    if (!highlightJob) return
-
-    setHighlightedJobId(highlightJob)
-    setExpandedJobs((prev) => ({
-      ...prev,
-      [highlightJob]: true,
-    }))
-
-    window.setTimeout(() => {
-      const el = jobRefs.current[highlightJob]
-      if (el) {
-        el.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        })
-      }
-    }, 150)
-
-    const nextUrl = new URL(window.location.href)
-    nextUrl.searchParams.delete('highlightJob')
-    window.history.replaceState({}, '', nextUrl.toString())
-  }, [loading])
-
   if (!authChecked) {
     return (
       <main className={styles.page}>
@@ -893,6 +887,7 @@ async function sendReadySms(job: RepairRequest, message: string) {
 
       {loading && <p className={styles.message}>Loading jobs...</p>}
       {!!error && <p className={styles.errorText}>{error}</p>}
+      {!!successMessage && <p className={styles.successText}>{successMessage}</p>}
       {!loading && !error && filteredJobs.length === 0 && !showHidden && (
         <p className={styles.message}>No matching repair requests.</p>
       )}
@@ -950,8 +945,8 @@ async function sendReadySms(job: RepairRequest, message: string) {
                             toggleExpanded={toggleExpanded}
                             updateStatus={updateStatus}
                             updateQuote={updateQuote}
-onSendQuoteSms={sendQuoteSms}
-onSendReadySms={sendReadySms}
+                            onSendQuoteSms={sendQuoteSms}
+                            onSendReadySms={sendReadySms}
                             updatePartsCost={updatePartsCost}
                             updateNotes={updateNotes}
                             updateRepairPerformed={updateRepairPerformed}
@@ -969,8 +964,8 @@ onSendReadySms={sendReadySms}
                             setFieldState={setFieldState}
                             draggableEnabled
                             isDragging={draggedJobId === job.id}
-                           onDragStart={(_e, jobId) => handleDragStart(jobId)}
-onDragEnd={() => handleDragEnd()}
+                            onDragStart={(_e, jobId) => handleDragStart(jobId)}
+                            onDragEnd={() => handleDragEnd()}
                             invoice={invoice}
                             invoiceItems={invoiceItems}
                             invoiceActionState={invoiceActionStates[job.id] || 'idle'}
@@ -1001,8 +996,6 @@ onDragEnd={() => handleDragEnd()}
               </div>
             ))}
           </div>
-
-         
 
           <section className={styles.otherStatusesSection}>
             <div className={styles.archiveHeader}>
@@ -1143,8 +1136,8 @@ onDragEnd={() => handleDragEnd()}
                               toggleExpanded={toggleExpanded}
                               updateStatus={updateStatus}
                               updateQuote={updateQuote}
-onSendQuoteSms={sendQuoteSms}
-onSendReadySms={sendReadySms}
+                              onSendQuoteSms={sendQuoteSms}
+                              onSendReadySms={sendReadySms}
                               updatePartsCost={updatePartsCost}
                               updateNotes={updateNotes}
                               updateRepairPerformed={updateRepairPerformed}
@@ -1324,8 +1317,8 @@ onSendReadySms={sendReadySms}
                 toggleExpanded={toggleExpanded}
                 updateStatus={updateStatus}
                 updateQuote={updateQuote}
-onSendQuoteSms={sendQuoteSms}
-onSendReadySms={sendReadySms}
+                onSendQuoteSms={sendQuoteSms}
+                onSendReadySms={sendReadySms}
                 updatePartsCost={updatePartsCost}
                 updateNotes={updateNotes}
                 updateRepairPerformed={updateRepairPerformed}
@@ -1350,7 +1343,7 @@ onSendReadySms={sendReadySms}
                 addInvoiceItemForInvoice={addInvoiceItemForInvoice}
                 updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
                 deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
-               removeInvoiceForJob={removeInvoiceForJob}
+                removeInvoiceForJob={removeInvoiceForJob}
                 highlighted={highlightedJobId === job.id}
                 cardRef={(el) => {
                   jobRefs.current[job.id] = el
@@ -1437,8 +1430,8 @@ onSendReadySms={sendReadySms}
                     toggleExpanded={toggleExpanded}
                     updateStatus={updateStatus}
                     updateQuote={updateQuote}
-onSendQuoteSms={sendQuoteSms}
-onSendReadySms={sendReadySms}
+                    onSendQuoteSms={sendQuoteSms}
+                    onSendReadySms={sendReadySms}
                     updatePartsCost={updatePartsCost}
                     updateNotes={updateNotes}
                     updateRepairPerformed={updateRepairPerformed}

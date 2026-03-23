@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { generateInvoicePdf } from '../lib/invoicePdf'
-import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../lib/invoicePdfConfig'
+import generateInvoicePdf from '../lib/generateInvoicePdf'
+
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem } from '../types'
 import { formatDateTime } from '../utils'
@@ -13,6 +13,23 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+const BUSINESS_DETAILS = {
+  name: 'The Mobile Phone Clinic',
+  address: 'Melbourne, Victoria, Australia',
+  landline: '(03) 9547 9991',
+  mobile: '0411 369 814',
+  email: 'admin@themobilephoneclinic.com.au',
+  abn: '59696 1787 82',
+}
+
+const PAYMENT_DETAILS = {
+  bankName: 'GREAT SOUTHERN BANK',
+  accountName: 'BUN UNG',
+  bsb: '814 282',
+  accountNumber: '520 372 19',
+  payId: '0411 369 814',
+}
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -302,18 +319,6 @@ export default function InvoicesPage() {
     }
   }
 
- function generatePDF(invoice: Invoice) {
-  generateInvoicePdf({
-    invoice,
-    items: invoiceItemsByInvoiceId[invoice.id] || [],
-    businessDetails: BUSINESS_DETAILS,
-    paymentDetails: PAYMENT_DETAILS,
-    includeInternalReferenceNotes: false,
-    businessSubtitle: 'Device Repairs & Diagnostics',
-  })
-
-}
-    
   if (loading) {
     return (
       <main className={styles.page}>
@@ -483,8 +488,17 @@ export default function InvoicesPage() {
                     <td className={styles.tableButtonCell}>
                       <button
                         type="button"
-                        className={`${styles.button} ${styles.printButton}`}
-                        onClick={() => generatePDF(invoice)}
+                        className={styles.printButton}
+                        onClick={() =>
+                          generateInvoicePdf({
+                            invoice,
+                            items: invoiceItemsByInvoiceId[invoice.id] ?? [],
+                            businessDetails: BUSINESS_DETAILS,
+                            paymentDetails: PAYMENT_DETAILS,
+                            formatCurrency,
+                            formatDateTime,
+                          })
+                        }
                       >
                         Download PDF
                       </button>

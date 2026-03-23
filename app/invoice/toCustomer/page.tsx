@@ -5,8 +5,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import type { Invoice, InvoiceItem } from '../../admin/types'
 import { formatDateTime } from '../../admin/utils'
-import { generateInvoicePdf } from '../../admin/lib/invoicePdf'
-import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../../admin/lib/invoicePdfConfig'
+import generateInvoicePdf from '../../admin/lib/generateInvoicePdf'
+
 import styles from '../../admin/invoice/invoice.module.css'
 import ui from '../../admin/sharedAdminUi.module.css'
 
@@ -14,6 +14,23 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+const BUSINESS_DETAILS = {
+  name: 'The Mobile Phone Clinic',
+  address: 'Melbourne, Victoria, Australia',
+  landline: '(03) 9547 9991',
+  mobile: '0411 369 814',
+  email: 'admin@themobilephoneclinic.com.au',
+  abn: '59696 1787 82',
+}
+
+const PAYMENT_DETAILS = {
+  bankName: 'GREAT SOUTHERN BANK',
+  accountName: 'BUN UNG',
+  bsb: '814 282',
+  accountNumber: '520 372 19',
+  payId: '0411 369 814',
+}
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -125,17 +142,6 @@ export default function PublicInvoicePage() {
     }
   }
 
-  function generatePDF() {
-    if (!invoice) return
-
-    generateInvoicePdf({
-      invoice,
-      items,
-      businessDetails: BUSINESS_DETAILS,
-      paymentDetails: PAYMENT_DETAILS,
-      includeInternalReferenceNotes: false,
-    })
-  }
 
   const totalQty = useMemo(() => {
     return items.reduce((sum, item) => sum + Number(item.qty ?? 0), 0)
@@ -182,18 +188,27 @@ export default function PublicInvoicePage() {
             <button
               type="button"
               className={ui.printButton}
-              onClick={() => window.print()}
+              onClick={() => window.print()}	
             >
               Print Invoice
             </button>
 
-            <button
-              type="button"
-              className={ui.printButton}
-              onClick={generatePDF}
-            >
-              Download PDF
-            </button>
+<button
+  type="button"
+  className={ui.printButton}
+  onClick={() =>
+    generateInvoicePdf({
+      invoice,
+      items,
+      businessDetails: BUSINESS_DETAILS,
+      paymentDetails: PAYMENT_DETAILS,
+      formatCurrency,
+      formatDateTime,
+    })
+  }
+>
+  Download PDF
+</button>
           </div>
         </div>
 

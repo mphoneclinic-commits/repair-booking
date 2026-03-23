@@ -3,11 +3,11 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { generateInvoicePdf } from '../lib/invoicePdf'
-import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../lib/invoicePdfConfig'
 import styles from './invoice.module.css'
 import ui from '../sharedAdminUi.module.css'
 import useSms from '../hooks/useAdminSms'
+import generateInvoicePdf from '../lib/generateInvoicePdf'
+
 import type {
   Invoice,
   InvoiceItem,
@@ -27,6 +27,23 @@ const supabase = createClient(
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
+}
+
+const BUSINESS_DETAILS = {
+  name: 'The Mobile Phone Clinic',
+  address: 'Melbourne, Victoria, Australia',
+  landline: '(03) 9547 9991',
+  mobile: '0411 369 814',
+  email: 'admin@themobilephoneclinic.com.au',
+  abn: '596 961 787 82',
+}
+
+const PAYMENT_DETAILS = {
+  bankName: 'GREAT SOUTHERN BANK',
+  accountName: 'BUN UNG',
+  bsb: '814 282',
+  accountNumber: '520 372 19',
+  payId: '0411 369 814',
 }
 
 export default function InvoicePrintPage() {
@@ -63,6 +80,12 @@ export default function InvoicePrintPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
   const { deleteInvoice, deletingInvoice, deleteInvoiceError } = useDeleteInvoice()
+
+  const {
+    sendSms,
+    sendingSms,
+    resetSmsState,
+  } = useSms('/.netlify/functions/send-sms')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -569,15 +592,6 @@ export default function InvoicePrintPage() {
     }
   }
 
-const {
-  sendSms,
-  sendingSms,
-  smsError,
-  smsSuccess,
-  resetSmsState,
-} = useSms('/.netlify/functions/send-sms')
-
-
   function buildInvoiceSms() {
     if (!invoice) return ''
 
@@ -600,48 +614,48 @@ const {
     )} is outstanding. Please contact The Mobile Phone Clinic if you have any questions.`
   }
 
-async function sendInvoiceSms(messageOverride?: string) {
-  if (!invoice) return
+  async function sendInvoiceSms(messageOverride?: string) {
+    if (!invoice) return
 
-  setError('')
-  setSuccessMessage('')
+    setError('')
+    setSuccessMessage('')
 
-  const result = await sendSms({
-    to: sendToPhone,
-    message: messageOverride ?? smsMessage,
-    onSuccess: async ({ to, message, nowIso }) => {
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({
-          last_sms_sent_at: nowIso,
-          last_sms_to: to,
-          last_sms_message: message,
-        })
-        .eq('id', invoice.id)
+    const result = await sendSms({
+      to: sendToPhone,
+      message: messageOverride ?? smsMessage,
+      onSuccess: async ({ to, message, nowIso }) => {
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({
+            last_sms_sent_at: nowIso,
+            last_sms_to: to,
+            last_sms_message: message,
+          })
+          .eq('id', invoice.id)
 
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
+        if (updateError) {
+          throw new Error(updateError.message)
+        }
 
-      setInvoice((prev) =>
-        prev
-          ? {
-              ...prev,
-              last_sms_sent_at: nowIso,
-              last_sms_to: to,
-              last_sms_message: message,
-            }
-          : null
-      )
+        setInvoice((prev) =>
+          prev
+            ? {
+                ...prev,
+                last_sms_sent_at: nowIso,
+                last_sms_to: to,
+                last_sms_message: message,
+              }
+            : null
+        )
 
-      setSuccessMessage('SMS sent successfully.')
-    },
-  })
+        setSuccessMessage('SMS sent successfully.')
+      },
+    })
 
-  if (!result.ok) {
-    setError(result.error)
+    if (!result.ok) {
+      setError(result.error)
+    }
   }
-}
 
   async function handleDeleteInvoice() {
     if (!invoice) return
@@ -662,19 +676,6 @@ async function sendInvoiceSms(messageOverride?: string) {
     }
 
     window.location.href = '/admin/invoices'
-  }
-
-  function generatePDF() {
-    if (!invoice) return
-
-    generateInvoicePdf({
-      invoice,
-      items,
-      linkedJobs,
-      businessDetails: BUSINESS_DETAILS,
-      paymentDetails: PAYMENT_DETAILS,
-      includeInternalReferenceNotes: true,
-    })
   }
 
   const totalQty = useMemo(() => {
@@ -804,11 +805,20 @@ async function sendInvoiceSms(messageOverride?: string) {
               </button>
             )}
 
-            <button type="button" className={ui.printButton} onClick={() => window.print()}>
-              Print Invoice
-            </button>
-
-            <button type="button" className={ui.printButton} onClick={generatePDF}>
+            <button
+              type="button"
+              className={styles.printButton}
+              onClick={() =>
+                generateInvoicePdf({
+                  invoice,
+                  items,
+                  businessDetails: BUSINESS_DETAILS,
+                  paymentDetails: PAYMENT_DETAILS,
+                  formatCurrency,
+                  formatDateTime,
+                })
+              }
+            >
               Download PDF
             </button>
 
@@ -907,7 +917,7 @@ async function sendInvoiceSms(messageOverride?: string) {
             value={smsMessage}
             onChange={(e) => {
               setSmsMessage(e.target.value)
-		resetSmsState()
+              resetSmsState()
             }}
             className={styles.notesInput}
             placeholder="Type SMS here..."
