@@ -488,7 +488,8 @@ export default function InvoicesPage() {
                     <td className={styles.tableButtonCell}>
                       <button
                         type="button"
-                        className={styles.printButton}
+                          className={`${styles.printButton} ${styles.actionButton}`}
+
                         onClick={() =>
                           generateInvoicePdf({
                             invoice,

@@ -807,7 +807,7 @@ export default function InvoicePrintPage() {
 
             <button
               type="button"
-              className={styles.printButton}
+                className={ui.secondaryButton}																			
               onClick={() =>
                 generateInvoicePdf({
                   invoice,
