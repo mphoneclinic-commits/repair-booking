@@ -314,62 +314,125 @@ export default function AdminStatsPage() {
 
       {!loading && !error ? (
         <>
-          <div className={styles.summaryGrid}>
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Jobs Linked in Range</div>
-              <div className={styles.summaryValue}>{stats.totalJobs}</div>
-            </div>
+          
+<div className={styles.statsDashboard}>
+  <section className={styles.statsSection}>
+    <div className={styles.statsSectionHeader}>
+      <h2 className={styles.sectionTitle}>Overview</h2>
+      <p className={styles.statsSectionSubtext}>Jobs and invoice volume in selected range</p>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Quoted Value</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.quotedValue)}</div>
-            </div>
+    <div className={styles.statsCardGrid}>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Jobs Linked in Range</div>
+        <div className={styles.summaryValue}>{stats.totalJobs}</div>
+      </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Issued Revenue</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.issuedRevenue)}</div>
-            </div>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Visible Jobs</div>
+        <div className={styles.summaryValue}>{stats.visibleJobs}</div>
+      </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Paid Revenue</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.paidRevenue)}</div>
-            </div>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Hidden Jobs</div>
+        <div className={styles.summaryValue}>{stats.hiddenJobs}</div>
+      </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Parts Cost on Linked Jobs</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.partsCostTotal)}</div>
-            </div>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Quoted Value</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.quotedValue)}</div>
+      </div>
+    </div>
+  </section>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Issued Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.issuedJobsCost)}</div>
-            </div>
+  <section className={styles.statsSection}>
+    <div className={styles.statsSectionHeader}>
+      <h2 className={styles.sectionTitle}>Revenue</h2>
+      <p className={styles.statsSectionSubtext}>Issued, paid and outstanding invoice totals</p>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Paid Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.paidJobsCost)}</div>
-            </div>
+    <div className={styles.statsCardGrid}>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Issued Revenue</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.issuedRevenue)}</div>
+      </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Gross Profit</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.grossProfit)}</div>
-            </div>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Paid Revenue</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.paidRevenue)}</div>
+      </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Gross Margin</div>
-              <div className={styles.summaryValue}>{stats.grossMargin.toFixed(1)}%</div>
-            </div>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Unpaid Invoice Total</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.unpaidRevenue)}</div>
+      </div>
+    </div>
+  </section>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Unpaid Invoice Total</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.unpaidRevenue)}</div>
-            </div>
+  <section className={styles.statsSection}>
+    <div className={styles.statsSectionHeader}>
+      <h2 className={styles.sectionTitle}>Costs & Profit</h2>
+      <p className={styles.statsSectionSubtext}>Linked job cost and gross margin snapshot</p>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Unpaid Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.unpaidJobsCost)}</div>
-            </div>
-          </div>
+    <div className={styles.statsCardGrid}>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Parts Cost on Linked Jobs</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.partsCostTotal)}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Cost on Issued Invoices</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.issuedJobsCost)}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Cost on Paid Invoices</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.paidJobsCost)}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Cost on Unpaid Invoices</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.unpaidJobsCost)}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Gross Profit</div>
+        <div className={styles.summaryValue}>{formatCurrency(stats.grossProfit)}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Gross Margin</div>
+        <div className={styles.summaryValue}>{stats.grossMargin.toFixed(1)}%</div>
+      </div>
+    </div>
+  </section>
+
+  <section className={styles.statsSection}>
+    <div className={styles.statsSectionHeader}>
+      <h2 className={styles.sectionTitle}>Invoices</h2>
+      <p className={styles.statsSectionSubtext}>Status counts in selected range</p>
+    </div>
+
+    <div className={styles.statsCardGrid}>
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Paid Invoices</div>
+        <div className={styles.summaryValue}>{stats.paidInvoices}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Issued Invoices</div>
+        <div className={styles.summaryValue}>{stats.issuedInvoices}</div>
+      </div>
+
+      <div className={styles.summaryCard}>
+        <div className={styles.summaryLabel}>Unpaid Invoices</div>
+        <div className={styles.summaryValue}>{stats.unpaidInvoices}</div>
+      </div>
+    </div>
+  </section>
+</div>
+
 
           <section className={styles.otherStatusesSection}>
             <h2 className={styles.sectionTitle}>Paid invoices in range</h2>

@@ -1391,3 +1391,34 @@
     grid-template-columns: 1fr;
   }
 }
+.statsDashboard {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.statsSection {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.statsSectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.statsSectionSubtext {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.72;
+}
+
+.statsCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}

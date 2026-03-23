@@ -544,7 +544,7 @@ export default function AdminPage() {
       }
 
       const newDescription = [
-        updatedJob.job_number ? `(${updatedJob.job_number.trim()})` : '',
+        updatedJob.job_number ? `${updatedJob.job_number.trim()}` : '',
         [updatedJob.brand, updatedJob.model].filter(Boolean).join(' ').trim(),
         nextValue.trim() || 'Repair service',
       ]
