@@ -7,6 +7,7 @@ import { generateInvoicePdf } from '../lib/invoicePdf'
 import { BUSINESS_DETAILS, PAYMENT_DETAILS } from '../lib/invoicePdfConfig'
 import styles from './invoice.module.css'
 import ui from '../sharedAdminUi.module.css'
+import useSms from '../hooks/useSms'
 import type {
   Invoice,
   InvoiceItem,
@@ -572,6 +573,15 @@ export default function InvoicePrintPage() {
     }
   }
 
+const {
+  sendSms,
+  sendingSms,
+  smsError,
+  smsSuccess,
+  resetSmsState,
+} = useSms('/.netlify/functions/send-sms')
+
+
   function buildInvoiceSms() {
     if (!invoice) return ''
 
@@ -594,52 +604,16 @@ export default function InvoicePrintPage() {
     )} is outstanding. Please contact The Mobile Phone Clinic if you have any questions.`
   }
 
-  async function sendInvoiceSms(messageOverride?: string) {
-    if (!invoice) return
+async function sendInvoiceSms(messageOverride?: string) {
+  if (!invoice) return
 
-    const to = String(sendToPhone || '').replace(/\D/g, '').trim()
-    const message = (messageOverride ?? smsMessage).trim()
+  setError('')
+  setSuccessMessage('')
 
-    if (!to) {
-      setSmsSendError('Please enter a phone number to send the SMS to.')
-      setSmsSendSuccess('')
-      return
-    }
-
-    if (!message) {
-      setSmsSendError('Please enter an SMS message.')
-      setSmsSendSuccess('')
-      return
-    }
-
-    setSendingSms(true)
-    setSmsSendError('')
-    setSmsSendSuccess('')
-    setError('')
-    setSuccessMessage('')
-
-    try {
-      const response = await fetch('/.netlify/functions/send-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, message }),
-      })
-
-      const rawText = await response.text()
-      let data: any = {}
-
-      try {
-        data = rawText ? JSON.parse(rawText) : {}
-      } catch {
-        throw new Error(rawText || 'Server returned invalid response')
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to send invoice SMS')
-      }
-
-      const nowIso = new Date().toISOString()
-
+  const result = await sendSms({
+    to: sendToPhone,
+    message: messageOverride ?? smsMessage,
+    onSuccess: async ({ to, message, nowIso }) => {
       const { error: updateError } = await supabase
         .from('invoices')
         .update({
@@ -664,14 +638,14 @@ export default function InvoicePrintPage() {
           : null
       )
 
-      setSmsSendSuccess(`SMS sent to ${to}.`)
-      setSuccessMessage('Invoice SMS sent successfully.')
-    } catch (err) {
-      setSmsSendError(err instanceof Error ? err.message : 'Failed to send invoice SMS')
-    } finally {
-      setSendingSms(false)
-    }
+      setSuccessMessage('SMS sent successfully.')
+    },
+  })
+
+  if (!result.ok) {
+    setError(result.error)
   }
+}
 
   async function handleDeleteInvoice() {
     if (!invoice) return

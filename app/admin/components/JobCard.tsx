@@ -122,8 +122,8 @@ export default function JobCard({
   toggleExpanded,
   updateStatus,
   updateQuote,
-  sendQuoteSms,
-  sendReadySms,
+  onSendQuoteSms,
+  onSendReadySms,
   updatePartsCost,
   updateNotes,
   updateRepairPerformed,
@@ -742,7 +742,7 @@ function buildReadySms() {
                   className={styles.actionButton}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void sendQuoteSms?.(job, quoteSmsText)
+                    void onSendQuoteSms?.(job, quoteSmsText)
                   }}
                 >
                   Send Quote SMS
@@ -808,7 +808,7 @@ function buildReadySms() {
                 className={styles.actionButton}
                 onClick={(e) => {
                   e.stopPropagation()
-                  void sendReadySms?.(job, readySmsText)
+                  void onSendReadySms?.(job, readySmsText)
                 }}
               >
                 Ready for Pickup SMS

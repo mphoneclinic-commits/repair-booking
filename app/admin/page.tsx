@@ -10,6 +10,7 @@ import useAdminArchiveActions from './hooks/useAdminArchiveActions'
 import useAdminDragDrop from './hooks/useAdminDragDrop'
 import useAdminDerivedState from './hooks/useAdminDerivedState'
 import useDeleteRepairRequests from './hooks/useDeleteRepairRequests'
+import useSms from './hooks/useSms'
 import type {
   RepairRequest,
   RepairStatus,
@@ -149,6 +150,12 @@ export default function AdminPage() {
     setError,
     normalizeJob,
   })
+const {
+  sendSms,
+  sendingSms,
+  smsError,
+  smsSuccess,
+} = useSms(''/.netlify/functions/send-sms'')
 
   const {
     filteredJobs,
@@ -243,54 +250,34 @@ export default function AdminPage() {
   }
 
 async function sendQuoteSms(job: RepairRequest, message: string) {
-  setError('')
-
-  const response = await fetch('/api/admin/send-sms-status', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      to: job.phone,
-      message,
-    }),
+  const result = await sendSms({
+    to: job.phone,
+    message,
   })
 
-  const result = await response.json().catch(() => null)
-  console.log('QUOTE SMS response', response.status, result)
-
-  if (!response.ok) {
-    setError(result?.error || 'Failed to send quote SMS.')
+  if (!result.ok) {
+    setError(result.error)
     return
   }
 
-  alert('Quote SMS sent successfully.')
+  setSuccessMessage(`Quote SMS sent to ${job.phone}.`)
 }
 
 async function sendReadySms(job: RepairRequest, message: string) {
-  setError('')
-
-  const response = await fetch('/api/admin/send-sms-status', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      to: job.phone,
-      message,
-    }),
+  const result = await sendSms({
+    to: job.phone,
+    message,
   })
 
-  const result = await response.json().catch(() => null)
-  console.log('READY SMS response', response.status, result)
-
-  if (!response.ok) {
-    setError(result?.error || 'Failed to send ready SMS.')
+  if (!result.ok) {
+    setError(result.error)
     return
   }
 
-  alert('Ready SMS sent successfully.')
+  setSuccessMessage(`Ready SMS sent to ${job.phone}.`)
 }
+
+
   async function duplicateJob(sourceJob: RepairRequest) {
     setError('')
 
