@@ -718,170 +718,174 @@ export default function JobCard({
             />
           </div>
 
-          <div className={styles.expandedSectionCard}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Invoice</div>
-              <SaveIndicator
-                state={
-                  invoiceActionState === 'saving'
-                    ? 'saving'
-                    : invoiceActionState === 'error'
-                      ? 'error'
-                      : 'idle'
-                }
-                compact
-              />
-            </div>
+         
+              <div className={styles.expandedSectionCard}>
+  <div className={styles.inputTopRow}>
+    <div className={styles.expandedSectionTitle}>Invoice</div>
+    <SaveIndicator
+      state={
+        invoiceActionState === 'saving'
+          ? 'saving'
+          : invoiceActionState === 'error'
+            ? 'error'
+            : 'idle'
+      }
+      compact
+    />
+  </div>
 
-            {!invoice ? (
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void createInvoiceForJob?.(job)
-                  }}
-                >
-                  Create Invoice
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className={styles.invoiceSummaryGrid}>
-                  <div>
-                    <div className={styles.sectionLabel}>Invoice Number</div>
-                    <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
-                  </div>
+  {!invoice ? (
+    <div className={styles.buttonRow}>
+      <button
+        type="button"
+        className={styles.actionButton}
+        onClick={(e) => {
+          e.stopPropagation()
+          void createInvoiceForJob?.(job)
+        }}
+      >
+        Create Invoice
+      </button>
+    </div>
+  ) : (
+    <>
+      <div className={styles.invoiceSummaryGrid}>
+        <div>
+          <div className={styles.sectionLabel}>Invoice Number</div>
+          <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
+        </div>
 
-                  <div>
-                    <div className={styles.sectionLabel}>Status</div>
-                    <div>
-                      <span
-                        className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
-                      >
-                        {invoice.status.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className={styles.sectionLabel}>Total Qty</div>
-                    <div className={styles.invoiceValue}>{totalInvoiceQty.toFixed(2)}</div>
-                  </div>
-
-                  <div>
-                    <div className={styles.sectionLabel}>Total</div>
-                    <div className={styles.invoiceValue}>
-                      ${Number(invoice.total ?? 0).toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-
-                <div className={styles.buttonRow}>
-                  {invoice.status !== 'draft' ? null : (
-                    <button
-                      type="button"
-                      className={styles.actionButton}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void updateInvoiceStatusForJob?.(job.id, 'issued')
-                      }}
-                    >
-                      Mark Issued
-                    </button>
-                  )}
-
-                  {(invoice.status === 'draft' || invoice.status === 'issued') && (
-                    <button
-                      type="button"
-                      className={styles.actionButton}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void updateInvoiceStatusForJob?.(job.id, 'paid')
-                      }}
-                    >
-                      Mark Paid
-                    </button>
-                  )}
-
-                  {invoice.status === 'paid' && (
-                    <button
-                      type="button"
-                      className={styles.actionButton}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void updateInvoiceStatusForJob?.(job.id, 'issued')
-                      }}
-                    >
-                      Mark Unpaid
-                    </button>
-                  )}
-
-                  {invoice.status !== 'void' && (
-                    <button
-                      type="button"
-                      className={styles.actionButton}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void updateInvoiceStatusForJob?.(job.id, 'void')
-                      }}
-                    >
-                      Mark Void
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    className={styles.actionButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void addInvoiceItemForInvoice?.(invoice.id)
-                    }}
-                  >
-                    Add Item
-                  </button>
-
-                  <button
-                    type="button"
-                    className={styles.deleteButton}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void removeInvoiceForJob?.(job)
-                    }}
-                  >
-                    Delete Invoice
-                  </button>
-
-                  <a
-                    href={`/admin/invoice?id=${invoice.id}`}
-                    className={styles.deleteButton}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Open Invoice
-                  </a>
-                </div>
-
-                <div className={styles.invoiceItemsWrap}>
-                  {invoiceItems.length === 0 ? (
-                    <div className={styles.invoiceItemsEmpty}>No invoice items yet.</div>
-                  ) : (
-                    invoiceItems.map((item) => (
-                      <InvoiceItemEditor
-                        key={item.id}
-                        invoiceId={invoice.id}
-                        item={item}
-                        busy={invoiceItemsActionState === 'saving'}
-                        updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
-                        deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
-                      />
-                    ))
-                  )}
-                </div>
-              </>
-            )}
+        <div>
+          <div className={styles.sectionLabel}>Status</div>
+          <div>
+            <span className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}>
+              {invoice.status.toUpperCase()}
+            </span>
           </div>
+        </div>
 
+        <div>
+          <div className={styles.sectionLabel}>Total Qty</div>
+          <div className={styles.invoiceValue}>{totalInvoiceQty.toFixed(2)}</div>
+        </div>
+
+        <div>
+          <div className={styles.sectionLabel}>Total</div>
+          <div className={styles.invoiceValue}>
+            ${Number(invoice.total ?? 0).toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.buttonRow}>
+        {invoice.status === 'draft' && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              void updateInvoiceStatusForJob?.(job.id, 'issued')
+            }}
+          >
+            Mark Issued
+          </button>
+        )}
+
+        {(invoice.status === 'draft' || invoice.status === 'issued') && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              void updateInvoiceStatusForJob?.(job.id, 'paid')
+            }}
+          >
+            Mark Paid
+          </button>
+        )}
+
+        {invoice.status === 'paid' && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              void updateInvoiceStatusForJob?.(job.id, 'issued')
+            }}
+          >
+            Mark Unpaid
+          </button>
+        )}
+
+        {invoice.status !== 'void' && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={(e) => {
+              e.stopPropagation()
+              void updateInvoiceStatusForJob?.(job.id, 'void')
+            }}
+          >
+            Mark Void
+          </button>
+        )}
+      </div>
+
+      <div className={styles.invoiceItemsWrap}>
+        {invoiceItems.length === 0 ? (
+          <div className={styles.invoiceItemsEmpty}>No invoice items yet.</div>
+        ) : (
+          invoiceItems.map((item) => (
+            <InvoiceItemEditor
+              key={item.id}
+              invoiceId={invoice.id}
+              item={item}
+              busy={invoiceItemsActionState === 'saving'}
+              updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+              deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+            />
+          ))
+        )}
+      </div>
+     
+  
+
+      <div className={styles.buttonRow}>
+
+ <button
+          type="button"
+          className={styles.actionButton}
+          onClick={(e) => {
+            e.stopPropagation()
+            void addInvoiceItemForInvoice?.(invoice.id)
+          }}
+        >
+          Add Item
+        </button>
+        <a
+          href={`/admin/invoice?id=${invoice.id}`}
+          className={styles.actionButton}
+          onClick={(e) => e.stopPropagation()}
+        >
+          Open Invoice
+        </a>
+
+
+
+        <button
+          type="button"
+          className={styles.deleteButton}
+          onClick={(e) => {
+            e.stopPropagation()
+            void removeInvoiceForJob?.(job)
+          }}
+        >
+          Delete Invoice
+        </button>
+      </div>
+    </>
+  )}
+</div>
           <div className={styles.buttonRow}>
             <button
               type="button"

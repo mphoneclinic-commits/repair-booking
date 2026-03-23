@@ -950,15 +950,7 @@ onDragEnd={() => handleDragEnd()}
             ))}
           </div>
 
-          <div className={styles.summaryGrid}>
-            <SummaryCard label="Visible Jobs" value={String(summary.totalJobs)} />
-            <SummaryCard label="Quoted" value={String(summary.quotedCount)} />
-            <SummaryCard label="In Progress" value={String(summary.inProgressCount)} />
-            <SummaryCard label="Ready" value={String(summary.readyCount)} />
-            <SummaryCard label="Invoices" value={String(summary.invoiceCount)} />
-            <SummaryCard label="Hidden Jobs" value={String(summary.hiddenCount)} />
-            <SummaryCard label="Quoted Value" value={`$${summary.quotedValue.toFixed(2)}`} />
-          </div>
+         
 
           <section className={styles.otherStatusesSection}>
             <div className={styles.archiveHeader}>
