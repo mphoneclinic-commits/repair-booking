@@ -31,7 +31,8 @@ type Props = {
   updateNotes: (id: string, notes: string) => Promise<boolean> | boolean
   updateRepairPerformed: (id: string, repairPerformed: string) => Promise<boolean> | boolean
   removeInvoiceForJob: (job: RepairRequest) => Promise<void> | void
-
+  onSendQuoteSms?: (job: RepairRequest, message: string) => Promise<void> | void
+  onSendReadySms?: (job: RepairRequest, message: string) => Promise<void> | void
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -121,6 +122,8 @@ export default function JobCard({
   toggleExpanded,
   updateStatus,
   updateQuote,
+  onSendQuoteSms,
+  onSendReadySms,
   updatePartsCost,
   updateNotes,
   updateRepairPerformed,
@@ -169,6 +172,8 @@ export default function JobCard({
   const [localDeviceType, setLocalDeviceType] = useState(job.device_type || '')
   const [localSerialImei, setLocalSerialImei] = useState(job.serial_imei || '')
   const [localFaultDescription, setLocalFaultDescription] = useState(job.fault_description || '')
+  const [quoteSmsText, setQuoteSmsText] = useState('')
+  const [readySmsText, setReadySmsText] = useState('')
   const [localQuote, setLocalQuote] = useState(
     job.quoted_price != null ? String(job.quoted_price) : ''
   )
@@ -182,6 +187,14 @@ export default function JobCard({
   const partsCostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repairPerformedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    setQuoteSmsText(buildQuoteSms())
+  }, [job.full_name, job.brand, job.model, job.quoted_price])
+
+  useEffect(() => {
+    setReadySmsText(buildReadySms())
+  }, [job.full_name, job.brand, job.model])
 
   useEffect(() => {
     setLocalJobNumber(job.job_number || '')
@@ -309,7 +322,7 @@ export default function JobCard({
 function buildQuoteSms() {
   const customerName = job.full_name.split(' ')[0] || job.full_name
   const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-  return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please contact us on 03 9547 9991 to approve this quote. Thanks, The Mobile Phone Clinic.`
+  return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}+GST. Please contact us on 03 9547 9991 to approve this quote. Thanks, The Mobile Phone Clinic.`
 }
 
 function buildReadySms() {
@@ -717,18 +730,28 @@ function openSms(message: string) {
             </div>
           </div>
 
-<div className={styles.buttonRow}>
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={(e) => {
-      e.stopPropagation()
-      openSms(buildQuoteSms())
-    }}
-  >
-    Send Quote SMS
-  </button>
-</div>
+              <div>
+                <label className={styles.smallLabel}>Quote SMS</label>
+                <textarea
+                  className={styles.notesField}
+                  value={quoteSmsText}
+                  onChange={(e) => setQuoteSmsText(e.target.value)}
+                  placeholder="Quote SMS message"
+                />
+              </div>
+
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void onSendQuoteSms?.(job, quoteSmsText)
+                  }}
+                >
+                  Send Quote SMS
+                </button>
+              </div>
 
           <div className={styles.expandedSectionCard}>
             <div className={styles.inputTopRow}>
@@ -773,18 +796,28 @@ function openSms(message: string) {
               placeholder="Internal notes"
             />
           </div>
-<div className={styles.buttonRow}>
-  <button
-    type="button"
-    className={styles.actionButton}
-    onClick={(e) => {
-      e.stopPropagation()
-      openSms(buildReadySms())
-    }}
-  >
-    Ready for Pickup SMS
-  </button>
-</div>
+            <div>
+              <label className={styles.smallLabel}>Ready SMS</label>
+              <textarea
+                className={styles.notesField}
+                value={readySmsText}
+                onChange={(e) => setReadySmsText(e.target.value)}
+                placeholder="Ready for pickup SMS message"
+              />
+            </div>
+
+            <div className={styles.buttonRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onSendReadySms?.(job, readySmsText)
+                }}
+              >
+                Ready for Pickup SMS
+              </button>
+            </div>
          
               <div className={styles.expandedSectionCard}>
   <div className={styles.inputTopRow}>
