@@ -4,7 +4,7 @@ function normalizePhone(value: string) {
   return value.replace(/\D/g, '')
 }
 
-function toAustralianMobileOrLocal(phone: string) {
+function toCrazytelNumber(phone: string) {
   const digits = normalizePhone(phone)
 
   if (digits.startsWith('61')) {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     if (!apiKey || !fromNumber) {
       return NextResponse.json(
-        { error: 'SMS provider env vars are missing' },
+        { error: 'Crazytel env vars are missing' },
         { status: 500 }
       )
     }
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        to: toAustralianMobileOrLocal(to),
+        to: toCrazytelNumber(to),
         from: fromNumber,
         message,
       }),
