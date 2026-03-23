@@ -241,7 +241,49 @@ export default function AdminPage() {
       behavior: 'smooth',
     })
   }
+async function sendQuoteSms(job: RepairRequest, message: string) {
+  setError('')
 
+  const response = await fetch('/api/admin/send-sms-status', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: job.phone,
+      message,
+    }),
+  })
+
+  const result = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    setError(result?.error || 'Failed to send quote SMS.')
+    return
+  }
+}
+
+async function sendReadySms(job: RepairRequest, message: string) {
+  setError('')
+
+  const response = await fetch('/api/admin/send-sms-status', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: job.phone,
+      message,
+    }),
+  })
+
+  const result = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    setError(result?.error || 'Failed to send ready SMS.')
+    return
+  }
+}
   async function duplicateJob(sourceJob: RepairRequest) {
     setError('')
 
