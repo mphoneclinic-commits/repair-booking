@@ -30,7 +30,8 @@ type Props = {
   updatePartsCost: (id: string, cost: number | null) => Promise<boolean> | boolean
   updateNotes: (id: string, notes: string) => Promise<boolean> | boolean
   updateRepairPerformed: (id: string, repairPerformed: string) => Promise<boolean> | boolean
-removeInvoiceForJob: (job: RepairRequest) => Promise<void> | void
+  removeInvoiceForJob: (job: RepairRequest) => Promise<void> | void
+
   updateJobBasics: (
     id: string,
     updates: Partial<
@@ -305,7 +306,22 @@ export default function JobCard({
       'device'
     )
   }
+function buildQuoteSms() {
+  const customerName = job.full_name.split(' ')[0] || job.full_name
+  const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
+  return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}. Please contact us on 03 9547 9991 to approve this quote. Thanks, The Mobile Phone Clinic.`
+}
 
+function buildReadySms() {
+  const customerName = job.full_name.split(' ')[0] || job.full_name
+  return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us on 03 9547 9991 to arrange collection. Thanks.`
+}
+
+function openSms(message: string) {
+  const encoded = encodeURIComponent(message)
+  const digits = job.phone.replace(/\D/g, '')
+  window.open(`sms:${digits}?body=${encoded}`, '_self')
+}
   function handleCardClick() {
     onSelectCard?.(job.id)
   }
@@ -701,6 +717,19 @@ export default function JobCard({
             </div>
           </div>
 
+<div className={styles.buttonRow}>
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={(e) => {
+      e.stopPropagation()
+      openSms(buildQuoteSms())
+    }}
+  >
+    Send Quote SMS
+  </button>
+</div>
+
           <div className={styles.expandedSectionCard}>
             <div className={styles.inputTopRow}>
               <div className={styles.expandedSectionTitle}>Repair Performed</div>
@@ -744,7 +773,18 @@ export default function JobCard({
               placeholder="Internal notes"
             />
           </div>
-
+<div className={styles.buttonRow}>
+  <button
+    type="button"
+    className={styles.actionButton}
+    onClick={(e) => {
+      e.stopPropagation()
+      openSms(buildReadySms())
+    }}
+  >
+    Ready for Pickup SMS
+  </button>
+</div>
          
               <div className={styles.expandedSectionCard}>
   <div className={styles.inputTopRow}>
