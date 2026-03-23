@@ -174,6 +174,8 @@ export default function JobCard({
   const [localFaultDescription, setLocalFaultDescription] = useState(job.fault_description || '')
   const [quoteSmsText, setQuoteSmsText] = useState('')
   const [readySmsText, setReadySmsText] = useState('')
+const [smsFeedback, setSmsFeedback] = useState('')
+const [smsErrorText, setSmsErrorText] = useState('')
   const [localQuote, setLocalQuote] = useState(
     job.quoted_price != null ? String(job.quoted_price) : ''
   )
@@ -737,16 +739,24 @@ function buildReadySms() {
               </div>
 
               <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void onSendQuoteSms?.(job, quoteSmsText)
-                  }}
-                >
-                  Send Quote SMS
-                </button>
+<button
+  type="button"
+  className={styles.actionButton}
+  onClick={async (e) => {
+    e.stopPropagation()
+    setSmsFeedback('')
+    setSmsErrorText('')
+
+    try {
+      await onSendQuoteSms?.(job, quoteSmsText)
+      setSmsFeedback(`Quote SMS sent to ${job.phone}.`)
+    } catch (error) {
+      setSmsErrorText(error instanceof Error ? error.message : 'Failed to send quote SMS.')
+    }
+  }}
+>
+  Send Quote SMS
+</button>
               </div>
 
           <div className={styles.expandedSectionCard}>
@@ -803,18 +813,29 @@ function buildReadySms() {
             </div>
 
             <div className={styles.buttonRow}>
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void onSendReadySms?.(job, readySmsText)
-                }}
-              >
-                Ready for Pickup SMS
-              </button>
+<button
+  type="button"
+  className={styles.actionButton}
+  onClick={async (e) => {
+    e.stopPropagation()
+    setSmsFeedback('')
+    setSmsErrorText('')
+
+    try {
+      await onSendReadySms?.(job, readySmsText)
+      setSmsFeedback(`Ready SMS sent to ${job.phone}.`)
+    } catch (error) {
+      setSmsErrorText(error instanceof Error ? error.message : 'Failed to send ready SMS.')
+    }
+  }}
+>
+  Ready for Pickup SMS
+</button>
             </div>
-         
+
+         {smsFeedback ? <p className={styles.successText}>{smsFeedback}</p> : null}
+{smsErrorText ? <p className={styles.errorText}>{smsErrorText}</p> : null}
+
               <div className={styles.expandedSectionCard}>
   <div className={styles.inputTopRow}>
     <div className={styles.expandedSectionTitle}>Invoice</div>

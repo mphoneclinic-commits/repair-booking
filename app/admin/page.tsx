@@ -50,6 +50,8 @@ export default function AdminPage() {
   const [archiveSort, setArchiveSort] = useState<SortMode>('newest')
   const [hiddenSort, setHiddenSort] = useState<SortMode>('newest')
 
+const [successMessage, setSuccessMessage] = useState('')
+
   const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
     new: false,
     quoted: false,
@@ -209,6 +211,12 @@ const {
     setHighlightedJobId(jobId)
   }
 
+useEffect(() => {
+  if (!successMessage) return
+  const timer = setTimeout(() => setSuccessMessage(''), 3000)
+  return () => clearTimeout(timer)
+}, [successMessage])
+
   function selectJobCard(jobId: string) {
     setHighlightedJobId(jobId)
   }
@@ -250,6 +258,9 @@ const {
   }
 
 async function sendQuoteSms(job: RepairRequest, message: string) {
+  setError('')
+  setSuccessMessage('')
+
   const result = await sendSms({
     to: job.phone,
     message,
@@ -259,9 +270,14 @@ async function sendQuoteSms(job: RepairRequest, message: string) {
     setError(result.error)
     return
   }
+
+  setSuccessMessage(`Quote SMS sent to ${job.phone}.`)
 }
 
 async function sendReadySms(job: RepairRequest, message: string) {
+  setError('')
+  setSuccessMessage('')
+
   const result = await sendSms({
     to: job.phone,
     message,
@@ -271,6 +287,8 @@ async function sendReadySms(job: RepairRequest, message: string) {
     setError(result.error)
     return
   }
+
+  setSuccessMessage(`Ready SMS sent to ${job.phone}.`)
 }
 
 
