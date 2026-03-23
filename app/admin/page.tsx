@@ -10,7 +10,7 @@ import useAdminArchiveActions from './hooks/useAdminArchiveActions'
 import useAdminDragDrop from './hooks/useAdminDragDrop'
 import useAdminDerivedState from './hooks/useAdminDerivedState'
 import useDeleteRepairRequests from './hooks/useDeleteRepairRequests'
-import useSms from '../hooks/useSms'
+import useSms from './hooks/useSms'
 import type {
   RepairRequest,
   RepairStatus,
