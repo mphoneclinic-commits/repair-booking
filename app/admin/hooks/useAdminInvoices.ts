@@ -66,22 +66,22 @@ export default function useAdminInvoices({
     }))
   }
 
-function buildDefaultInvoiceDescription(job: RepairRequest) {
-  const jobNumberPart = (job.job_number || '').trim()
-  const brandPart = (job.brand || '').trim()
-  const modelPart = (job.model || '').trim()
-  const repairPerformedPart = (job.repair_performed || '').trim()
+  function buildDefaultInvoiceDescription(job: RepairRequest) {
+    const jobNumberPart = (job.job_number || '').trim()
+    const brandPart = (job.brand || '').trim()
+    const modelPart = (job.model || '').trim()
+    const repairPerformedPart = (job.repair_performed || '').trim()
 
-  const formattedJobNumber = jobNumberPart ? `${jobNumberPart}` : ''
-  const devicePart = [brandPart, modelPart].filter(Boolean).join(' ').trim()
-  const workPart = repairPerformedPart || 'Repair service'
+    const formattedJobNumber = jobNumberPart ? `${jobNumberPart}` : ''
+    const devicePart = [brandPart, modelPart].filter(Boolean).join(' ').trim()
+    const workPart = repairPerformedPart || 'Repair service'
 
-  return [formattedJobNumber, devicePart, workPart]
-    .filter(Boolean)
-    .join(' - ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+    return [formattedJobNumber, devicePart, workPart]
+      .filter(Boolean)
+      .join(' - ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
 
   async function createInvoiceForJob(job: RepairRequest) {
     setInvoiceActionState(job.id, 'saving')
@@ -117,20 +117,48 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
       return
     }
 
+    let customerAddress: string | null = null
+
+    if (job.customer_id) {
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('address')
+        .eq('id', job.customer_id)
+        .maybeSingle()
+
+      if (customerError) {
+        setInvoiceActionState(job.id, 'error')
+        setError(customerError.message || 'Failed to load customer address')
+        return
+      }
+
+      customerAddress = customerData?.address?.trim() || null
+    }
+
     const invoiceNumber = String(invoiceNumberData)
     const amount = Number(job.quoted_price ?? 0)
-    const defaultDescription = buildDefaultInvoiceDescription(job)
+
+    const defaultDescription = [
+      job.job_number?.trim() || '',
+      [job.brand, job.model].filter(Boolean).join(' ').trim(),
+      (job.repair_performed || job.fault_description || 'Repair service').trim(),
+    ]
+      .filter(Boolean)
+      .join(' - ')
+
     const nowIso = new Date().toISOString()
 
     const { data: insertedInvoice, error: invoiceInsertError } = await supabase
       .from('invoices')
       .insert({
+        customer_id: job.customer_id ?? null,
         repair_request_id: job.id,
         invoice_number: invoiceNumber,
         status: 'issued',
         customer_name: job.full_name,
         customer_phone: job.phone,
         customer_email: job.email,
+        bill_to_address: customerAddress,
         tax_mode: 'exclusive',
         tax_rate: 0.1,
         subtotal_ex_tax: amount,
@@ -142,6 +170,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
       })
       .select(`
         id,
+        customer_id,
         repair_request_id,
         invoice_number,
         status,
@@ -179,7 +208,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
     const { error: itemInsertError } = await supabase.from('invoice_items').insert({
       invoice_id: insertedInvoice.id,
       description: defaultDescription || 'Repair service',
-serial_imei: job.serial_imei ?? null,
+      serial_imei: job.serial_imei ?? null,
       qty: 1,
       unit_price: amount,
       line_total: amount,
@@ -211,6 +240,7 @@ serial_imei: job.serial_imei ?? null,
       .eq('id', job.id)
       .select(`
         id,
+        customer_id,
         job_number,
         created_at,
         full_name,
@@ -226,6 +256,7 @@ serial_imei: job.serial_imei ?? null,
         preferred_contact,
         internal_notes,
         quoted_price,
+        parts_cost,
         is_hidden,
         fault_photo_url,
         last_sms_sent_at,
@@ -295,6 +326,7 @@ serial_imei: job.serial_imei ?? null,
       .eq('id', invoiceId)
       .select(`
         id,
+        customer_id,
         repair_request_id,
         invoice_number,
         status,
@@ -370,7 +402,7 @@ serial_imei: job.serial_imei ?? null,
     const { error } = await supabase.from('invoice_items').insert({
       invoice_id: invoiceId,
       description,
-  serial_imei: relatedJob?.serial_imei ?? null,
+      serial_imei: relatedJob?.serial_imei ?? null,
       qty: 1,
       unit_price: 0,
       line_total: 0,
@@ -400,87 +432,87 @@ serial_imei: job.serial_imei ?? null,
     }
   }
 
-async function updateInvoiceItemForInvoice(
-  invoiceId: string,
-  itemId: string,
-  patch: Partial<InvoiceItem>
-) {
-  setInvoiceItemsActionStates((prev) => ({
-    ...prev,
-    [invoiceId]: 'saving',
-  }))
-
-  const updatePayload: Record<string, unknown> = {}
-
-  if ('description' in patch) updatePayload.description = patch.description ?? ''
-  if ('serial_imei' in patch) updatePayload.serial_imei = patch.serial_imei ?? null
-  if ('qty' in patch) updatePayload.qty = Number(patch.qty ?? 0)
-  if ('unit_price' in patch) updatePayload.unit_price = Number(patch.unit_price ?? 0)
-
-  if ('qty' in patch || 'unit_price' in patch) {
-    updatePayload.line_total =
-      Number(updatePayload.qty ?? patch.qty ?? 0) *
-      Number(updatePayload.unit_price ?? patch.unit_price ?? 0)
-  }
-
-  const { data, error } = await supabase
-    .from('invoice_items')
-    .update(updatePayload)
-    .eq('id', itemId)
-    .select(`
-      id,
-      invoice_id,
-      description,
-      serial_imei,
-      qty,
-      unit_price,
-      line_total,
-      sort_order,
-      created_at
-    `)
-    .single()
-
-  if (error || !data) {
+  async function updateInvoiceItemForInvoice(
+    invoiceId: string,
+    itemId: string,
+    patch: Partial<InvoiceItem>
+  ) {
     setInvoiceItemsActionStates((prev) => ({
       ...prev,
-      [invoiceId]: 'error',
+      [invoiceId]: 'saving',
     }))
-    setError(error?.message || 'Failed to update invoice item')
-    return
-  }
 
-  setInvoiceItemsByInvoiceId((prev) => {
-    const current = prev[invoiceId] || []
+    const updatePayload: Record<string, unknown> = {}
 
-    return {
-      ...prev,
-      [invoiceId]: current.map((item) =>
-        item.id === itemId
-          ? {
-              ...item,
-              ...data,
-              serial_imei: data.serial_imei ?? null,
-              qty: Number(data.qty ?? 0),
-              unit_price: Number(data.unit_price ?? 0),
-              line_total: Number(data.line_total ?? 0),
-              sort_order: Number(data.sort_order ?? 0),
-            }
-          : item
-      ),
+    if ('description' in patch) updatePayload.description = patch.description ?? ''
+    if ('serial_imei' in patch) updatePayload.serial_imei = patch.serial_imei ?? null
+    if ('qty' in patch) updatePayload.qty = Number(patch.qty ?? 0)
+    if ('unit_price' in patch) updatePayload.unit_price = Number(patch.unit_price ?? 0)
+
+    if ('qty' in patch || 'unit_price' in patch) {
+      updatePayload.line_total =
+        Number(updatePayload.qty ?? patch.qty ?? 0) *
+        Number(updatePayload.unit_price ?? patch.unit_price ?? 0)
     }
-  })
 
-  await supabase.rpc('recalculate_invoice_totals', {
-    p_invoice_id: invoiceId,
-  })
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .update(updatePayload)
+      .eq('id', itemId)
+      .select(`
+        id,
+        invoice_id,
+        description,
+        serial_imei,
+        qty,
+        unit_price,
+        line_total,
+        sort_order,
+        created_at
+      `)
+      .single()
 
-  await refreshInvoiceById(invoiceId)
+    if (error || !data) {
+      setInvoiceItemsActionStates((prev) => ({
+        ...prev,
+        [invoiceId]: 'error',
+      }))
+      setError(error?.message || 'Failed to update invoice item')
+      return
+    }
 
-  setInvoiceItemsActionStates((prev) => ({
-    ...prev,
-    [invoiceId]: 'idle',
-  }))
-}
+    setInvoiceItemsByInvoiceId((prev) => {
+      const current = prev[invoiceId] || []
+
+      return {
+        ...prev,
+        [invoiceId]: current.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                ...data,
+                serial_imei: data.serial_imei ?? null,
+                qty: Number(data.qty ?? 0),
+                unit_price: Number(data.unit_price ?? 0),
+                line_total: Number(data.line_total ?? 0),
+                sort_order: Number(data.sort_order ?? 0),
+              }
+            : item
+        ),
+      }
+    })
+
+    await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoiceId,
+    })
+
+    await refreshInvoiceById(invoiceId)
+
+    setInvoiceItemsActionStates((prev) => ({
+      ...prev,
+      [invoiceId]: 'idle',
+    }))
+  }
 
   async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
@@ -548,6 +580,7 @@ async function updateInvoiceItemForInvoice(
       .eq('id', job.id)
       .select(`
         id,
+        customer_id,
         job_number,
         created_at,
         full_name,
@@ -563,6 +596,7 @@ async function updateInvoiceItemForInvoice(
         preferred_contact,
         internal_notes,
         quoted_price,
+        parts_cost,
         is_hidden,
         fault_photo_url,
         last_sms_sent_at,

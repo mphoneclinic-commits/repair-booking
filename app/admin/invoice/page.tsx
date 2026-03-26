@@ -8,6 +8,7 @@ import ui from '../sharedAdminUi.module.css'
 import useSms from '../hooks/useAdminSms'
 import generateInvoicePdf from '../lib/generateInvoicePdf'
 import { PAYMENT_DETAILS } from '../lib/paymentDetails'
+import InvoiceItemsEditor from '../components/InvoiceItemsEditor'
 
 import type {
   Invoice,
@@ -74,6 +75,10 @@ export default function InvoicePrintPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
   const { deleteInvoice, deletingInvoice, deleteInvoiceError } = useDeleteInvoice()
+
+const [invoiceItemsActionState, setInvoiceItemsActionState] = useState<
+  'idle' | 'saving' | 'error'
+>('idle')
 
   const {
     sendSms,
@@ -652,6 +657,257 @@ export default function InvoicePrintPage() {
     }
   }
 
+  async function addInvoiceItem() {
+    if (!invoice) return
+
+    setInvoiceItemsActionState('saving')
+    setError('')
+    setSuccessMessage('')
+
+    const nextSortOrder =
+      items.length > 0 ? Math.max(...items.map((item) => item.sort_order ?? 0)) + 1 : 0
+
+    const { data, error: insertError } = await supabase
+      .from('invoice_items')
+      .insert({
+        invoice_id: invoice.id,
+        description: '',
+        serial_imei: null,
+        qty: 1,
+        unit_price: 0,
+        line_total: 0,
+        sort_order: nextSortOrder,
+      })
+      .select(`
+        id,
+        invoice_id,
+        description,
+        serial_imei,
+        qty,
+        unit_price,
+        line_total,
+        sort_order,
+        created_at
+      `)
+      .single()
+
+    if (insertError || !data) {
+      setInvoiceItemsActionState('error')
+      setError(insertError?.message || 'Failed to add invoice item')
+      return
+    }
+
+    const normalizedItem: InvoiceItem = {
+      ...(data as InvoiceItem),
+      serial_imei: data.serial_imei ?? null,
+      qty: Number(data.qty ?? 0),
+      unit_price: Number(data.unit_price ?? 0),
+      line_total: Number(data.line_total ?? 0),
+      sort_order: Number(data.sort_order ?? 0),
+    }
+
+    setItems((prev) => [...prev, normalizedItem])
+    setInvoiceItemsActionState('idle')
+    setSuccessMessage('Invoice item added.')
+  }
+
+  async function updateInvoiceItem(
+    itemId: string,
+    updates: Partial<Pick<InvoiceItem, 'description' | 'serial_imei' | 'qty' | 'unit_price'>>
+  ) {
+    if (!invoice) return
+
+    setInvoiceItemsActionState('saving')
+    setError('')
+    setSuccessMessage('')
+
+    const existingItem = items.find((item) => item.id === itemId)
+    if (!existingItem) {
+      setInvoiceItemsActionState('error')
+      setError('Invoice item not found')
+      return
+    }
+
+    const nextQty = Number(updates.qty ?? existingItem.qty ?? 0)
+    const nextUnitPrice = Number(updates.unit_price ?? existingItem.unit_price ?? 0)
+
+    const updatePayload: Record<string, unknown> = {
+      ...updates,
+      line_total: nextQty * nextUnitPrice,
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('invoice_items')
+      .update(updatePayload)
+      .eq('id', itemId)
+      .select(`
+        id,
+        invoice_id,
+        description,
+        serial_imei,
+        qty,
+        unit_price,
+        line_total,
+        sort_order,
+        created_at
+      `)
+      .single()
+
+    if (updateError || !data) {
+      setInvoiceItemsActionState('error')
+      setError(updateError?.message || 'Failed to update invoice item')
+      return
+    }
+
+    const normalizedItem: InvoiceItem = {
+      ...(data as InvoiceItem),
+      serial_imei: data.serial_imei ?? null,
+      qty: Number(data.qty ?? 0),
+      unit_price: Number(data.unit_price ?? 0),
+      line_total: Number(data.line_total ?? 0),
+      sort_order: Number(data.sort_order ?? 0),
+    }
+
+    setItems((prev) => prev.map((item) => (item.id === itemId ? normalizedItem : item)))
+
+    await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoice.id,
+    })
+
+    const { data: refreshedInvoice, error: refreshedInvoiceError } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        customer_id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
+        subtotal,
+        total,
+        notes,
+        customer_visible_notes,
+        internal_reference_notes,
+        issued_at,
+        paid_at,
+        sent_at,
+        sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
+        created_at,
+        updated_at
+      `)
+      .eq('id', invoice.id)
+      .single()
+
+    if (!refreshedInvoiceError && refreshedInvoice) {
+      setInvoice({
+        ...(refreshedInvoice as Invoice),
+        customer_id: refreshedInvoice.customer_id ?? null,
+        tax_rate: Number(refreshedInvoice.tax_rate ?? 0),
+        subtotal_ex_tax: Number(refreshedInvoice.subtotal_ex_tax ?? 0),
+        tax_amount: Number(refreshedInvoice.tax_amount ?? 0),
+        subtotal: Number(refreshedInvoice.subtotal ?? 0),
+        total: Number(refreshedInvoice.total ?? 0),
+        customer_visible_notes: refreshedInvoice.customer_visible_notes ?? null,
+        internal_reference_notes: refreshedInvoice.internal_reference_notes ?? null,
+        last_sms_sent_at: refreshedInvoice.last_sms_sent_at ?? null,
+        last_sms_to: refreshedInvoice.last_sms_to ?? null,
+        last_sms_message: refreshedInvoice.last_sms_message ?? null,
+      })
+    }
+
+    setInvoiceItemsActionState('idle')
+  }
+
+  async function deleteInvoiceItem(itemId: string) {
+    if (!invoice) return
+
+    setInvoiceItemsActionState('saving')
+    setError('')
+    setSuccessMessage('')
+
+    const { error: deleteError } = await supabase
+      .from('invoice_items')
+      .delete()
+      .eq('id', itemId)
+
+    if (deleteError) {
+      setInvoiceItemsActionState('error')
+      setError(deleteError.message || 'Failed to delete invoice item')
+      return
+    }
+
+    setItems((prev) => prev.filter((item) => item.id !== itemId))
+
+    await supabase.rpc('recalculate_invoice_totals', {
+      p_invoice_id: invoice.id,
+    })
+
+    const { data: refreshedInvoice, error: refreshedInvoiceError } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        customer_id,
+        repair_request_id,
+        invoice_number,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        bill_to_address,
+        tax_mode,
+        tax_rate,
+        subtotal_ex_tax,
+        tax_amount,
+        subtotal,
+        total,
+        notes,
+        customer_visible_notes,
+        internal_reference_notes,
+        issued_at,
+        paid_at,
+        sent_at,
+        sent_to_email,
+        last_sms_sent_at,
+        last_sms_to,
+        last_sms_message,
+        created_at,
+        updated_at
+      `)
+      .eq('id', invoice.id)
+      .single()
+
+    if (!refreshedInvoiceError && refreshedInvoice) {
+      setInvoice({
+        ...(refreshedInvoice as Invoice),
+        customer_id: refreshedInvoice.customer_id ?? null,
+        tax_rate: Number(refreshedInvoice.tax_rate ?? 0),
+        subtotal_ex_tax: Number(refreshedInvoice.subtotal_ex_tax ?? 0),
+        tax_amount: Number(refreshedInvoice.tax_amount ?? 0),
+        subtotal: Number(refreshedInvoice.subtotal ?? 0),
+        total: Number(refreshedInvoice.total ?? 0),
+        customer_visible_notes: refreshedInvoice.customer_visible_notes ?? null,
+        internal_reference_notes: refreshedInvoice.internal_reference_notes ?? null,
+        last_sms_sent_at: refreshedInvoice.last_sms_sent_at ?? null,
+        last_sms_to: refreshedInvoice.last_sms_to ?? null,
+        last_sms_message: refreshedInvoice.last_sms_message ?? null,
+      })
+    }
+
+    setInvoiceItemsActionState('idle')
+    setSuccessMessage('Invoice item deleted.')
+  }
+
+
   async function handleDeleteInvoice() {
     if (!invoice) return
 
@@ -1022,40 +1278,24 @@ export default function InvoicePrintPage() {
             </section>
           ) : null}
 
-          <section className={styles.tableSection}>
+                   <section className={styles.tableSection}>
             <div className={styles.sectionHeading}>Invoice Items</div>
 
-            <table className={styles.itemsTable}>
-              <thead>
-                <tr>
-                  <th>Description</th>
-		<th>Serial / IMEI</th>
-                  <th className={styles.numberCell}>Qty</th>
-                  <th className={styles.numberCell}>Unit Price</th>
-                  <th className={styles.numberCell}>Line Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className={styles.emptyTableCell}>
-                      No invoice items found.
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.description}</td>
-        	<td>{item.serial_imei || '-'}</td>
-                      <td className={styles.numberCell}>{Number(item.qty).toFixed(2)}</td>
-                      <td className={styles.numberCell}>{formatCurrency(item.unit_price)}</td>
-                      <td className={styles.numberCell}>{formatCurrency(item.line_total)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <InvoiceItemsEditor
+              items={items}
+              actionState={invoiceItemsActionState}
+              onAddItem={async () => {
+                await addInvoiceItem()
+              }}
+              onUpdateItem={async (itemId, updates) => {
+                await updateInvoiceItem(itemId, updates)
+              }}
+              onDeleteItem={async (itemId) => {
+                await deleteInvoiceItem(itemId)
+              }}
+            />
           </section>
+
 
           <section className={styles.summarySection}>
             <div className={styles.summaryBox}>

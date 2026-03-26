@@ -28,6 +28,24 @@ import JobCard from './components/JobCard'
 
 type SortMode = 'newest' | 'oldest' | 'customer' | 'job_number'
 
+const ADMIN_COLLAPSED_COLUMNS_KEY = 'adminCollapsedColumns'
+const ADMIN_SHOW_HIDDEN_KEY = 'adminShowHidden'
+const ADMIN_EXPANDED_JOBS_KEY = 'adminExpandedJobs'
+const ADMIN_HIGHLIGHTED_JOB_KEY = 'adminHighlightedJobId'
+const ADMIN_SELECTED_ARCHIVE_KEY = 'adminSelectedArchiveJobIds'
+const ADMIN_SELECTED_HIDDEN_KEY = 'adminSelectedHiddenJobIds'
+
+const defaultCollapsedColumns: Record<RepairStatus, boolean> = {
+  new: true,
+  quoted: true,
+  approved: true,
+  in_progress: true,
+  ready: true,
+  closed: true,
+  rejected: true,
+  cancelled: true,
+}
+
 export default function AdminPage() {
   const [authChecked, setAuthChecked] = useState(false)
   const [isAdminSignedIn, setIsAdminSignedIn] = useState(false)
@@ -51,18 +69,13 @@ export default function AdminPage() {
 
   const [successMessage, setSuccessMessage] = useState('')
 
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>({
-    new: false,
-    quoted: false,
-    approved: false,
-    in_progress: false,
-    ready: false,
-    closed: false,
-    rejected: false,
-    cancelled: false,
-  })
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<RepairStatus, boolean>>(
+    defaultCollapsedColumns
+  )
 
   const jobRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const hasRestoredDashboardStateRef = useRef(false)
+  const hasScrolledToRestoredJobRef = useRef(false)
 
   const { saveStates, setFieldState, setFieldSaved } = useAdminSaveStates()
 
@@ -171,6 +184,32 @@ export default function AdminPage() {
     hiddenSort,
   })
 
+  function persistDashboardStateNow() {
+    localStorage.setItem(
+      ADMIN_COLLAPSED_COLUMNS_KEY,
+      JSON.stringify(collapsedColumns)
+    )
+    sessionStorage.setItem(ADMIN_SHOW_HIDDEN_KEY, String(showHidden))
+    sessionStorage.setItem(
+      ADMIN_EXPANDED_JOBS_KEY,
+      JSON.stringify(expandedJobs)
+    )
+    sessionStorage.setItem(
+      ADMIN_SELECTED_ARCHIVE_KEY,
+      JSON.stringify(selectedArchiveJobIds)
+    )
+    sessionStorage.setItem(
+      ADMIN_SELECTED_HIDDEN_KEY,
+      JSON.stringify(selectedHiddenJobIds)
+    )
+
+    if (highlightedJobId) {
+      sessionStorage.setItem(ADMIN_HIGHLIGHTED_JOB_KEY, highlightedJobId)
+    } else {
+      sessionStorage.removeItem(ADMIN_HIGHLIGHTED_JOB_KEY)
+    }
+  }
+
   useEffect(() => {
     if (deleteJobsError) {
       setError(deleteJobsError)
@@ -218,6 +257,134 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
+    if (!authChecked || loading) return
+    if (hasRestoredDashboardStateRef.current) return
+
+    try {
+      const collapsedRaw = localStorage.getItem(ADMIN_COLLAPSED_COLUMNS_KEY)
+      if (collapsedRaw) {
+        const parsed = JSON.parse(collapsedRaw)
+        setCollapsedColumns({
+          ...defaultCollapsedColumns,
+          ...parsed,
+        })
+      }
+
+      const showHiddenRaw = sessionStorage.getItem(ADMIN_SHOW_HIDDEN_KEY)
+      if (showHiddenRaw === 'true') {
+        setShowHidden(true)
+      }
+
+      const expandedRaw = sessionStorage.getItem(ADMIN_EXPANDED_JOBS_KEY)
+      if (expandedRaw) {
+        const parsed = JSON.parse(expandedRaw)
+        if (parsed && typeof parsed === 'object') {
+          setExpandedJobs(parsed)
+        }
+      }
+
+      const highlightedRaw = sessionStorage.getItem(ADMIN_HIGHLIGHTED_JOB_KEY)
+      if (highlightedRaw) {
+        setHighlightedJobId(highlightedRaw)
+      }
+
+      const archiveRaw = sessionStorage.getItem(ADMIN_SELECTED_ARCHIVE_KEY)
+      if (archiveRaw) {
+        const parsed = JSON.parse(archiveRaw)
+        if (Array.isArray(parsed)) {
+          setSelectedArchiveJobIds(parsed)
+        }
+      }
+
+      const hiddenRaw = sessionStorage.getItem(ADMIN_SELECTED_HIDDEN_KEY)
+      if (hiddenRaw) {
+        const parsed = JSON.parse(hiddenRaw)
+        if (Array.isArray(parsed)) {
+          setSelectedHiddenJobIds(parsed)
+        }
+      }
+    } catch {
+      // ignore bad saved data
+    } finally {
+      hasRestoredDashboardStateRef.current = true
+    }
+  }, [authChecked, loading])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    localStorage.setItem(
+      ADMIN_COLLAPSED_COLUMNS_KEY,
+      JSON.stringify(collapsedColumns)
+    )
+  }, [collapsedColumns])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    sessionStorage.setItem(ADMIN_SHOW_HIDDEN_KEY, String(showHidden))
+  }, [showHidden])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    sessionStorage.setItem(
+      ADMIN_EXPANDED_JOBS_KEY,
+      JSON.stringify(expandedJobs)
+    )
+  }, [expandedJobs])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    if (highlightedJobId) {
+      sessionStorage.setItem(ADMIN_HIGHLIGHTED_JOB_KEY, highlightedJobId)
+    } else {
+      sessionStorage.removeItem(ADMIN_HIGHLIGHTED_JOB_KEY)
+    }
+  }, [highlightedJobId])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    sessionStorage.setItem(
+      ADMIN_SELECTED_ARCHIVE_KEY,
+      JSON.stringify(selectedArchiveJobIds)
+    )
+  }, [selectedArchiveJobIds])
+
+  useEffect(() => {
+    if (!hasRestoredDashboardStateRef.current) return
+
+    sessionStorage.setItem(
+      ADMIN_SELECTED_HIDDEN_KEY,
+      JSON.stringify(selectedHiddenJobIds)
+    )
+  }, [selectedHiddenJobIds])
+
+  useEffect(() => {
+    const allJobIds = new Set([...jobs, ...hiddenJobs].map((job) => job.id))
+
+    setExpandedJobs((prev) => {
+      const next: Record<string, boolean> = {}
+      for (const [jobId, isExpanded] of Object.entries(prev)) {
+        if (allJobIds.has(jobId)) {
+          next[jobId] = isExpanded
+        }
+      }
+      return next
+    })
+
+    setSelectedArchiveJobIds((prev) => prev.filter((id) => allJobIds.has(id)))
+    setSelectedHiddenJobIds((prev) => prev.filter((id) => allJobIds.has(id)))
+
+    setHighlightedJobId((prev) => {
+      if (!prev) return null
+      return allJobIds.has(prev) ? prev : null
+    })
+  }, [jobs, hiddenJobs])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
     if (loading) return
 
@@ -225,6 +392,7 @@ export default function AdminPage() {
     const highlightJob = params.get('highlightJob')
     if (!highlightJob) return
 
+    hasScrolledToRestoredJobRef.current = false
     setHighlightedJobId(highlightJob)
     setExpandedJobs((prev) => ({
       ...prev,
@@ -245,6 +413,25 @@ export default function AdminPage() {
     nextUrl.searchParams.delete('highlightJob')
     window.history.replaceState({}, '', nextUrl.toString())
   }, [loading])
+
+  useEffect(() => {
+    if (loading) return
+    if (!highlightedJobId) return
+    if (!hasRestoredDashboardStateRef.current) return
+    if (hasScrolledToRestoredJobRef.current) return
+
+    const el = jobRefs.current[highlightedJobId]
+    if (!el) return
+
+    hasScrolledToRestoredJobRef.current = true
+
+    window.setTimeout(() => {
+      el.scrollIntoView({
+        behavior: 'auto',
+        block: 'center',
+      })
+    }, 80)
+  }, [loading, highlightedJobId])
 
   function toggleExpanded(jobId: string) {
     setExpandedJobs((prev) => ({
@@ -392,6 +579,7 @@ export default function AdminPage() {
       ...prev,
       [newJob.id]: true,
     }))
+    hasScrolledToRestoredJobRef.current = false
     setHighlightedJobId(newJob.id)
 
     window.setTimeout(() => {
@@ -795,16 +983,32 @@ export default function AdminPage() {
               alignItems: 'center',
             }}
           >
-            <Link href="/admin/jobs/new" className={styles.viewButton}>
+            <Link
+              href="/admin/jobs/new"
+              className={styles.viewButton}
+              onClick={() => persistDashboardStateNow()}
+            >
               New Job
             </Link>
-            <Link href="/admin/invoices" className={styles.viewButton}>
+            <Link
+              href="/admin/invoices"
+              className={styles.viewButton}
+              onClick={() => persistDashboardStateNow()}
+            >
               View Invoices
             </Link>
-            <Link href="/admin/customers" className={styles.viewButton}>
+            <Link
+              href="/admin/customers"
+              className={styles.viewButton}
+              onClick={() => persistDashboardStateNow()}
+            >
               Customers
             </Link>
-            <Link href="/admin/stats" className={styles.viewButton}>
+            <Link
+              href="/admin/stats"
+              className={styles.viewButton}
+              onClick={() => persistDashboardStateNow()}
+            >
               Stats
             </Link>
           </div>

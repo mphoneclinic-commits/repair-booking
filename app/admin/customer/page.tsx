@@ -771,50 +771,60 @@ export default function CustomerDetailPage() {
 
       {error ? <p className={styles.errorText}>{error}</p> : null}
 
-      <div className={styles.customerDetailHeader}>
-        <div className={styles.summaryGrid}>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Phone</div>
-            <div className={styles.summaryValueSmall}>{customerSummary.phone || '-'}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Email</div>
-            <div className={styles.summaryValueSmall}>{customerSummary.email || '-'}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Preferred Contact</div>
-            <div className={styles.summaryValueSmall}>
-              {customerSummary.preferred_contact || '-'}
-            </div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Total Jobs</div>
-            <div className={styles.summaryValue}>{customerSummary.totalJobs}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Visible Jobs</div>
-            <div className={styles.summaryValue}>{customerSummary.visibleCount}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Hidden Jobs</div>
-            <div className={styles.summaryValue}>{customerSummary.hiddenCount}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Invoices</div>
-            <div className={styles.summaryValue}>{customerSummary.invoiceCount}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Quoted Total</div>
-            <div className={styles.summaryValue}>${customerSummary.quotedTotal.toFixed(2)}</div>
-          </div>
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>Parts Cost Total</div>
-            <div className={styles.summaryValue}>
-              ${customerSummary.totalPartsCost.toFixed(2)}
-            </div>
-          </div>
-        </div>
+<div className={styles.customerDetailHeader}>
+  <div className={styles.customerSummaryTop}>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Phone</div>
+      <div className={styles.summaryValueSmall}>{customerSummary.phone || '-'}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Email</div>
+      <div className={styles.summaryValueSmall}>{customerSummary.email || '-'}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Preferred Contact</div>
+      <div className={styles.summaryValueSmall}>
+        {customerSummary.preferred_contact || '-'}
       </div>
+    </div>
+  </div>
+
+  <div className={styles.customerSummaryStats}>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Total Jobs</div>
+      <div className={styles.summaryValue}>{customerSummary.totalJobs}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Visible Jobs</div>
+      <div className={styles.summaryValue}>{customerSummary.visibleCount}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Hidden Jobs</div>
+      <div className={styles.summaryValue}>{customerSummary.hiddenCount}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Invoices</div>
+      <div className={styles.summaryValue}>{customerSummary.invoiceCount}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Quoted Total</div>
+      <div className={styles.summaryValue}>${customerSummary.quotedTotal.toFixed(2)}</div>
+    </div>
+
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Parts Cost Total</div>
+      <div className={styles.summaryValue}>
+        ${customerSummary.totalPartsCost.toFixed(2)}
+      </div>
+    </div>
+  </div>
+</div>
 
       <section className={styles.customerDetailSection}>
         <div className={styles.customerSectionHeader}>

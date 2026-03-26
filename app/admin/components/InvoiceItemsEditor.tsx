@@ -10,6 +10,7 @@ type DraftMap = Record<
   string,
   {
     description: string
+    serial_imei: string
     qty: string
     unit_price: string
   }
@@ -27,7 +28,7 @@ export default function InvoiceItemsEditor({
   onAddItem: () => Promise<void>
   onUpdateItem: (
     itemId: string,
-    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
+    updates: Partial<Pick<InvoiceItem, 'description' | 'serial_imei' | 'qty' | 'unit_price'>>
   ) => Promise<void>
   onDeleteItem: (itemId: string) => Promise<void>
 }) {
@@ -51,12 +52,14 @@ export default function InvoiceItemsEditor({
         } else if (existing) {
           next[item.id] = {
             description: existing.description,
+            serial_imei: existing.serial_imei,
             qty: existing.qty,
             unit_price: existing.unit_price,
           }
         } else {
           next[item.id] = {
             description: item.description,
+            serial_imei: item.serial_imei || '',
             qty: String(item.qty),
             unit_price: String(item.unit_price),
           }
@@ -80,7 +83,7 @@ export default function InvoiceItemsEditor({
 
   function setDraftValue(
     itemId: string,
-    key: 'description' | 'qty' | 'unit_price',
+    key: 'description' | 'serial_imei' | 'qty' | 'unit_price',
     value: string
   ) {
     setDrafts((prev) => ({
@@ -88,6 +91,7 @@ export default function InvoiceItemsEditor({
       [itemId]: {
         ...(prev[itemId] || {
           description: '',
+          serial_imei: '',
           qty: '1',
           unit_price: '0',
         }),
@@ -101,6 +105,7 @@ export default function InvoiceItemsEditor({
     if (!draft) return
 
     const description = draft.description.trim()
+    const serialImei = (draft.serial_imei || '').trim()
     const qty = Number(draft.qty)
     const unitPrice = Number(draft.unit_price)
 
@@ -109,6 +114,7 @@ export default function InvoiceItemsEditor({
 
     if (
       description === item.description &&
+      serialImei === (item.serial_imei || '') &&
       safeQty === item.qty &&
       safeUnitPrice === item.unit_price
     ) {
@@ -117,6 +123,7 @@ export default function InvoiceItemsEditor({
 
     await onUpdateItem(item.id, {
       description,
+      serial_imei: serialImei || null,
       qty: safeQty,
       unit_price: safeUnitPrice,
     })
@@ -138,13 +145,14 @@ export default function InvoiceItemsEditor({
           items.map((item) => {
             const draft = drafts[item.id] || {
               description: item.description,
+              serial_imei: item.serial_imei || '',
               qty: String(item.qty),
               unit_price: String(item.unit_price),
             }
 
             return (
               <div key={item.id} className={styles.invoiceItemCard}>
-                <div className={styles.invoiceItemGrid}>
+                <div className={styles.invoiceItemGridTop}>
                   <div className={styles.invoiceItemDescriptionCol}>
                     <label className={styles.smallLabel}>Description</label>
                     <input
@@ -161,6 +169,24 @@ export default function InvoiceItemsEditor({
                     />
                   </div>
 
+                  <div>
+                    <label className={styles.smallLabel}>Serial / IMEI</label>
+                    <input
+                      value={draft.serial_imei}
+                      className={styles.smallField}
+                      onFocus={() => setFocusedItemId(item.id)}
+                      onChange={(e) =>
+                        setDraftValue(item.id, 'serial_imei', e.target.value)
+                      }
+                      onBlur={async () => {
+                        setFocusedItemId(null)
+                        await flushItem(item)
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.invoiceItemGridBottom}>
                   <div>
                     <label className={styles.smallLabel}>Qty</label>
                     <input
