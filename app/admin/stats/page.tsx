@@ -334,77 +334,81 @@ export default function AdminStatsPage() {
 
       {!loading && !error ? (
         <>
-          <div className={styles.summaryGrid}>
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Jobs Linked in Range</div>
-              <div className={styles.summaryValue}>{stats.totalJobs}</div>
-            </div>
+<div className={styles.customerDetailHeader}>
+  <div className={styles.customerSummaryTop}>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Jobs Linked in Range</div>
+      <div className={styles.summaryValue}>{stats.totalJobs}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Quoted Value</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.quotedValue)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Quoted Value</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.quotedValue)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Issued Revenue</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.issuedRevenue)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Parts Cost on Linked Jobs</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.partsCostTotal)}</div>
+    </div>
+  </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Paid Revenue</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.paidRevenue)}</div>
-            </div>
+  <div className={styles.customerSummaryStats}>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Issued Revenue</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.issuedRevenue)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Voided Invoices</div>
-              <div className={styles.summaryValue}>{stats.voidInvoices}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Paid Revenue</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.paidRevenue)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Voided Total</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.voidRevenue)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Unpaid Total</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.unpaidRevenue)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Parts Cost on Linked Jobs</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.partsCostTotal)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Voided Invoices</div>
+      <div className={styles.summaryValue}>{stats.voidInvoices}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Issued Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.issuedJobsCost)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Voided Total</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.voidRevenue)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Paid Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.paidJobsCost)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Gross Profit</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.grossProfit)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Voided Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.voidJobsCost)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Gross Margin</div>
+      <div className={styles.summaryValue}>{stats.grossMargin.toFixed(1)}%</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Gross Profit</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.grossProfit)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Cost on Issued</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.issuedJobsCost)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Gross Margin</div>
-              <div className={styles.summaryValue}>{stats.grossMargin.toFixed(1)}%</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Cost on Paid</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.paidJobsCost)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Unpaid Invoice Total</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.unpaidRevenue)}</div>
-            </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Cost on Unpaid</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.unpaidJobsCost)}</div>
+    </div>
 
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>Cost on Unpaid Invoices</div>
-              <div className={styles.summaryValue}>{formatCurrency(stats.unpaidJobsCost)}</div>
-            </div>
-          </div>
+    <div className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>Cost on Voided</div>
+      <div className={styles.summaryValue}>{formatCurrency(stats.voidJobsCost)}</div>
+    </div>
+  </div>
+</div>
 
           <section className={styles.otherStatusesSection}>
             <h2 className={styles.sectionTitle}>Paid invoices in range</h2>
