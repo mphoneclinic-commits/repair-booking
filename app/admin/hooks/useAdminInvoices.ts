@@ -179,6 +179,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
     const { error: itemInsertError } = await supabase.from('invoice_items').insert({
       invoice_id: insertedInvoice.id,
       description: defaultDescription || 'Repair service',
+serial_imei: job.serial_imei ?? null,
       qty: 1,
       unit_price: amount,
       line_total: amount,
@@ -369,6 +370,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
     const { error } = await supabase.from('invoice_items').insert({
       invoice_id: invoiceId,
       description,
+  serial_imei: relatedJob?.serial_imei ?? null,
       qty: 1,
       unit_price: 0,
       line_total: 0,
@@ -401,7 +403,7 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
   async function updateInvoiceItemForInvoice(
     invoiceId: string,
     itemId: string,
-    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price'>>
+    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price' | 'serial_imei'>>
   ) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
     if (!invoice) return
@@ -415,6 +417,9 @@ function buildDefaultInvoiceDescription(job: RepairRequest) {
       ...(updates.description !== undefined
         ? { description: updates.description.trim() || 'Item' }
         : {}),
+      ...(updates.serial_imei !== undefined
+  	? { serial_imei: updates.serial_imei }
+  	: {}),
       ...(updates.qty !== undefined
         ? { qty: Number.isFinite(updates.qty) ? updates.qty : 0 }
         : {}),

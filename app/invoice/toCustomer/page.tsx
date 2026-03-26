@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Invoice, InvoiceItem } from '../../admin/types'
 import { formatDateTime } from '../../admin/utils'
 import generateInvoicePdf from '../../admin/lib/generateInvoicePdf'
+import { PAYMENT_DETAILS } from '../../admin/lib/paymentDetails'
 
 import styles from '../../admin/invoice/invoice.module.css'
 import ui from '../../admin/sharedAdminUi.module.css'
@@ -16,7 +17,7 @@ const supabase = createClient(
 )
 
 const BUSINESS_DETAILS = {
-  name: 'The Mobile Phone Clinic',
+  name: 'Bun Mobile Phone Clinic',
   address: 'Melbourne, Victoria, Australia',
   landline: '(03) 9547 9991',
   mobile: '0411 369 814',
@@ -24,13 +25,6 @@ const BUSINESS_DETAILS = {
   abn: '596 961 787 82',
 }
 
-const PAYMENT_DETAILS = {
-  bankName: 'GREAT SOUTHERN BANK',
-  accountName: 'BUN UNG',
-  bsb: '814 282',
-  accountNumber: '520 372 19',
-  payId: '0411 369 814',
-}
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -113,6 +107,7 @@ export default function PublicInvoicePage() {
           id,
           invoice_id,
           description,
+	serial_imei,
           qty,
           unit_price,
           line_total,
@@ -268,6 +263,7 @@ export default function PublicInvoicePage() {
               <thead>
                 <tr>
                   <th>Description</th>
+ 		<th>Serial / IMEI</th>
                   <th className={styles.numberCell}>Qty</th>
                   <th className={styles.numberCell}>Unit Price</th>
                   <th className={styles.numberCell}>Line Total</th>
@@ -284,6 +280,7 @@ export default function PublicInvoicePage() {
                   items.map((item) => (
                     <tr key={item.id}>
                       <td>{item.description}</td>
+      		  <td>{item.serial_imei || '-'}</td>
                       <td className={styles.numberCell}>{Number(item.qty).toFixed(2)}</td>
                       <td className={styles.numberCell}>{formatCurrency(item.unit_price)}</td>
                       <td className={styles.numberCell}>{formatCurrency(item.line_total)}</td>

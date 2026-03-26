@@ -50,11 +50,12 @@ export default function generateInvoicePdf({
   const contentWidth = right - left
   const bottomLimit = pageHeight - 14
 
-  const descriptionX = left
-  const qtyX = 120
-  const unitPriceX = 155
-  const lineTotalX = right
-  const descriptionWidth = qtyX - descriptionX - 8
+const descriptionX = left
+const serialX = 108
+const qtyX = 142
+const unitPriceX = 168
+const lineTotalX = right
+const descriptionWidth = serialX - descriptionX - 6
 
   let y = 14
 
@@ -158,10 +159,11 @@ export default function generateInvoicePdf({
 
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.text('Description', descriptionX, y)
-  doc.text('Qty', qtyX, y, { align: 'right' })
-  doc.text('Unit Price', unitPriceX, y, { align: 'right' })
-  doc.text('Line Total', lineTotalX, y, { align: 'right' })
+doc.text('Description', descriptionX, y)
+doc.text('Serial / IMEI', serialX, y)
+doc.text('Qty', qtyX, y, { align: 'right' })
+doc.text('Unit Price', unitPriceX, y, { align: 'right' })
+doc.text('Line Total', lineTotalX, y, { align: 'right' })
   y += 4
 
   doc.line(left, y, right, y)
@@ -181,10 +183,11 @@ export default function generateInvoicePdf({
 
       addPageIfNeeded(rowHeight + 2)
 
-      doc.text(descriptionLines, descriptionX, y)
-      doc.text(Number(item.qty ?? 0).toFixed(2), qtyX, y, { align: 'right' })
-      doc.text(formatCurrency(item.unit_price), unitPriceX, y, { align: 'right' })
-      doc.text(formatCurrency(item.line_total), lineTotalX, y, { align: 'right' })
+doc.text(descriptionLines, descriptionX, y)
+doc.text(item.serial_imei || '-', serialX, y)
+doc.text(Number(item.qty ?? 0).toFixed(2), qtyX, y, { align: 'right' })
+doc.text(formatCurrency(item.unit_price), unitPriceX, y, { align: 'right' })
+doc.text(formatCurrency(item.line_total), lineTotalX, y, { align: 'right' })
 
       y += rowHeight + 2
     }

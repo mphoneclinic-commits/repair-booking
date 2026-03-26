@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import generateInvoicePdf from '../lib/generateInvoicePdf'
+import { PAYMENT_DETAILS } from '../lib/paymentDetails'
 
 import styles from '../admin.module.css'
 import type { Invoice, InvoiceItem } from '../types'
@@ -23,13 +24,6 @@ const BUSINESS_DETAILS = {
   abn: '59696 1787 82',
 }
 
-const PAYMENT_DETAILS = {
-  bankName: 'GREAT SOUTHERN BANK',
-  accountName: 'BUN UNG',
-  bsb: '814 282',
-  accountNumber: '520 372 19',
-  payId: '0411 369 814',
-}
 
 function formatCurrency(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`
@@ -113,6 +107,7 @@ export default function InvoicesPage() {
         id,
         invoice_id,
         description,
+	serial_imei,
         qty,
         unit_price,
         line_total,
@@ -356,6 +351,9 @@ export default function InvoicesPage() {
           <Link href="/admin/customers" className={styles.viewButton}>
             Customers
           </Link>
+            <Link href="/admin/stats" className={styles.viewButton}>
+              Stats
+            </Link>
         </div>
       </div>
 

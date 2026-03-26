@@ -108,6 +108,7 @@ export type InvoiceItem = {
   id: string
   invoice_id: string
   description: string
+serial_imei?: string | null
   qty: number
   unit_price: number
   line_total: number

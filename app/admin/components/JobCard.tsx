@@ -11,11 +11,7 @@ import type {
   SaveField,
   SaveState,
 } from '../types'
-import {
-  formatDateTime,
-  getStatusLabel,
-  normalizeMoneyValue,
-} from '../utils'
+import { formatDateTime, getStatusLabel, normalizeMoneyValue } from '../utils'
 import SaveIndicator from './SaveIndicator'
 
 type InvoiceActionState = 'idle' | 'saving' | 'error'
@@ -174,8 +170,8 @@ export default function JobCard({
   const [localFaultDescription, setLocalFaultDescription] = useState(job.fault_description || '')
   const [quoteSmsText, setQuoteSmsText] = useState('')
   const [readySmsText, setReadySmsText] = useState('')
-const [smsFeedback, setSmsFeedback] = useState('')
-const [smsErrorText, setSmsErrorText] = useState('')
+  const [smsFeedback, setSmsFeedback] = useState('')
+  const [smsErrorText, setSmsErrorText] = useState('')
   const [localQuote, setLocalQuote] = useState(
     job.quoted_price != null ? String(job.quoted_price) : ''
   )
@@ -321,17 +317,17 @@ const [smsErrorText, setSmsErrorText] = useState('')
       'device'
     )
   }
-function buildQuoteSms() {
-  const customerName = job.full_name.split(' ')[0] || job.full_name
-  const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
-  return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}+GST. Please contact us on 03 9547 9991 to approve this quote. Thanks, The Mobile Phone Clinic.`
-}
 
-function buildReadySms() {
-  const customerName = job.full_name.split(' ')[0] || job.full_name
-  return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us on 03 9547 9991 to arrange collection. Thanks.`
-}
+  function buildQuoteSms() {
+    const customerName = job.full_name.split(' ')[0] || job.full_name
+    const quoteText = job.quoted_price != null ? `$${job.quoted_price}` : 'your quoted amount'
+    return `Hi ${customerName}, your repair quote for ${job.brand} ${job.model} is ${quoteText}+GST. Please contact us on 03 9547 9991 to approve this quote. Thanks, The Mobile Phone Clinic.`
+  }
 
+  function buildReadySms() {
+    const customerName = job.full_name.split(' ')[0] || job.full_name
+    return `Hi ${customerName}, your ${job.brand} ${job.model} repair is ready for pickup from The Mobile Phone Clinic. Please contact us on 03 9547 9991 to arrange collection. Thanks.`
+  }
 
   function handleCardClick() {
     onSelectCard?.(job.id)
@@ -376,54 +372,53 @@ function buildReadySms() {
           </p>
         </div>
 
-<div className={styles.cardActions}>
-  {selectable && (
-    <label className={styles.archiveCheckboxLabel}>
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={(e) => {
-          e.stopPropagation()
-          onToggleSelected?.(job.id)
-        }}
-      />
-      <span>Select</span>
-    </label>
-  )}
+        <div className={styles.cardActions}>
+          {selectable && (
+            <label className={styles.archiveCheckboxLabel}>
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  onToggleSelected?.(job.id)
+                }}
+              />
+              <span>Select</span>
+            </label>
+          )}
 
-  <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
-    {getStatusLabel(job.status)}
-  </span>
+          <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
+            {getStatusLabel(job.status)}
+          </span>
 
-  {!expanded && (
-    <button
-      type="button"
-      className={styles.columnToggleButton}
-      onClick={(e) => {
-        e.stopPropagation()
-        toggleExpanded(job.id)
-      }}
-    >
-      Expand
-    </button>
-  )}
+          {!expanded && (
+            <button
+              type="button"
+              className={styles.columnToggleButton}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpanded(job.id)
+              }}
+            >
+              Expand
+            </button>
+          )}
 
-  {expanded && (
-    <button
-      type="button"
-      className={styles.columnToggleButton}
+          {expanded && (
+            <button
+              type="button"
+              className={styles.columnToggleButton}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpanded(job.id)
+              }}
+            >
+              Collapse
+            </button>
+          )}
 
-      onClick={(e) => {
-        e.stopPropagation()
-        toggleExpanded(job.id)
-      }}
-    >
-      Collapse
-    </button>
-  )}
-
-  <SaveIndicator state={statusSaveState} compact />
-</div>
+          <SaveIndicator state={statusSaveState} compact />
+        </div>
       </div>
 
       {!expanded ? (
@@ -550,130 +545,68 @@ function buildReadySms() {
             </div>
           </div>
 
-          <div className={styles.expandedSectionCard}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Job Basics</div>
-              <SaveIndicator state={jobNumberSaveState} compact />
-            </div>
+         <div className={styles.expandedSectionCard}>
+  <div className={styles.inputTopRow}>
+    <div className={styles.expandedSectionTitle}>Device</div>
+    <SaveIndicator state={deviceSaveState} compact />
+  </div>
 
-            <div className={styles.formGrid}>
-              <div>
-                <label className={styles.smallLabel}>Job Number</label>
-                <input
-                  className={styles.smallField}
-                  value={localJobNumber}
-                  onChange={(e) => setLocalJobNumber(e.target.value)}
-                  onBlur={() => void saveJobNumber()}
-                  placeholder="Job number"
-                />
-              </div>
-            </div>
-          </div>
+  <div className={styles.formGrid}>
+    <div className={styles.twoCol}>
+      <div>
+        <label className={styles.smallLabel}>Brand</label>
+        <input
+          className={styles.smallField}
+          value={localBrand}
+          onChange={(e) => setLocalBrand(e.target.value)}
+          onBlur={() => void saveDeviceFields()}
+        />
+      </div>
 
-          <div className={styles.expandedSectionCard}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Customer</div>
-              <SaveIndicator state={customerSaveState} compact />
-            </div>
+      <div>
+        <label className={styles.smallLabel}>Model</label>
+        <input
+          className={styles.smallField}
+          value={localModel}
+          onChange={(e) => setLocalModel(e.target.value)}
+          onBlur={() => void saveDeviceFields()}
+        />
+      </div>
+    </div>
 
-            <div className={styles.formGrid}>
-              <div className={styles.twoCol}>
-                <div>
-                  <label className={styles.smallLabel}>Full Name</label>
-                  <input
-                    className={styles.smallField}
-                    value={localFullName}
-                    onChange={(e) => setLocalFullName(e.target.value)}
-                    onBlur={() => void saveCustomerFields()}
-                  />
-                </div>
+    <div className={styles.twoCol}>
+      <div>
+        <label className={styles.smallLabel}>Device Type</label>
+        <input
+          className={styles.smallField}
+          value={localDeviceType}
+          onChange={(e) => setLocalDeviceType(e.target.value)}
+          onBlur={() => void saveDeviceFields()}
+        />
+      </div>
 
-                <div>
-                  <label className={styles.smallLabel}>Phone</label>
-                  <input
-                    className={styles.smallField}
-                    value={localPhone}
-                    onChange={(e) => setLocalPhone(e.target.value)}
-                    onBlur={() => void saveCustomerFields()}
-                  />
-                </div>
-              </div>
+      <div>
+        <label className={styles.smallLabel}>Serial / IMEI</label>
+        <input
+          className={styles.smallField}
+          value={localSerialImei}
+          onChange={(e) => setLocalSerialImei(e.target.value)}
+          onBlur={() => void saveDeviceFields()}
+        />
+      </div>
+    </div>
 
-              <div>
-                <label className={styles.smallLabel}>Email</label>
-                <input
-                  className={styles.smallField}
-                  value={localEmail}
-                  onChange={(e) => setLocalEmail(e.target.value)}
-                  onBlur={() => void saveCustomerFields()}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.expandedSectionCard}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Device</div>
-              <SaveIndicator state={deviceSaveState} compact />
-            </div>
-
-            <div className={styles.formGrid}>
-              <div className={styles.twoCol}>
-                <div>
-                  <label className={styles.smallLabel}>Brand</label>
-                  <input
-                    className={styles.smallField}
-                    value={localBrand}
-                    onChange={(e) => setLocalBrand(e.target.value)}
-                    onBlur={() => void saveDeviceFields()}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.smallLabel}>Model</label>
-                  <input
-                    className={styles.smallField}
-                    value={localModel}
-                    onChange={(e) => setLocalModel(e.target.value)}
-                    onBlur={() => void saveDeviceFields()}
-                  />
-                </div>
-              </div>
-
-              <div className={styles.twoCol}>
-                <div>
-                  <label className={styles.smallLabel}>Device Type</label>
-                  <input
-                    className={styles.smallField}
-                    value={localDeviceType}
-                    onChange={(e) => setLocalDeviceType(e.target.value)}
-                    onBlur={() => void saveDeviceFields()}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.smallLabel}>Serial / IMEI</label>
-                  <input
-                    className={styles.smallField}
-                    value={localSerialImei}
-                    onChange={(e) => setLocalSerialImei(e.target.value)}
-                    onBlur={() => void saveDeviceFields()}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className={styles.smallLabel}>Fault Description</label>
-                <textarea
-                  className={styles.notesField}
-                  value={localFaultDescription}
-                  onChange={(e) => setLocalFaultDescription(e.target.value)}
-                  onBlur={() => void saveDeviceFields()}
-                />
-              </div>
-            </div>
-          </div>
-
+    <div>
+      <label className={styles.smallLabel}>Fault Description</label>
+      <textarea
+        className={styles.notesField}
+        value={localFaultDescription}
+        onChange={(e) => setLocalFaultDescription(e.target.value)}
+        onBlur={() => void saveDeviceFields()}
+      />
+    </div>
+  </div>
+</div>
           <div className={styles.expandedSectionCard}>
             <div className={styles.inputTopRow}>
               <div className={styles.expandedSectionTitle}>Quote & Costing</div>
@@ -725,8 +658,6 @@ function buildReadySms() {
               <p className={styles.summaryRow}>
                 <strong>Estimated Margin:</strong> ${margin.toFixed(2)}
               </p>
-            </div>
-          </div>
 
               <div>
                 <label className={styles.smallLabel}>Quote SMS</label>
@@ -739,25 +670,29 @@ function buildReadySms() {
               </div>
 
               <div className={styles.buttonRow}>
-<button
-  type="button"
-  className={styles.actionButton}
-  onClick={async (e) => {
-    e.stopPropagation()
-    setSmsFeedback('')
-    setSmsErrorText('')
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    setSmsFeedback('')
+                    setSmsErrorText('')
 
-    try {
-      await onSendQuoteSms?.(job, quoteSmsText)
-      setSmsFeedback(`Quote SMS sent to ${job.phone}.`)
-    } catch (error) {
-      setSmsErrorText(error instanceof Error ? error.message : 'Failed to send quote SMS.')
-    }
-  }}
->
-  Send Quote SMS
-</button>
+                    try {
+                      await onSendQuoteSms?.(job, quoteSmsText)
+                      setSmsFeedback(`Quote SMS sent to ${job.phone}.`)
+                    } catch (error) {
+                      setSmsErrorText(
+                        error instanceof Error ? error.message : 'Failed to send quote SMS.'
+                      )
+                    }
+                  }}
+                >
+                  Send Quote SMS
+                </button>
               </div>
+            </div>
+          </div>
 
           <div className={styles.expandedSectionCard}>
             <div className={styles.inputTopRow}>
@@ -801,7 +736,7 @@ function buildReadySms() {
               onBlur={() => void flushNotes(localNotes)}
               placeholder="Internal notes"
             />
-          </div>
+
             <div>
               <label className={styles.smallLabel}>Ready SMS</label>
               <textarea
@@ -813,196 +748,198 @@ function buildReadySms() {
             </div>
 
             <div className={styles.buttonRow}>
-<button
-  type="button"
-  className={styles.actionButton}
-  onClick={async (e) => {
-    e.stopPropagation()
-    setSmsFeedback('')
-    setSmsErrorText('')
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  setSmsFeedback('')
+                  setSmsErrorText('')
 
-    try {
-      await onSendReadySms?.(job, readySmsText)
-      setSmsFeedback(`Ready SMS sent to ${job.phone}.`)
-    } catch (error) {
-      setSmsErrorText(error instanceof Error ? error.message : 'Failed to send ready SMS.')
-    }
-  }}
->
-  Ready for Pickup SMS
-</button>
+                  try {
+                    await onSendReadySms?.(job, readySmsText)
+                    setSmsFeedback(`Ready SMS sent to ${job.phone}.`)
+                  } catch (error) {
+                    setSmsErrorText(
+                      error instanceof Error ? error.message : 'Failed to send ready SMS.'
+                    )
+                  }
+                }}
+              >
+                Ready for Pickup SMS
+              </button>
             </div>
 
-         {smsFeedback ? <p className={styles.successText}>{smsFeedback}</p> : null}
-{smsErrorText ? <p className={styles.errorText}>{smsErrorText}</p> : null}
-
-              <div className={styles.expandedSectionCard}>
-  <div className={styles.inputTopRow}>
-    <div className={styles.expandedSectionTitle}>Invoice</div>
-    <SaveIndicator
-      state={
-        invoiceActionState === 'saving'
-          ? 'saving'
-          : invoiceActionState === 'error'
-            ? 'error'
-            : 'idle'
-      }
-      compact
-    />
-  </div>
-
-  {!invoice ? (
-    <div className={styles.buttonRow}>
-      <button
-        type="button"
-        className={styles.actionButton}
-        onClick={(e) => {
-          e.stopPropagation()
-          void createInvoiceForJob?.(job)
-        }}
-      >
-        Create Invoice
-      </button>
-    </div>
-  ) : (
-    <>
-      <div className={styles.invoiceSummaryGrid}>
-        <div>
-          <div className={styles.sectionLabel}>Invoice Number</div>
-          <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
-        </div>
-
-        <div>
-          <div className={styles.sectionLabel}>Status</div>
-          <div>
-            <span className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}>
-              {invoice.status.toUpperCase()}
-            </span>
+            {smsFeedback ? <p className={styles.successText}>{smsFeedback}</p> : null}
+            {smsErrorText ? <p className={styles.errorText}>{smsErrorText}</p> : null}
           </div>
-        </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Total Qty</div>
-          <div className={styles.invoiceValue}>{totalInvoiceQty.toFixed(2)}</div>
-        </div>
+          <div className={styles.expandedSectionCard}>
+            <div className={styles.inputTopRow}>
+              <div className={styles.expandedSectionTitle}>Invoice</div>
+              <SaveIndicator
+                state={
+                  invoiceActionState === 'saving'
+                    ? 'saving'
+                    : invoiceActionState === 'error'
+                      ? 'error'
+                      : 'idle'
+                }
+                compact
+              />
+            </div>
 
-        <div>
-          <div className={styles.sectionLabel}>Total</div>
-          <div className={styles.invoiceValue}>
-            ${Number(invoice.total ?? 0).toFixed(2)}
+            {!invoice ? (
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void createInvoiceForJob?.(job)
+                  }}
+                >
+                  Create Invoice
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={styles.invoiceSummaryGrid}>
+                  <div>
+                    <div className={styles.sectionLabel}>Invoice Number</div>
+                    <div className={styles.invoiceValue}>{invoice.invoice_number}</div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Status</div>
+                    <div>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`invoice_${invoice.status}`]}`}
+                      >
+                        {invoice.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Total Qty</div>
+                    <div className={styles.invoiceValue}>{totalInvoiceQty.toFixed(2)}</div>
+                  </div>
+
+                  <div>
+                    <div className={styles.sectionLabel}>Total</div>
+                    <div className={styles.invoiceValue}>
+                      ${Number(invoice.total ?? 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.buttonRow}>
+                  {invoice.status === 'draft' && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'issued')
+                      }}
+                    >
+                      Mark Issued
+                    </button>
+                  )}
+
+                  {(invoice.status === 'draft' || invoice.status === 'issued') && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'paid')
+                      }}
+                    >
+                      Mark Paid
+                    </button>
+                  )}
+
+                  {invoice.status === 'paid' && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'issued')
+                      }}
+                    >
+                      Mark Unpaid
+                    </button>
+                  )}
+
+                  {invoice.status !== 'void' && (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void updateInvoiceStatusForJob?.(job.id, 'void')
+                      }}
+                    >
+                      Mark Void
+                    </button>
+                  )}
+                </div>
+
+                <div className={styles.invoiceItemsWrap}>
+                  {invoiceItems.length === 0 ? (
+                    <div className={styles.invoiceItemsEmpty}>No invoice items yet.</div>
+                  ) : (
+                    invoiceItems.map((item) => (
+                      <InvoiceItemEditor
+                        key={item.id}
+                        invoiceId={invoice.id}
+                        item={item}
+                        busy={invoiceItemsActionState === 'saving'}
+                        updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
+                        deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
+                      />
+                    ))
+                  )}
+                </div>
+
+                <div className={styles.buttonRow}>
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void addInvoiceItemForInvoice?.(invoice.id)
+                    }}
+                  >
+                    Add Item
+                  </button>
+
+                  <a
+                    href={`/admin/invoice?id=${invoice.id}`}
+                    className={styles.actionButton}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Open Invoice
+                  </a>
+
+                  <button
+                    type="button"
+                    className={styles.deleteButton}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void removeInvoiceForJob?.(job)
+                    }}
+                  >
+                    Delete Invoice
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      </div>
 
-      <div className={styles.buttonRow}>
-        {invoice.status === 'draft' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              void updateInvoiceStatusForJob?.(job.id, 'issued')
-            }}
-          >
-            Mark Issued
-          </button>
-        )}
-
-        {(invoice.status === 'draft' || invoice.status === 'issued') && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              void updateInvoiceStatusForJob?.(job.id, 'paid')
-            }}
-          >
-            Mark Paid
-          </button>
-        )}
-
-        {invoice.status === 'paid' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              void updateInvoiceStatusForJob?.(job.id, 'issued')
-            }}
-          >
-            Mark Unpaid
-          </button>
-        )}
-
-        {invoice.status !== 'void' && (
-          <button
-            type="button"
-            className={styles.actionButton}
-            onClick={(e) => {
-              e.stopPropagation()
-              void updateInvoiceStatusForJob?.(job.id, 'void')
-            }}
-          >
-            Mark Void
-          </button>
-        )}
-      </div>
-
-      <div className={styles.invoiceItemsWrap}>
-        {invoiceItems.length === 0 ? (
-          <div className={styles.invoiceItemsEmpty}>No invoice items yet.</div>
-        ) : (
-          invoiceItems.map((item) => (
-            <InvoiceItemEditor
-              key={item.id}
-              invoiceId={invoice.id}
-              item={item}
-              busy={invoiceItemsActionState === 'saving'}
-              updateInvoiceItemForInvoice={updateInvoiceItemForInvoice}
-              deleteInvoiceItemForInvoice={deleteInvoiceItemForInvoice}
-            />
-          ))
-        )}
-      </div>
-     
-  
-
-      <div className={styles.buttonRow}>
-
- <button
-          type="button"
-          className={styles.actionButton}
-          onClick={(e) => {
-            e.stopPropagation()
-            void addInvoiceItemForInvoice?.(invoice.id)
-          }}
-        >
-          Add Item
-        </button>
-        <a
-          href={`/admin/invoice?id=${invoice.id}`}
-          className={styles.actionButton}
-          onClick={(e) => e.stopPropagation()}
-        >
-          Open Invoice
-        </a>
-
-
-
-        <button
-          type="button"
-          className={styles.deleteButton}
-          onClick={(e) => {
-            e.stopPropagation()
-            void removeInvoiceForJob?.(job)
-          }}
-        >
-          Delete Invoice
-        </button>
-      </div>
-    </>
-  )}
-</div>
           <div className={styles.buttonRow}>
             <button
               type="button"
@@ -1079,20 +1016,6 @@ function buildReadySms() {
   )
 }
 
-type InvoiceItemEditorProps = {
-  invoiceId: string
-  item: InvoiceItem
-  busy: boolean
-  updateInvoiceItemForInvoice?: (
-    invoiceId: string,
-    itemId: string,
-    patch: Partial<InvoiceItem>
-  ) => Promise<void> | void
-  deleteInvoiceItemForInvoice?: (
-    invoiceId: string,
-    itemId: string
-  ) => Promise<void> | void
-}
 
 function InvoiceItemEditor({
   invoiceId,
@@ -1102,52 +1025,77 @@ function InvoiceItemEditor({
   deleteInvoiceItemForInvoice,
 }: InvoiceItemEditorProps) {
   const [description, setDescription] = useState(item.description || '')
+  const [serialImei, setSerialImei] = useState(item.serial_imei || '')
   const [qty, setQty] = useState(String(item.qty ?? 1))
   const [unitPrice, setUnitPrice] = useState(String(item.unit_price ?? 0))
+  const [isDirty, setIsDirty] = useState(false)
 
   useEffect(() => {
     setDescription(item.description || '')
-  }, [item.description])
-
-  useEffect(() => {
+    setSerialImei(item.serial_imei || '')
     setQty(String(item.qty ?? 1))
-  }, [item.qty])
-
-  useEffect(() => {
     setUnitPrice(String(item.unit_price ?? 0))
-  }, [item.unit_price])
+    setIsDirty(false)
+  }, [item.description, item.serial_imei, item.qty, item.unit_price])
 
   async function flush() {
+    if (!isDirty) return
+
     const normalizedQty = Number(qty || 0)
     const normalizedUnitPrice = Number(unitPrice || 0)
 
     await updateInvoiceItemForInvoice?.(invoiceId, item.id, {
       description: description.trim(),
+      serial_imei: serialImei.trim() || null,
       qty: Number.isFinite(normalizedQty) ? normalizedQty : 0,
       unit_price: Number.isFinite(normalizedUnitPrice) ? normalizedUnitPrice : 0,
     })
+
+    setIsDirty(false)
   }
 
   return (
     <div className={styles.invoiceItemCard}>
-      <div className={styles.invoiceItemGrid}>
+      <div className={styles.invoiceItemGridTop}>
         <div className={styles.invoiceItemDescriptionCol}>
           <label className={styles.smallLabel}>Description</label>
           <input
             className={styles.smallField}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              setDescription(e.target.value)
+              setIsDirty(true)
+            }}
             onBlur={() => void flush()}
             disabled={busy}
           />
         </div>
 
         <div>
+          <label className={styles.smallLabel}>Serial / IMEI</label>
+          <input
+            className={styles.smallField}
+            value={serialImei}
+            onChange={(e) => {
+              setSerialImei(e.target.value)
+              setIsDirty(true)
+            }}
+            onBlur={() => void flush()}
+            disabled={busy}
+          />
+        </div>
+      </div>
+
+      <div className={styles.invoiceItemGridBottom}>
+        <div>
           <label className={styles.smallLabel}>Qty</label>
           <input
             className={styles.smallField}
             value={qty}
-            onChange={(e) => setQty(e.target.value)}
+            onChange={(e) => {
+              setQty(e.target.value)
+              setIsDirty(true)
+            }}
             onBlur={() => void flush()}
             disabled={busy}
           />
@@ -1158,7 +1106,10 @@ function InvoiceItemEditor({
           <input
             className={styles.smallField}
             value={unitPrice}
-            onChange={(e) => setUnitPrice(e.target.value)}
+            onChange={(e) => {
+              setUnitPrice(e.target.value)
+              setIsDirty(true)
+            }}
             onBlur={() => void flush()}
             disabled={busy}
           />
@@ -1170,9 +1121,9 @@ function InvoiceItemEditor({
           type="button"
           className={styles.miniButton}
           onClick={() => void flush()}
-          disabled={busy}
+          disabled={busy || !isDirty}
         >
-          Save Item
+          {busy ? 'Saving...' : 'Save Item'}
         </button>
 
         <button

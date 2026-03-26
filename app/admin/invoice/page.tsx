@@ -7,6 +7,7 @@ import styles from './invoice.module.css'
 import ui from '../sharedAdminUi.module.css'
 import useSms from '../hooks/useAdminSms'
 import generateInvoicePdf from '../lib/generateInvoicePdf'
+import { PAYMENT_DETAILS } from '../lib/paymentDetails'
 
 import type {
   Invoice,
@@ -38,13 +39,6 @@ const BUSINESS_DETAILS = {
   abn: '596 961 787 82',
 }
 
-const PAYMENT_DETAILS = {
-  bankName: 'GREAT SOUTHERN BANK',
-  accountName: 'BUN UNG',
-  bsb: '814 282',
-  accountNumber: '520 372 19',
-  payId: '0411 369 814',
-}
 
 export default function InvoicePrintPage() {
   const [invoiceId, setInvoiceId] = useState<string>('')
@@ -190,6 +184,7 @@ export default function InvoicePrintPage() {
           id,
           invoice_id,
           description,
+	serial_imei,
           qty,
           unit_price,
           line_total,
@@ -1034,6 +1029,7 @@ export default function InvoicePrintPage() {
               <thead>
                 <tr>
                   <th>Description</th>
+		<th>Serial / IMEI</th>
                   <th className={styles.numberCell}>Qty</th>
                   <th className={styles.numberCell}>Unit Price</th>
                   <th className={styles.numberCell}>Line Total</th>
@@ -1050,6 +1046,7 @@ export default function InvoicePrintPage() {
                   items.map((item) => (
                     <tr key={item.id}>
                       <td>{item.description}</td>
+        	<td>{item.serial_imei || '-'}</td>
                       <td className={styles.numberCell}>{Number(item.qty).toFixed(2)}</td>
                       <td className={styles.numberCell}>{formatCurrency(item.unit_price)}</td>
                       <td className={styles.numberCell}>{formatCurrency(item.line_total)}</td>

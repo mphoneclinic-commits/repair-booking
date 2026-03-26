@@ -152,6 +152,7 @@ const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
         id,
         invoice_id,
         description,
+  serial_imei,
         qty,
         unit_price,
         line_total,
