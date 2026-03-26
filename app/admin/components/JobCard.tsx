@@ -1016,6 +1016,20 @@ export default function JobCard({
   )
 }
 
+type InvoiceItemEditorProps = {
+  invoiceId: string
+  item: InvoiceItem
+  busy: boolean
+  updateInvoiceItemForInvoice?: (
+    invoiceId: string,
+    itemId: string,
+    patch: Partial<InvoiceItem>
+  ) => Promise<void> | void
+  deleteInvoiceItemForInvoice?: (
+    invoiceId: string,
+    itemId: string
+  ) => Promise<void> | void
+}
 
 function InvoiceItemEditor({
   invoiceId,

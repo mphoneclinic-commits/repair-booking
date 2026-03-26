@@ -400,126 +400,87 @@ serial_imei: job.serial_imei ?? null,
     }
   }
 
-  async function updateInvoiceItemForInvoice(
-    invoiceId: string,
-    itemId: string,
-    updates: Partial<Pick<InvoiceItem, 'description' | 'qty' | 'unit_price' | 'serial_imei'>>
-  ) {
-    const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
-    if (!invoice) return
+async function updateInvoiceItemForInvoice(
+  invoiceId: string,
+  itemId: string,
+  patch: Partial<InvoiceItem>
+) {
+  setInvoiceItemsActionStates((prev) => ({
+    ...prev,
+    [invoiceId]: 'saving',
+  }))
 
-    setInvoiceItemsActionState(invoiceId, 'saving')
+  const updatePayload: Record<string, unknown> = {}
 
-    const previousItems = invoiceItemsByInvoiceId[invoiceId] || []
-    const previousInvoice = invoicesByJobId[invoice.repair_request_id]
+  if ('description' in patch) updatePayload.description = patch.description ?? ''
+  if ('serial_imei' in patch) updatePayload.serial_imei = patch.serial_imei ?? null
+  if ('qty' in patch) updatePayload.qty = Number(patch.qty ?? 0)
+  if ('unit_price' in patch) updatePayload.unit_price = Number(patch.unit_price ?? 0)
 
-    const safeUpdates = {
-      ...(updates.description !== undefined
-        ? { description: updates.description.trim() || 'Item' }
-        : {}),
-      ...(updates.serial_imei !== undefined
-  	? { serial_imei: updates.serial_imei }
-  	: {}),
-      ...(updates.qty !== undefined
-        ? { qty: Number.isFinite(updates.qty) ? updates.qty : 0 }
-        : {}),
-      ...(updates.unit_price !== undefined
-        ? { unit_price: Number.isFinite(updates.unit_price) ? updates.unit_price : 0 }
-        : {}),
-    }
-
-    const optimisticItems = previousItems.map((item) => {
-      if (item.id !== itemId) return item
-
-      const nextQty =
-        safeUpdates.qty !== undefined ? Number(safeUpdates.qty) : Number(item.qty)
-
-      const nextUnitPrice =
-        safeUpdates.unit_price !== undefined
-          ? Number(safeUpdates.unit_price)
-          : Number(item.unit_price)
-
-      return {
-        ...item,
-        ...safeUpdates,
-        qty: nextQty,
-        unit_price: nextUnitPrice,
-        line_total: nextQty * nextUnitPrice,
-      }
-    })
-
-    setInvoiceItemsByInvoiceId((prev) => ({
-      ...prev,
-      [invoiceId]: optimisticItems,
-    }))
-
-    const optimisticSubtotal = optimisticItems.reduce(
-      (sum, item) => sum + Number(item.line_total ?? 0),
-      0
-    )
-
-    setInvoicesByJobId((prev) => ({
-      ...prev,
-      [invoice.repair_request_id]: {
-        ...prev[invoice.repair_request_id],
-        subtotal_ex_tax: optimisticSubtotal,
-        subtotal: optimisticSubtotal,
-        total: optimisticSubtotal,
-        tax_amount: 0,
-      },
-    }))
-
-    const { error } = await supabase
-      .from('invoice_items')
-      .update(safeUpdates)
-      .eq('id', itemId)
-
-    if (error) {
-      setInvoiceItemsByInvoiceId((prev) => ({
-        ...prev,
-        [invoiceId]: previousItems,
-      }))
-
-      if (previousInvoice) {
-        setInvoicesByJobId((prev) => ({
-          ...prev,
-          [invoice.repair_request_id]: previousInvoice,
-        }))
-      }
-
-      setInvoiceItemsActionState(invoiceId, 'error')
-      return
-    }
-
-    const { error: recalcError } = await supabase.rpc('recalculate_invoice_totals', {
-      p_invoice_id: invoiceId,
-    })
-
-    if (recalcError) {
-      setInvoiceItemsByInvoiceId((prev) => ({
-        ...prev,
-        [invoiceId]: previousItems,
-      }))
-
-      if (previousInvoice) {
-        setInvoicesByJobId((prev) => ({
-          ...prev,
-          [invoice.repair_request_id]: previousInvoice,
-        }))
-      }
-
-      setInvoiceItemsActionState(invoiceId, 'error')
-      return
-    }
-
-    try {
-      await refreshInvoiceById(invoiceId)
-      setInvoiceItemsActionState(invoiceId, 'idle')
-      setHighlightedJobId(invoice.repair_request_id)
-    } catch {
-      setInvoiceItemsActionState(invoiceId, 'error')
-    }
+  if ('qty' in patch || 'unit_price' in patch) {
+    updatePayload.line_total =
+      Number(updatePayload.qty ?? patch.qty ?? 0) *
+      Number(updatePayload.unit_price ?? patch.unit_price ?? 0)
   }
+
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .update(updatePayload)
+    .eq('id', itemId)
+    .select(`
+      id,
+      invoice_id,
+      description,
+      serial_imei,
+      qty,
+      unit_price,
+      line_total,
+      sort_order,
+      created_at
+    `)
+    .single()
+
+  if (error || !data) {
+    setInvoiceItemsActionStates((prev) => ({
+      ...prev,
+      [invoiceId]: 'error',
+    }))
+    setError(error?.message || 'Failed to update invoice item')
+    return
+  }
+
+  setInvoiceItemsByInvoiceId((prev) => {
+    const current = prev[invoiceId] || []
+
+    return {
+      ...prev,
+      [invoiceId]: current.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              ...data,
+              serial_imei: data.serial_imei ?? null,
+              qty: Number(data.qty ?? 0),
+              unit_price: Number(data.unit_price ?? 0),
+              line_total: Number(data.line_total ?? 0),
+              sort_order: Number(data.sort_order ?? 0),
+            }
+          : item
+      ),
+    }
+  })
+
+  await supabase.rpc('recalculate_invoice_totals', {
+    p_invoice_id: invoiceId,
+  })
+
+  await refreshInvoiceById(invoiceId)
+
+  setInvoiceItemsActionStates((prev) => ({
+    ...prev,
+    [invoiceId]: 'idle',
+  }))
+}
 
   async function deleteInvoiceItemForInvoice(invoiceId: string, itemId: string) {
     const invoice = Object.values(invoicesByJobId).find((item) => item.id === invoiceId)
