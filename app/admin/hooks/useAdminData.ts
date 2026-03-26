@@ -24,6 +24,7 @@ const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
   return {
     ...raw,
     internal_notes: raw.internal_notes ?? '',
+customer_id: raw.customer_id ?? null,
     quoted_price: normalizeMoneyValue(raw.quoted_price),
     parts_cost: normalizeMoneyValue(raw.parts_cost),
     serial_imei: raw.serial_imei ?? null,
@@ -67,6 +68,7 @@ const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
       .from('repair_requests')
       .select(`
         id,
+	customer_id,
         job_number,
         created_at,
         full_name,
@@ -104,6 +106,7 @@ const normalizeJob = useCallback((raw: RepairRequest): RepairRequest => {
       .from('invoices')
       .select(`
         id,
+	customer_id,
         repair_request_id,
         invoice_number,
         status,

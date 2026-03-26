@@ -41,7 +41,7 @@ export type Customer = {
 
 export type RepairRequest = {
   id: string
-  customer_id: string | null
+  customer_id?: string | null
   job_number: string | null
   created_at: string
   full_name: string
