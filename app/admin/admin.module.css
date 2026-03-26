@@ -187,7 +187,26 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+.statusSelect {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
 
+/* Optional: match badge colors */
+.status_new { background: #1e293b; color: #93c5fd; }
+.status_quoted { background: #1e293b; color: #facc15; }
+.status_approved { background: #1e293b; color: #22c55e; }
+.status_in_progress { background: #1e293b; color: #38bdf8; }
+.status_ready { background: #1e293b; color: #a78bfa; }
+.status_closed { background: #1e293b; color: #10b981; }
+.status_rejected { background: #1e293b; color: #f87171; }
+.status_cancelled { background: #1e293b; color: #f87171; }
 .customerSummaryTop {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

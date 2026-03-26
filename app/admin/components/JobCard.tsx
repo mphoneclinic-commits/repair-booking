@@ -404,9 +404,25 @@ export default function JobCard({
             </label>
           )}
 
-          <span className={`${styles.statusBadge} ${styles[`status_${job.status}`]}`}>
-            {getStatusLabel(job.status)}
-          </span>
+<select
+  className={`${styles.statusSelect} ${styles[`status_${job.status}`]}`}
+  value={job.status}
+onChange={async (e) => {
+  const newStatus = e.target.value as RepairStatus
+  try {
+    await updateStatus(job.id, newStatus)
+  } catch {
+    alert('Failed to update status')
+  }
+}}
+  onClick={(e) => e.stopPropagation()}
+>
+  {STATUS_OPTIONS.map((status) => (
+    <option key={status} value={status}>
+      {getStatusLabel(status)}
+    </option>
+  ))}
+</select>
 
           {!expanded && (
             <button
@@ -550,30 +566,7 @@ export default function JobCard({
         </div>
       ) : (
         <div className={styles.expandedBlock}>
-          <div className={styles.expandedSectionCard}>
-            <div className={styles.inputTopRow}>
-              <div className={styles.expandedSectionTitle}>Status</div>
-              <SaveIndicator state={statusSaveState} compact />
-            </div>
-
-            <div className={styles.statusButtonsWrap}>
-              {STATUS_OPTIONS.map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  className={`${styles.statusButton} ${
-                    job.status === status ? styles.statusButtonActive : ''
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void updateStatus(job.id, status)
-                  }}
-                >
-                  {getStatusLabel(status)}
-                </button>
-              ))}
-            </div>
-          </div>
+  
 
           <div className={styles.expandedSectionCard}>
             <div className={styles.inputTopRow}>

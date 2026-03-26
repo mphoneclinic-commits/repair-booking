@@ -10,6 +10,7 @@ import useAdminArchiveActions from './hooks/useAdminArchiveActions'
 import useAdminDragDrop from './hooks/useAdminDragDrop'
 import useAdminDerivedState from './hooks/useAdminDerivedState'
 import useDeleteRepairRequests from './hooks/useDeleteRepairRequests'
+import useUndoJobAction from './hooks/useUndoJobAction'
 import useSms from './hooks/useAdminSms'
 import type {
   RepairRequest,
@@ -100,7 +101,6 @@ export default function AdminPage() {
     normalizeJob,
     normalizeInvoice,
   } = useAdminData()
-
   const {
     deleting: deletingJobs,
     deleteError: deleteJobsError,
@@ -163,6 +163,30 @@ export default function AdminPage() {
     setBulkBusy,
     setError,
     normalizeJob,
+  })
+const {
+    lastAction,
+    undoing,
+    recordStatusChange,
+    recordHideChange,
+    recordInvoiceStatusChange,
+    undoLastAction,
+  } = useUndoJobAction({
+    undoStatusChange: async (jobId, previousStatus) => {
+      await updateStatus(jobId, previousStatus, { skipUndoCapture: true })
+    },
+    undoHideChange: async (jobId, wasHidden) => {
+      if (wasHidden) {
+        await hideJob(jobId)
+      } else {
+        await unhideJob(jobId)
+      }
+    },
+    undoInvoiceStatusChange: async (invoiceId, previousStatus) => {
+      await updateInvoiceStatusForJob?.(invoiceId, previousStatus)
+    },
+    setError,
+    setSuccessMessage,
   })
 
   const { sendSms } = useSms('/.netlify/functions/send-sms')
@@ -438,8 +462,7 @@ export default function AdminPage() {
       ...prev,
       [jobId]: !prev[jobId],
     }))
-    setHighlightedJobId(jobId)
-  }
+      }
 
   function selectJobCard(jobId: string) {
     setHighlightedJobId(jobId)
@@ -631,53 +654,60 @@ export default function AdminPage() {
     }
   }
 
-  async function updateStatus(id: string, newStatus: RepairStatus) {
-    const existingJob =
-      jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
+  async function updateStatus(
+  id: string,
+  newStatus: RepairStatus,
+  options?: { skipUndoCapture?: boolean }
+) {
+  const existingJob =
+    jobs.find((job) => job.id === id) || hiddenJobs.find((job) => job.id === id)
 
-    if (!existingJob) return
+  if (!existingJob) return
 
-    if (existingJob.status === newStatus) {
-      setFieldSaved(id, 'status')
-      return
-    }
-
-    setFieldState(id, 'status', 'saving')
-
-    setJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
-    )
-    setHiddenJobs((prev) =>
-      prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
-    )
-
-    const { data, error } = await supabase
-      .from('repair_requests')
-      .update({ status: newStatus })
-      .eq('id', id)
-      .select('id, status')
-      .single()
-
-    if (error || !data?.status) {
-      void loadJobs()
-      setFieldState(id, 'status', 'error')
-      return
-    }
-
-    setJobs((prev) =>
-      prev.map((job) =>
-        job.id === id ? { ...job, status: data.status as RepairStatus } : job
-      )
-    )
-    setHiddenJobs((prev) =>
-      prev.map((job) =>
-        job.id === id ? { ...job, status: data.status as RepairStatus } : job
-      )
-    )
-
+  if (existingJob.status === newStatus) {
     setFieldSaved(id, 'status')
+    return
   }
 
+  if (!options?.skipUndoCapture) {
+    recordStatusChange(id, existingJob.status, newStatus)
+  }
+
+  setFieldState(id, 'status', 'saving')
+
+  setJobs((prev) =>
+    prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
+  )
+  setHiddenJobs((prev) =>
+    prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
+  )
+
+  const { data, error } = await supabase
+    .from('repair_requests')
+    .update({ status: newStatus })
+    .eq('id', id)
+    .select('id, status')
+    .single()
+
+  if (error || !data?.status) {
+    void loadJobs()
+    setFieldState(id, 'status', 'error')
+    return
+  }
+
+  setJobs((prev) =>
+    prev.map((job) =>
+      job.id === id ? { ...job, status: data.status as RepairStatus } : job
+    )
+  )
+  setHiddenJobs((prev) =>
+    prev.map((job) =>
+      job.id === id ? { ...job, status: data.status as RepairStatus } : job
+    )
+  )
+
+  setFieldSaved(id, 'status')
+}
   const {
     draggedJobId,
     dragOverStatus,
@@ -1048,7 +1078,14 @@ export default function AdminPage() {
             <button type="button" onClick={() => void loadAllData()} className={styles.button}>
               Refresh
             </button>
-
+<button
+    type="button"
+    className={styles.viewButton}
+    onClick={() => void undoLastAction()}
+    disabled={!lastAction || undoing}
+  >
+    {undoing ? 'Undoing...' : 'Undo Last'}
+  </button>
             <button
               type="button"
               className={styles.viewButton}
@@ -1188,8 +1225,14 @@ export default function AdminPage() {
                             }}
                             onSelectCard={selectJobCard}
                             onDuplicateJob={duplicateJob}
-                            onHideJob={hideJob}
-                            onUnhideJob={unhideJob}
+onHideJob={async (jobId) => {
+  recordHideChange(jobId, false)
+  await hideJob(jobId)
+}}
+onUnhideJob={async (jobId) => {
+  recordHideChange(jobId, true)
+  await unhideJob(jobId)
+}}
                             onDeleteJob={deleteJob}
                           />
                         )
@@ -1379,8 +1422,14 @@ export default function AdminPage() {
                               selectable
                               selected={selectedArchiveJobIds.includes(job.id)}
                               onToggleSelected={toggleArchiveSelected}
-                              onHideJob={hideJob}
-                              onUnhideJob={unhideJob}
+onHideJob={async (jobId) => {
+  recordHideChange(jobId, false)
+  await hideJob(jobId)
+}}
+onUnhideJob={async (jobId) => {
+  recordHideChange(jobId, true)
+  await unhideJob(jobId)
+}}
                               onDeleteJob={deleteJob}
                             />
                           )
@@ -1554,8 +1603,14 @@ export default function AdminPage() {
                 }}
                 onSelectCard={selectJobCard}
                 onDuplicateJob={duplicateJob}
-                onHideJob={hideJob}
-                onUnhideJob={unhideJob}
+onHideJob={async (jobId) => {
+  recordHideChange(jobId, false)
+  await hideJob(jobId)
+}}
+onUnhideJob={async (jobId) => {
+  recordHideChange(jobId, true)
+  await unhideJob(jobId)
+}}
                 onDeleteJob={deleteJob}
               />
             )
@@ -1671,8 +1726,14 @@ export default function AdminPage() {
                     selected={selectedHiddenJobIds.includes(job.id)}
                     onToggleSelected={toggleHiddenSelected}
                     onDuplicateJob={duplicateJob}
-                    onHideJob={hideJob}
-                    onUnhideJob={unhideJob}
+onHideJob={async (jobId) => {
+  recordHideChange(jobId, false)
+  await hideJob(jobId)
+}}
+onUnhideJob={async (jobId) => {
+  recordHideChange(jobId, true)
+  await unhideJob(jobId)
+}}
                     onDeleteJob={deleteJob}
                   />
                 )
